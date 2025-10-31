@@ -52,7 +52,7 @@ func (p *GithubParser) Parse(ciFilePath string) (*types.Pipeline, error) {
             Steps: make([]types.Step, len(ghJob.Steps)),
         }
 
-        for i, ghStep := range job.Steps {
+        for i, ghStep := range ghJob.Steps {
             job.Steps[i] = types.Step{
                Name: ghStep.Name,
                Run: ghStep.Run,
@@ -63,5 +63,5 @@ func (p *GithubParser) Parse(ciFilePath string) (*types.Pipeline, error) {
         pipeline.Jobs[jobName] = job
     }
 
-    return pipeline, err
+    return pipeline, nil
 }

@@ -1,0 +1,12 @@
+
+name: Test CI
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Run tests
+        run: echo "Running tests"
+      - name: Build
+        run: echo "Building project"
