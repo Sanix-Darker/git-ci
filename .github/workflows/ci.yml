@@ -1,12 +1,20 @@
+name: CI
 
-name: Test CI
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      - name: Run tests
-        run: echo "Running tests"
-      - name: Build
-        run: echo "Building project"
+      - name: Print environment
+        run: |
+          echo "Node environment: $NODE_ENV"
+          echo "Working directory: $(pwd)"
+      - name: Create test file
+        run: echo "test content" > test.txt
+      - name: Verify file
+        run: cat test.txt
