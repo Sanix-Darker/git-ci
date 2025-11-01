@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/sanix-darker/git-ci/internal/handlers"
-	"github.com/urfave/cli/v2"
+	cli "github.com/urfave/cli/v2"
 )
 
 

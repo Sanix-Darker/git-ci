@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/sanix-darker/git-ci/pkg/types"
-	"github.com/urfave/cli/v2"
+	cli "github.com/urfave/cli/v2"
 )
 
 // Tree drawing characters

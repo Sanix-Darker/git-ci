@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/sanix-darker/git-ci/pkg/types"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 )
 
 type GitlabParser struct {

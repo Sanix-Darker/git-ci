@@ -6,7 +6,7 @@ import (
 
 	"github.com/sanix-darker/git-ci/internal/config"
 	"github.com/sanix-darker/git-ci/internal/runners"
-	"github.com/urfave/cli/v2"
+	cli "github.com/urfave/cli/v2"
 )
 
 func CmdRun(c *cli.Context) error {
