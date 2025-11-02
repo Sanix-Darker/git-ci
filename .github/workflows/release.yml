@@ -31,7 +31,7 @@ jobs:
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
           go build -ldflags="-w -s -X main.Version=${{ github.ref_name }} -X main.BuildTime=$(date -u +%Y%m%d.%H%M%S)" \
           -o git-ci-${{ matrix.os }}-${{ matrix.arch }} \
-          ./cmd/git-ci
+          ./cmd
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
