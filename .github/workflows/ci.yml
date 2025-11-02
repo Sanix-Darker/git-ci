@@ -28,7 +28,11 @@ jobs:
         uses: golangci/golangci-lint-action@v3
         with:
           version: latest
-          args: --timeout=5m
+          args: |
+            --timeout=5m --disable-all \
+            --enable=gofmt --enable=govet \
+            --enable=errcheck --enable=ineffassign \
+            --enable=staticcheck
 
   test:
     name: Test
