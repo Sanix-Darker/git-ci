@@ -18,7 +18,7 @@ const (
 )
 
 func CmdList(c *cli.Context) error {
-	workflowFile := c.String("file-path")
+	workflowFile := c.String("file")
 
 	// Parse input
 	pipeline, err := parseInput(workflowFile)
