@@ -3,8 +3,46 @@
 
 ![asset](./asset.png)
 
-The git alias you forgot you needed for CI locally, gitlab, github, bitbucket, azure, jenkins...
+The git alias you forgot you needed for CI locally,
+gitlab, github, bitbucket, azure, jenkins...
 
+```bash
+$ git ci help
+NAME:
+   git-ci - Run CI/CD pipelines locally
+
+USAGE:
+   git-ci [global options] command [command options]
+
+VERSION:
+   f6d8421
+
+AUTHOR:
+   Sanix Darker <s4nixd@gmail.com>
+
+COMMANDS:
+   list, ls            List jobs and pipelines
+   run, r, exec        Run jobs or pipelines
+   validate, check, v  Validate pipeline syntax
+   init                Initialize a new pipeline
+   clean               Clean up resources
+   env                 Manage environment variables
+   config              Manage configuration
+   help, h             Shows a list of commands or help for one command
+
+GLOBAL OPTIONS:
+   --debug                    Enable debug mode (default: false) [$GIT_CI_DEBUG]
+   --quiet, -q                Suppress output (default: false) [$GIT_CI_QUIET]
+   --config value, -c value   Config file path [$GIT_CI_CONFIG]
+   --workdir value, -w value  Working directory (default: ".") [$GIT_CI_WORKDIR]
+   --help, -h                 show help
+   --version, -v              print the version
+
+COPYRIGHT:
+   Copyright (c) 2025 Sanix Darker
+```
+
+---
 
 ```bash
 $ git ci run -f ./.github/workflows/test-ci.yml
@@ -48,7 +86,7 @@ Success: 1, Failed: 0, Total: 1
 - Go 1.23+ (recommended, for building from source)
 - Docker (optional, for containerized runs)
 
-## INSTALL
+## HOW INSTALL/GET
 
 ```bash
 # From source
@@ -66,13 +104,16 @@ sudo mv gci /usr/local/bin/
 # List jobs
 gci ls
 
-# Run all jobs
+# List jobs from a specific workflow file
+gci ls -f ./.github/workflows/ci.yml
+
+# Run all jobs at once
 gci run
 
 # Run specific job
 gci run --job test
 
-# Run with Docker
+# To Run with Docker
 gci run --docker
 
 # Validate pipeline
@@ -155,4 +196,4 @@ artifacts:
 
 ## AUTHOR
 
-[dk](https://github.com/sanix-darker)
+[sanix-darker](https://github.com/sanix-darker)
