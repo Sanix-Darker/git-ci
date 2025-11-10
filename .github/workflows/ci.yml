@@ -43,8 +43,8 @@ jobs:
 
       - name: Install pre-requises
         run: |
-          apt-get update -y
-          apt-get install \
+          sudo apt-get update -y
+          sudo apt-get install \
             build-essential \
             libbtrfs-dev \
             libgpgme-dev \
@@ -82,8 +82,8 @@ jobs:
 
       - name: Install pre-requises
         run: |
-          apt-get update -y
-          apt-get install \
+          sudo apt-get update -y
+          sudo apt-get install \
             build-essential \
             libbtrfs-dev \
             libgpgme-dev \
