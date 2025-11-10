@@ -6,6 +6,9 @@ toolchain go1.24.9
 
 require (
 	github.com/docker/docker v28.5.2+incompatible
+	github.com/containers/podman/v4 v4.9.5
+	github.com/docker/docker v28.5.1+incompatible
+	github.com/opencontainers/runtime-spec v1.3.0
 	github.com/urfave/cli/v2 v2.27.7
 	gopkg.in/yaml.v3 v3.0.1
 )
