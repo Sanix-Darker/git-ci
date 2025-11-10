@@ -70,6 +70,16 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Install pre-requises
+        run: |
+          apt-get update -y
+          apt-get install \
+            build-essential \
+            libbtrfs-dev \
+            libgpgme-dev \
+            libseccomp-dev \
+            pkg-config -yqq
+
       - name: Build binary
         run: |
           GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
