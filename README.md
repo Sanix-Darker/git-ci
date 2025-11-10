@@ -1,198 +1,242 @@
 # git-ci
 
-
 ![asset](./asset.png)
 
-The git alias you forgot you needed for CI locally,
-gitlab, github, bitbucket, azure, jenkins...
+Run CI/CD pipelines locally with native Go support.
 
-```bash
-$ git ci help
-NAME:
-   git-ci - Run CI/CD pipelines locally
+## FEATURES
 
-USAGE:
-   git-ci [global options] command [command options]
+- Local execution of CI/CD workflows
+- Native Go implementation - no shell/exec commands
+- Multiple runner support (Bash, Docker, Podman)
+- Parser support for GitHub Actions, GitLab CI, Azure DevOps (planned)
+- Parallel job execution
+- Environment management
+- Pipeline validation
 
-VERSION:
-   f6d8421
+## SUPPORTED PLATFORMS
 
-AUTHOR:
-   Sanix Darker <s4nixd@gmail.com>
+### PARSERS
 
-COMMANDS:
-   list, ls            List jobs and pipelines
-   run, r, exec        Run jobs or pipelines
-   validate, check, v  Validate pipeline syntax
-   init                Initialize a new pipeline
-   clean               Clean up resources
-   env                 Manage environment variables
-   config              Manage configuration
-   help, h             Shows a list of commands or help for one command
+- [x] GitHub Actions
+- [x] GitLab CI
+- [ ] Azure DevOps
+- [ ] Bitbucket Pipelines
+- [ ] CircleCI
 
-GLOBAL OPTIONS:
-   --debug                    Enable debug mode (default: false) [$GIT_CI_DEBUG]
-   --quiet, -q                Suppress output (default: false) [$GIT_CI_QUIET]
-   --config value, -c value   Config file path [$GIT_CI_CONFIG]
-   --workdir value, -w value  Working directory (default: ".") [$GIT_CI_WORKDIR]
-   --help, -h                 show help
-   --version, -v              print the version
+### RUNNERS
 
-COPYRIGHT:
-   Copyright (c) 2025 Sanix Darker
-```
+- [x] Bash (native shell execution)
+- [x] Docker (containerized execution)
+- [x] Podman (rootless containers)
+- [ ] Kubernetes (cloud-native execution)
+- [ ] AWS Lambda (serverless)
+- [ ] Firecracker (microVMs)
 
----
-
-```bash
-$ git ci run -f ./.github/workflows/test-ci.yml
-Running 1 job(s) sequentially
---------------------------------------------------------------------------------
-
-================================================================================
- Running Job: Test Run
---------------------------------------------------------------------------------
- Working Directory: /home/dk/github/git-ci
- Runner: bash (native)
-================================================================================
-
-[1/3] Print environment
---------------------------------------------------------------------------------
-  Node environment: test
-  Working directory: /home/dk/github/git-ci
-Step completed in 2ms
-
-[2/3] Create test file
---------------------------------------------------------------------------------
-Step completed in 2ms
-
-[3/3] Verify file
---------------------------------------------------------------------------------
-  test content from github
-Step completed in 2ms
-
-================================================================================
- Job 'Test Run' completed successfully
- Total duration: 12ms
-================================================================================
-
-Job 'test-run' succeeded in 12ms
---------------------------------------------------------------------------------
-Pipeline completed in 12ms
-Success: 1, Failed: 0, Total: 1
-```
 ## REQUIREMENTS
 
-- Go 1.23+ (recommended, for building from source)
-- Docker (optional, for containerized runs)
+- Go 1.23+ (for building from source)
+- Docker/Podman (optional, for containerized execution)
+- Kubernetes cluster (optional, for k8s runner)
 
-## HOW INSTALL/GET
+## INSTALLATION
 
 ```bash
-# From source
+# from source
 go install github.com/sanix-darker/git-ci@latest
 
-# Or download binary
+# download binary
 curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-$(uname -s)-$(uname -m) -o gci
 chmod +x gci
-sudo mv gci /usr/local/bin/
+sudo mv git ci /usr/local/bin/
+
+# create git alias
+git config --global alias.ci '!gci'
 ```
 
 ## QUICK START
 
 ```bash
-# List jobs
-gci ls
+# list jobs from detected workflow
+git ci ls
 
-# List jobs from a specific workflow file
-gci ls -f ./.github/workflows/ci.yml
+# to run all jobs
+git ci run
 
-# Run all jobs at once
-gci run
+# run specific job
+git ci run --job test
 
-# Run specific job
-gci run --job test
+# run with different runners
+git ci run --runner docker
+git ci run --runner podman
 
-# To Run with Docker
-gci run --docker
+# validate pipeline
+git ci validate
 
-# Validate pipeline
-gci validate
+# initialize new pipeline
+git ci init --provider github --template go
 ```
 
-## BASIC USAGE
+## USAGE
+
+### BASIC COMMANDS
+
+```bash
+# list available commands
+git ci help
+
+# list jobs and pipelines
+git ci ls -f .github/workflows/ci.yml
+
+# run pipeline
+git ci run -f .gitlab-ci.yml
+
+# run specific stage
+git ci run --stage test
+
+# parallel execution
+git ci run --parallel --max-parallel 4
+
+# dry run
+git ci run --dry-run
+```
+
+### ENVIRONMENT MANAGEMENT
+
+```bash
+# set environment variables
+git ci env set KEY=value
+
+# load from file
+git ci env load -f .env
+
+# list current environment
+git ci env list
+```
+
+### CONFIGURATION
+
+You can create `.git-ci.yml`:
+
+```yaml
+defaults:
+  runner: docker
+  timeout: 30
+  parallel: false
+  max_parallel: 4
+
+environment:
+  CI: "true"
+  GIT_CI: "true"
+
+docker:
+  pull: true
+  network: bridge
+  volumes:
+    - ./cache:/cache
+
+cache:
+  enabled: true
+  paths:
+    - node_modules
+    - .cache
+    - vendor
+
+artifacts:
+  paths:
+    - dist
+    - build
+  expire_in: 1 week
+```
+
+## CLI REFERENCE
+
+### GLOBAL OPTIONS
+
+```bash
+--verbose, -v         Verbose output
+--debug              Debug mode
+--quiet, -q          Suppress output
+--config, -c VALUE   Config file path
+--workdir, -w VALUE  Working directory
+```
+
+### RUN OPTIONS
+
+```bash
+--file, -f VALUE     Pipeline file
+--job, -j VALUE      Specific job
+--stage, -s VALUE    Specific stage
+--runner VALUE       Runner type (bash|docker|podman|kubernetes)
+--parallel, -p       Parallel execution
+--max-parallel N     Max parallel jobs
+--timeout, -t MIN    Job timeout
+--dry-run, -n        Simulate execution
+--env, -e KEY=VALUE  Environment variables
+--env-file FILE      Load env from file
+```
+
+## EXAMPLES
 
 ### GITHUB ACTIONS
 
 ```bash
-# Run workflow
-gci run -f .github/workflows/ci.yml
+# run workflow
+git ci run -f .github/workflows/ci.yml
 
-# Run specific job
-gci run -j build -f .github/workflows/ci.yml
+# run matrix job
+git ci run --job "test (ubuntu-latest, 1.20)"
 
-# Dry run
-gci run --dry-run
+# run with docker
+git ci run --runner docker --pull
 ```
 
 ### GITLAB CI
 ```bash
-# Run pipeline
-gci run -f .gitlab-ci.yml
+# run pipeline
+git ci run -f .gitlab-ci.yml
 
-# Run specific stage
-gci run --stage test
+# run specific stage
+git ci run --stage deploy
 
-# Run in parallel
-gci run --parallel
+# run with services
+git ci run --job integration-test
 ```
 
-## ENVIRONMENT VARIABLES
+### ADVANCED USAGE
 
 ```bash
-# Use environment variables
-export GIT_CI_DOCKER=true
-export GIT_CI_TIMEOUT=60
-gci run
+# complex filtering
+git ci run --only "test-*" --except "test-integration"
 
-# Or use flags
-gci run --docker --timeout 60
-
-# Load from file
-gci run --env-file .env
+# custom runner with volumes
+git ci run --runner podman --volume $PWD/data:/data:ro
 ```
 
-## CONFIGURATION
+## DEVELOPMENT
+```bash
+# clone repository
+git clone https://github.com/sanix-darker/git-ci
+cd git-ci
 
-Example of an `.git-ci.yml` :
+# build
+make build
 
-```yaml
-# git-ci configuration file
-# https://github.com/sanix-darker/git-ci
+# run tests
+make test
 
-defaults:
-    runner: bash
-    timeout: 30
-    max_parallel: 4
-environment:
-    CI: "true"
-    GIT_CI: "true"
-docker:
-    pull: true
-    network: bridge
-cache:
-    enabled: true
-    paths:
-        - node_modules
-        - .cache
-        - vendor
-artifacts:
-    paths:
-        - dist
-        - build
-        - coverage
-    expire_in: 1 week
+# install locally
+make install
 ```
+
+## CONTRIBUTING
+
+Contributions are welcome !
+Please read the contributing guidelines before submitting PRs.
+
+## LICENSE
+
+MIT License - see LICENSE file for details.
 
 ## AUTHOR
 
