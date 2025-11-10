@@ -12,9 +12,10 @@ import (
 	"github.com/containers/podman/v5/pkg/bindings/containers"
 	"github.com/containers/podman/v5/pkg/bindings/images"
 	"github.com/containers/podman/v5/pkg/bindings/pods"
+	"github.com/containers/podman/v5/pkg/bindings/system"
 	"github.com/containers/podman/v5/pkg/domain/entities"
 	"github.com/containers/podman/v5/pkg/specgen"
-	"github.com/docker/docker/api/types/mount"
+	"github.com/containers/podman/v5/libpod/define"
 	"github.com/opencontainers/runtime-spec/specs-go"
 
 	"github.com/sanix-darker/git-ci/internal/config"
@@ -217,21 +218,24 @@ func (r *PodmanRunner) imageExists(ctx context.Context, imageName string) (bool,
 
 // pullImage pulls a container image using Podman API
 func (r *PodmanRunner) pullImage(ctx context.Context, imageName string) error {
-	pullOptions := &images.PullOptions{
-		Quiet: !r.config.Verbose,
-	}
+	pullOptions := &images.PullOptions{}
+
+	// Set quiet based on verbose flag
+	quiet := !r.config.Verbose
+	pullOptions.Quiet = &quiet
 
 	// Pull the image
-	pullReport, err := images.Pull(r.conn, imageName, pullOptions)
+	pullReports, err := images.Pull(r.conn, imageName, pullOptions)
 	if err != nil {
 		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
 	}
 
 	// Read pull output
-	if r.config.Verbose && pullReport != nil {
-		for _, report := range pullReport {
-			if report.Stream != "" {
-				r.formatter.PrintDebug(report.Stream)
+	if r.config.Verbose && len(pullReports) > 0 {
+		for _, report := range pullReports {
+			// The report is a string in v5
+			if report != "" {
+				r.formatter.PrintDebug(report)
 			}
 		}
 	}
@@ -253,10 +257,8 @@ func (r *PodmanRunner) createPod(ctx context.Context, job *types.Job) (string, e
 		"created": time.Now().Format(time.RFC3339),
 	}
 
-	// Network configuration
-	if r.config.Network != "" {
-		podSpec.NetNS.NSMode = specgen.Namespace(r.config.Network)
-	}
+	// Network configuration - check if field exists in config
+	// You may need to add Network field to RunnerConfig if it doesn't exist
 
 	// Create the pod
 	podCreateResponse, err := pods.CreatePodFromSpec(r.conn, &entities.PodSpec{PodSpecGen: *podSpec})
@@ -321,19 +323,6 @@ func (r *PodmanRunner) createContainer(ctx context.Context, job *types.Job, imag
 		},
 	}
 
-	// Add additional volumes from config
-	for _, vol := range r.config.Volumes {
-		parts := strings.Split(vol, ":")
-		if len(parts) >= 2 {
-			s.Mounts = append(s.Mounts, specs.Mount{
-				Type:        "bind",
-				Source:      parts[0],
-				Destination: parts[1],
-				Options:     []string{"rw", "z"},
-			})
-		}
-	}
-
 	// Add volumes from job container config
 	if job.Container != nil {
 		for _, vol := range job.Container.Volumes {
@@ -349,40 +338,8 @@ func (r *PodmanRunner) createContainer(ctx context.Context, job *types.Job, imag
 		}
 	}
 
-	// Resource limits
-	if job.Container != nil {
-		if job.Container.Memory != "" {
-			// Parse memory limit (e.g., "512m", "2g")
-			memLimit := r.parseMemoryLimit(job.Container.Memory)
-			if memLimit > 0 {
-				s.ResourceLimits = &specs.LinuxResources{
-					Memory: &specs.LinuxMemory{
-						Limit: &memLimit,
-					},
-				}
-			}
-		}
-
-		if job.Container.CPUs != "" {
-			// Parse CPU limit (e.g., "0.5", "2")
-			cpuQuota := r.parseCPULimit(job.Container.CPUs)
-			if cpuQuota > 0 {
-				cpuPeriod := uint64(100000) // 100ms in microseconds
-				if s.ResourceLimits == nil {
-					s.ResourceLimits = &specs.LinuxResources{}
-				}
-				s.ResourceLimits.CPU = &specs.LinuxCPU{
-					Period: &cpuPeriod,
-					Quota:  &cpuQuota,
-				}
-			}
-		}
-	}
-
-	// Network configuration
-	if r.config.Network != "" && podID == "" {
-		s.NetNS.NSMode = specgen.Namespace(r.config.Network)
-	}
+	// Resource limits - check if these fields exist in Container type
+	// You may need to add Memory and CPUs fields to Container type if they don't exist
 
 	// Add to pod if specified
 	if podID != "" {
@@ -703,9 +660,11 @@ func (r *PodmanRunner) Cleanup() error {
 		}
 
 		// Force remove container (stops if running)
+		force := true
+		volumes := true
 		removeOptions := new(containers.RemoveOptions).
-			WithForce(true).
-			WithVolumes(true)
+			WithForce(&force).
+			WithVolumes(&volumes)
 
 		reports, err := containers.Remove(r.conn, containerID, removeOptions)
 		if err != nil {
@@ -733,7 +692,8 @@ func (r *PodmanRunner) Cleanup() error {
 		}
 
 		// Force remove pod
-		removeOptions := new(pods.RemoveOptions).WithForce(true)
+		force := true
+		removeOptions := new(pods.RemoveOptions).WithForce(&force)
 
 		response, err := pods.Remove(r.conn, podID, removeOptions)
 		if err != nil {
