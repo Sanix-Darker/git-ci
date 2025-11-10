@@ -30,3 +30,6 @@ _test
 .DS_Store
 ./build/gci
 test.txt
+
+# Build output
+build

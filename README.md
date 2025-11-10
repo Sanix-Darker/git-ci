@@ -88,14 +88,43 @@ Success: 1, Failed: 0, Total: 1
 
 ## HOW INSTALL/GET
 
-```bash
-# From source
-go install github.com/sanix-darker/git-ci@latest
+### Option 1: Install with Go
 
-# Or download binary
-curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-$(uname -s)-$(uname -m) -o gci
+```bash
+go install github.com/sanix-darker/git-ci@latest
+```
+
+After installation, the binary will be available as `git-ci` in your `$GOPATH/bin` directory.
+
+### Option 2: Download Pre-built Binary
+
+```bash
+# Linux (amd64)
+curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-linux-amd64 -o gci
 chmod +x gci
 sudo mv gci /usr/local/bin/
+
+# macOS (Apple Silicon)
+curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-darwin-arm64 -o gci
+chmod +x gci
+sudo mv gci /usr/local/bin/
+
+# macOS (Intel)
+curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-darwin-amd64 -o gci
+chmod +x gci
+sudo mv gci /usr/local/bin/
+
+# Windows (PowerShell)
+Invoke-WebRequest -Uri "https://github.com/sanix-darker/git-ci/releases/latest/download/gci-windows-amd64.exe" -OutFile "gci.exe"
+```
+
+### Option 3: Build from Source
+
+```bash
+git clone https://github.com/sanix-darker/git-ci.git
+cd git-ci
+make build
+sudo cp build/gci /usr/local/bin/
 ```
 
 ## QUICK START
