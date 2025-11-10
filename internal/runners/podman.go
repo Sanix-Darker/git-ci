@@ -1,13 +1,16 @@
 package runners
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/containers/podman/v5/libpod/define"
 	"github.com/containers/podman/v5/pkg/bindings"
 	"github.com/containers/podman/v5/pkg/bindings/containers"
 	"github.com/containers/podman/v5/pkg/bindings/images"
@@ -15,7 +18,6 @@ import (
 	"github.com/containers/podman/v5/pkg/bindings/system"
 	"github.com/containers/podman/v5/pkg/domain/entities"
 	"github.com/containers/podman/v5/pkg/specgen"
-	"github.com/containers/podman/v5/libpod/define"
 	"github.com/opencontainers/runtime-spec/specs-go"
 
 	"github.com/sanix-darker/git-ci/internal/config"
@@ -346,12 +348,12 @@ func (r *PodmanRunner) createContainer(ctx context.Context, job *types.Job, imag
 		s.Pod = podID
 	}
 
+    // FIXME: uncomment when setter are ready
 	// Security options
-	s.Privileged = false
-	s.ReadOnlyFilesystem = false
-
-	// Terminal
-	s.Terminal = false
+	//s.Privileged = false
+	//s.ReadOnlyFilesystem = false
+	//// Terminal
+	//s.Terminal = false
 
 	// Create the container
 	createResponse, err := containers.CreateWithSpec(r.conn, s, nil)
@@ -417,29 +419,49 @@ func (r *PodmanRunner) startServices(ctx context.Context, job *types.Job, podID 
 }
 
 // attachToContainer attaches to container for logs
+// attachToContainer attaches to container for logs
 func (r *PodmanRunner) attachToContainer(ctx context.Context, containerID string) error {
+	// Create channels for stdout and stderr
+	//stdoutChan := make(chan string)
+	//stderrChan := make(chan string)
+
+	// Create pipes for stdout and stderr
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+
+	// Setup attach ready channel
+	attachReady := make(chan bool)
+
 	// Setup attach options
 	attachOptions := new(containers.AttachOptions).
 		WithStream(true).
-		WithStdout(true).
-		WithStderr(true).
+		// WithStdout(true).
+		// WithStderr(true).
 		WithLogs(true)
 
+	// Start goroutines to read from pipes
+	go func() {
+		scanner := bufio.NewScanner(stdoutReader)
+		for scanner.Scan() {
+			fmt.Println(scanner.Text())
+		}
+	}()
+
+	go func() {
+		scanner := bufio.NewScanner(stderrReader)
+		for scanner.Scan() {
+			fmt.Fprintln(os.Stderr, scanner.Text())
+		}
+	}()
+
 	// Attach to container
-	attachChan, err := containers.Attach(r.conn, containerID, attachOptions)
+	err := containers.Attach(r.conn, containerID, nil, stdoutWriter, stderrWriter, attachReady, attachOptions)
 	if err != nil {
 		return fmt.Errorf("failed to attach to container: %w", err)
 	}
 
-	// Process output
-	for msg := range attachChan {
-		switch msg.Stream {
-		case 1: // stdout
-			fmt.Print(string(msg.Body))
-		case 2: // stderr
-			fmt.Fprint(os.Stderr, string(msg.Body))
-		}
-	}
+	// Wait for attach to be ready
+	<-attachReady
 
 	return nil
 }
@@ -642,9 +664,7 @@ func (r *PodmanRunner) Cleanup() error {
 		return nil
 	}
 
-	ctx := context.Background()
 	r.formatter.PrintSection("Cleaning up resources")
-
 	var errors []string
 
 	// Remove containers
@@ -660,11 +680,9 @@ func (r *PodmanRunner) Cleanup() error {
 		}
 
 		// Force remove container (stops if running)
-		force := true
-		volumes := true
 		removeOptions := new(containers.RemoveOptions).
-			WithForce(&force).
-			WithVolumes(&volumes)
+			WithForce(true).
+			WithVolumes(true)
 
 		reports, err := containers.Remove(r.conn, containerID, removeOptions)
 		if err != nil {
@@ -692,8 +710,7 @@ func (r *PodmanRunner) Cleanup() error {
 		}
 
 		// Force remove pod
-		force := true
-		removeOptions := new(pods.RemoveOptions).WithForce(&force)
+		removeOptions := new(pods.RemoveOptions).WithForce(true)
 
 		response, err := pods.Remove(r.conn, podID, removeOptions)
 		if err != nil {
@@ -720,8 +737,8 @@ func (r *PodmanRunner) Cleanup() error {
 }
 
 // GetRunnerType returns the type of this runner
-func (r *PodmanRunner) GetRunnerType() types.RunnerType {
-	return types.RunnerTypePodman
+func (r *PodmanRunner) GetRunnerType() string {
+	return "podman"
 }
 
 // getImageName determines the image name from job configuration
