@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [linux, darwin, windows]
+        os: [linux, darwin] # windows (will re-activate after an MVP
         arch: [amd64, arm64]
     steps:
       - name: Checkout code
