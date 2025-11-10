@@ -92,16 +92,13 @@ jobs:
 
       - name: Build binary
         run: |
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
-          go build -ldflags="-w -s -X main.Version=${{ github.ref_name }} -X main.BuildTime=$(date -u +%Y%m%d.%H%M%S)" \
-          -o git-ci-${{ matrix.os }}-${{ matrix.arch }} \
-          ./cmd
+          make build-all
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: git-ci-${{ matrix.os }}-${{ matrix.arch }}
-          path: git-ci-${{ matrix.os }}-${{ matrix.arch }}
+          name: gci-${{ matrix.os }}-${{ matrix.arch }}
+          path: gci-${{ matrix.os }}-${{ matrix.arch }}
 
   # docker:
   #   name: Docker Build
@@ -156,17 +153,17 @@ jobs:
       - name: Download binary
         uses: actions/download-artifact@v4
         with:
-          name: git-ci-linux-amd64
+          name: gci-linux-amd64
           path: ./
 
       - name: Make binary executable
-        run: chmod +x git-ci-linux-amd64
+        run: chmod +x gci-linux-amd64
 
       - name: Test list command
-        run: ./git-ci-linux-amd64 ls
+        run: ./gci-linux-amd64 ls
 
       - name: Test dry run
-        run: ./git-ci-linux-amd64 run --dry-run -j test
+        run: ./gci-linux-amd64 run --dry-run -j test
 
       - name: Test validation
-        run: ./git-ci-linux-amd64 validate
+        run: ./gci-linux-amd64 validate

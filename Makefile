@@ -76,15 +76,15 @@ build-all: deps
 	# Linux builds
 	@GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 $(MAIN_FILE)
 	@GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 $(MAIN_FILE)
-	@GOOS=linux GOARCH=386 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-386 $(MAIN_FILE)
+	# @GOOS=linux GOARCH=386 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-386 $(MAIN_FILE)
 
 	# macOS builds
 	@GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 $(MAIN_FILE)
 	@GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-darwin-arm64 $(MAIN_FILE)
 
 	# Windows builds
-	@GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-windows-amd64.exe $(MAIN_FILE)
-	@GOOS=windows GOARCH=386 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-windows-386.exe $(MAIN_FILE)
+	# @GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-windows-amd64.exe $(MAIN_FILE)
+	# @GOOS=windows GOARCH=386 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-windows-386.exe $(MAIN_FILE)
 
 	@echo "Multi-platform build complete. Binaries in $(DIST_DIR)/"
 	@ls -lah $(DIST_DIR)/
@@ -236,13 +236,13 @@ release: clean build-all
 	# Create tar.gz archives for Unix systems
 	@cd $(DIST_DIR) && tar czf releases/$(BINARY_NAME)-$(VERSION)-linux-amd64.tar.gz $(BINARY_NAME)-linux-amd64
 	@cd $(DIST_DIR) && tar czf releases/$(BINARY_NAME)-$(VERSION)-linux-arm64.tar.gz $(BINARY_NAME)-linux-arm64
-	@cd $(DIST_DIR) && tar czf releases/$(BINARY_NAME)-$(VERSION)-linux-386.tar.gz $(BINARY_NAME)-linux-386
+	# @cd $(DIST_DIR) && tar czf releases/$(BINARY_NAME)-$(VERSION)-linux-386.tar.gz $(BINARY_NAME)-linux-386
 	@cd $(DIST_DIR) && tar czf releases/$(BINARY_NAME)-$(VERSION)-darwin-amd64.tar.gz $(BINARY_NAME)-darwin-amd64
 	@cd $(DIST_DIR) && tar czf releases/$(BINARY_NAME)-$(VERSION)-darwin-arm64.tar.gz $(BINARY_NAME)-darwin-arm64
 
 	# Create zip archives for Windows
-	@cd $(DIST_DIR) && zip -q releases/$(BINARY_NAME)-$(VERSION)-windows-amd64.zip $(BINARY_NAME)-windows-amd64.exe
-	@cd $(DIST_DIR) && zip -q releases/$(BINARY_NAME)-$(VERSION)-windows-386.zip $(BINARY_NAME)-windows-386.exe
+	# @cd $(DIST_DIR) && zip -q releases/$(BINARY_NAME)-$(VERSION)-windows-amd64.zip $(BINARY_NAME)-windows-amd64.exe
+	# @cd $(DIST_DIR) && zip -q releases/$(BINARY_NAME)-$(VERSION)-windows-386.zip $(BINARY_NAME)-windows-386.exe
 
 	# Generate checksums
 	@cd $(DIST_DIR)/releases && sha256sum *.tar.gz *.zip > checksums.txt
