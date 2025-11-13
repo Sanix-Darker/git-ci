@@ -28,7 +28,7 @@ Run CI/CD pipelines locally with native Go support.
 
 - [x] Bash (native shell execution)
 - [x] Docker (containerized execution)
-- [x] Podman (rootless containers)
+- [ ] Podman (rootless containers)
 - [ ] Kubernetes (cloud-native execution)
 - [ ] AWS Lambda (serverless)
 - [ ] Firecracker (microVMs)

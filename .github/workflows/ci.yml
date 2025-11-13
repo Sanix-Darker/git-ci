@@ -68,8 +68,8 @@ jobs:
     needs: [lint, test]
     strategy:
       matrix:
-        os: [linux, darwin] # windows (will re-activate after an MVP
-        arch: [amd64, arm64]
+        os: [linux] # darwin, windows (will re-activate after an MVP
+        arch: [amd64] # , arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -92,7 +92,13 @@ jobs:
 
       - name: Build binary
         run: |
-          make build-all
+          if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "amd64" ]]; then
+            # Native build with CGO for full features
+            CGO_ENABLED=1 go build -o gci-${{ matrix.os }}-${{ matrix.arch }} ./cmd/
+          else
+            # Cross-compile without CGO
+            CGO_ENABLED=0 go build -tags nocgo -o gci-${{ matrix.os }}-${{ matrix.arch }} ./cmd/
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
