@@ -41,6 +41,16 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Install pre-requises
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install \
+            build-essential \
+            libbtrfs-dev \
+            libgpgme-dev \
+            libseccomp-dev \
+            pkg-config -yqq
+
       - name: Run tests
         run: |
           go test -v -race -coverprofile=coverage.out ./...
@@ -58,8 +68,8 @@ jobs:
     needs: [lint, test]
     strategy:
       matrix:
-        os: [linux] # , darwin, windows (will re-activate after an MVP
-        arch: [amd64] # , arm64
+        os: [linux] # FIXME: darwin, windows (will re-activate after an MVP
+        arch: [amd64] # FIXME: arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -70,18 +80,31 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      - name: Install pre-requises
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install \
+            build-essential \
+            libbtrfs-dev \
+            libgpgme-dev \
+            libseccomp-dev \
+            pkg-config -yqq
+
       - name: Build binary
         run: |
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
-          go build -ldflags="-w -s -X main.Version=${{ github.ref_name }} -X main.BuildTime=$(date -u +%Y%m%d.%H%M%S)" \
-          -o git-ci-${{ matrix.os }}-${{ matrix.arch }} \
-          ./cmd
+          if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "amd64" ]]; then
+            # Native build with CGO for full features
+            CGO_ENABLED=1 go build -o gci-${{ matrix.os }}-${{ matrix.arch }} ./cmd/
+          else
+            # Cross-compile without CGO
+            CGO_ENABLED=0 go build -tags nocgo -o gci-${{ matrix.os }}-${{ matrix.arch }} ./cmd/
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: git-ci-${{ matrix.os }}-${{ matrix.arch }}
-          path: git-ci-${{ matrix.os }}-${{ matrix.arch }}
+          name: gci-${{ matrix.os }}-${{ matrix.arch }}
+          path: gci-${{ matrix.os }}-${{ matrix.arch }}
 
   # docker:
   #   name: Docker Build
@@ -136,17 +159,17 @@ jobs:
       - name: Download binary
         uses: actions/download-artifact@v4
         with:
-          name: git-ci-linux-amd64
+          name: gci-linux-amd64
           path: ./
 
       - name: Make binary executable
-        run: chmod +x git-ci-linux-amd64
+        run: chmod +x gci-linux-amd64
 
       - name: Test list command
-        run: ./git-ci-linux-amd64 ls
+        run: ./gci-linux-amd64 ls
 
       - name: Test dry run
-        run: ./git-ci-linux-amd64 run --dry-run -j test
+        run: ./gci-linux-amd64 run --dry-run -j test
 
       - name: Test validation
-        run: ./git-ci-linux-amd64 validate
+        run: ./gci-linux-amd64 validate

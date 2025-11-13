@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        os: [linux, darwin, windows]
+        os: [linux, darwin] # windows (will re-activate after an MVP
         arch: [amd64, arm64]
     steps:
       - name: Checkout code
@@ -28,10 +28,7 @@ jobs:
 
       - name: Build binary
         run: |
-          GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
-          go build -ldflags="-w -s -X main.Version=${{ github.ref_name }} -X main.BuildTime=$(date -u +%Y%m%d.%H%M%S)" \
-          -o git-ci-${{ matrix.os }}-${{ matrix.arch }} \
-          ./cmd
+          make build-all
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
