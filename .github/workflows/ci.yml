@@ -68,8 +68,8 @@ jobs:
     needs: [lint, test]
     strategy:
       matrix:
-        os: [linux] # darwin, windows (will re-activate after an MVP
-        arch: [amd64] # , arm64
+        os: [linux] # FIXME: darwin, windows (will re-activate after an MVP
+        arch: [amd64] # FIXME: arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
