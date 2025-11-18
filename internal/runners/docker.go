@@ -211,52 +211,52 @@ func (r *DockerRunner) getImageName(job *types.Job) string {
 		return job.Image
 	}
 
-	// Map runs-on to Docker images
+	// Map runs-on to Docker images - use buildpack-deps images which have more tools
 	runsOn := strings.ToLower(job.RunsOn)
 
-	// Common mappings
+	// Updated mappings to use buildpack-deps images which include build tools
 	imageMap := map[string]string{
-		"ubuntu-24.04":  "ubuntu:24.04",
-		"ubuntu-22.04":  "ubuntu:22.04",
-		"ubuntu-20.04":  "ubuntu:20.04",
-		"ubuntu-latest": "ubuntu:latest",
-		"debian-12":     "debian:12",
-		"debian-11":     "debian:11",
+		"ubuntu-24.04":  "buildpack-deps:24.04",
+		"ubuntu-22.04":  "buildpack-deps:jammy",  // jammy = 22.04
+		"ubuntu-20.04":  "buildpack-deps:focal",   // focal = 20.04
+		"ubuntu-latest": "buildpack-deps:latest",
+		"debian-12":     "buildpack-deps:bookworm",
+		"debian-11":     "buildpack-deps:bullseye",
 		"alpine-3.19":   "alpine:3.19",
 		"alpine-3.18":   "alpine:3.18",
 		"node-23":       "node:23",
 		"node-22":       "node:22",
 		"node-20":       "node:20",
-		"node-18":       "node:18-slim",
-		"python-3.14":   "python:3.14-slim",
-		"python-3.13":   "python:3.13-slim",
-		"python-3.12":   "python:3.12-slim",
-		"python-3.11":   "python:3.11-slim",
-		"golang-1.23":   "golang:1.23-alpine",
-		"golang-1.22":   "golang:1.22-alpine",
-		"golang-1.20":   "golang:1.20-alpine",
+		"node-18":       "node:18",
+		"python-3.14":   "python:3.14",
+		"python-3.13":   "python:3.13",
+		"python-3.12":   "python:3.12",
+		"python-3.11":   "python:3.11",
+		"golang-1.23":   "golang:1.23",
+		"golang-1.22":   "golang:1.22",
+		"golang-1.20":   "golang:1.20",
 	}
 
 	if image, ok := imageMap[runsOn]; ok {
 		return image
 	}
 
-	// Pattern matching for partial matches
+	// Pattern matching for partial matches - use buildpack-deps for ubuntu
 	switch {
 	case strings.Contains(runsOn, "ubuntu"):
-		return "ubuntu:22.04"
+		return "buildpack-deps:jammy"  // Ubuntu 22.04 with build tools
 	case strings.Contains(runsOn, "debian"):
-		return "debian:latest"
+		return "buildpack-deps:bullseye"
 	case strings.Contains(runsOn, "alpine"):
 		return "alpine:latest"
 	case strings.Contains(runsOn, "node"):
-		return "node:lts-slim"
+		return "node:lts"
 	case strings.Contains(runsOn, "python"):
-		return "python:3-slim"
+		return "python:3"
 	case strings.Contains(runsOn, "golang") || strings.Contains(runsOn, "go"):
-		return "golang:alpine"
+		return "golang:latest"
 	default:
-		return "ubuntu:22.04"
+		return "buildpack-deps:jammy"  // Default to Ubuntu 22.04 with tools
 	}
 }
 
@@ -366,6 +366,31 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 
 	commands = append(commands, "")
 	commands = append(commands, "echo 'Setting up environment...'")
+
+	// Detect if we're using Ubuntu/Debian and install basic tools
+	imageName := r.getImageName(job)
+	if strings.Contains(imageName, "ubuntu") || strings.Contains(imageName, "debian") {
+		commands = append(commands, "")
+		commands = append(commands, "# Install basic tools if needed")
+		commands = append(commands, "if ! command -v sudo >/dev/null 2>&1; then")
+		commands = append(commands, "  apt-get update -qq >/dev/null 2>&1")
+		commands = append(commands, "  apt-get install -y -qq sudo >/dev/null 2>&1")
+		commands = append(commands, "fi")
+
+		// Create a sudo wrapper that just executes commands directly when running as root
+		commands = append(commands, "")
+		commands = append(commands, "# Create sudo wrapper for root execution")
+		commands = append(commands, "if [ \"$(id -u)\" = \"0\" ]; then")
+		commands = append(commands, "  echo '#!/bin/sh' > /usr/local/bin/sudo-wrapper")
+		commands = append(commands, "  echo 'exec \"$@\"' >> /usr/local/bin/sudo-wrapper")
+		commands = append(commands, "  chmod +x /usr/local/bin/sudo-wrapper")
+		commands = append(commands, "  if [ -f /usr/bin/sudo ]; then")
+		commands = append(commands, "    mv /usr/bin/sudo /usr/bin/sudo.real")
+		commands = append(commands, "  fi")
+		commands = append(commands, "  ln -sf /usr/local/bin/sudo-wrapper /usr/bin/sudo")
+		commands = append(commands, "fi")
+	}
+
 	commands = append(commands, "")
 
 	totalSteps := len(job.Steps)
@@ -376,8 +401,23 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 			stepNum++
 			commands = append(commands, fmt.Sprintf("echo ''"))
 			commands = append(commands, fmt.Sprintf("echo '[%d/%d] %s'", stepNum, totalSteps, step.Name))
-			commands = append(commands, fmt.Sprintf("echo '%s'", strings.Repeat("-", 60)))
-			commands = append(commands, fmt.Sprintf("echo 'Skipping action: %s (not supported in Docker runner)'", step.Name))
+			commands = append(commands, fmt.Sprintf("echo '%s'", strings.Repeat("=", 60)))
+
+			// Handle specific actions
+			if strings.Contains(step.Uses, "actions/checkout") {
+				commands = append(commands, "echo 'Skipping checkout action (code already mounted)'")
+			} else if strings.Contains(step.Uses, "actions/setup-go") {
+				// For setup-go, we should check if Go needs to be installed
+				commands = append(commands, "echo 'Checking Go installation...'")
+				commands = append(commands, "if ! command -v go >/dev/null 2>&1; then")
+				commands = append(commands, "  echo 'Go not found, please use a Go-based image'")
+				commands = append(commands, "else")
+				commands = append(commands, "  go version")
+				commands = append(commands, "fi")
+			} else {
+				commands = append(commands, fmt.Sprintf("echo 'Skipping action: %s (not supported in Docker runner)'", step.Name))
+			}
+			commands = append(commands, fmt.Sprintf("echo '%s'", strings.Repeat("=", 60)))
 			continue
 		}
 
@@ -388,7 +428,6 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 		stepNum++
 		commands = append(commands, fmt.Sprintf("echo ''"))
 		commands = append(commands, fmt.Sprintf("echo '[%d/%d] %s'", stepNum, totalSteps, step.Name))
-		commands = append(commands, fmt.Sprintf("echo '%s'", strings.Repeat("-", 60)))
 
 		// Handle working directory
 		if step.WorkingDir != "" {
@@ -400,15 +439,23 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 			commands = append(commands, fmt.Sprintf("export %s='%s'", k, v))
 		}
 
-		// Add the actual command
-		commands = append(commands, step.Run)
+		// Process the command to handle sudo calls
+		runCommand := step.Run
+
+		// If running as root and command contains sudo, we can strip it or use our wrapper
+		if strings.Contains(imageName, "ubuntu") || strings.Contains(imageName, "debian") {
+			// The sudo wrapper will handle it, just execute the command as-is
+			commands = append(commands, runCommand)
+		} else {
+			commands = append(commands, runCommand)
+		}
 
 		// Handle continue-on-error
 		if step.ContinueOnErr {
-			commands = append(commands, "|| true")
+			commands[len(commands)-1] += " || true"
 		}
 
-		commands = append(commands, "echo 'Step completed'")
+		commands = append(commands, fmt.Sprintf("echo '%s'", strings.Repeat("-", 60)))
 
 		// Reset directory if changed
 		if step.WorkingDir != "" {
