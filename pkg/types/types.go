@@ -191,6 +191,9 @@ type Container struct {
 	CapAdd      []string          `yaml:"cap_add,omitempty" json:"cap_add,omitempty"`
 	CapDrop     []string          `yaml:"cap_drop,omitempty" json:"cap_drop,omitempty"`
 	SecurityOpt []string          `yaml:"security_opt,omitempty" json:"security_opt,omitempty"`
+	// Resource limits
+	CPUs   string `yaml:"cpus,omitempty" json:"cpus,omitempty"`     // CPU limit (e.g., "2" or "0.5")
+	Memory string `yaml:"memory,omitempty" json:"memory,omitempty"` // Memory limit (e.g., "2g" or "512m")
 }
 
 // Service container definition (GitHub/GitLab/docker-compose compatible)
@@ -396,6 +399,7 @@ type RunnerType string
 const (
 	RunnerTypeBash       RunnerType = "bash"
 	RunnerTypeDocker     RunnerType = "docker"
+	RunnerTypePodman     RunnerType = "podman"
 	RunnerTypeKubernetes RunnerType = "kubernetes"
 	RunnerTypeSSH        RunnerType = "ssh"
 	RunnerTypeWinRM      RunnerType = "winrm"
