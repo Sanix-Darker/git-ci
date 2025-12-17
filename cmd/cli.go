@@ -53,7 +53,7 @@ func globalFlags() []cli.Flag {
 		//},
 		&cli.BoolFlag{
 			Name:    "debug",
-			Usage:   "Enable debug mode",
+			Usage:   "Enable debug mode (even more verbose)",
 			EnvVars: []string{"GIT_CI_DEBUG"},
 		},
 		&cli.BoolFlag{

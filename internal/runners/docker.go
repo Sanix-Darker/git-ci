@@ -152,14 +152,7 @@ func (r *DockerRunner) RunJob(job *types.Job, workdir string) error {
 		if status.StatusCode != 0 {
 			summary.Success = false
 			summary.Errors = append(summary.Errors, fmt.Sprintf("Container exited with status %d", status.StatusCode))
-
-			// Get last logs for debugging
-			logs, _ := r.getContainerLogs(ctx, containerID, 20)
-			if logs != "" {
-				r.formatter.PrintSection("Last 20 lines of output")
-				fmt.Print(logs)
-			}
-
+			// Logs already streamed above, no need to repeat
 			return fmt.Errorf("container exited with status %d", status.StatusCode)
 		}
 		summary.CompletedSteps = len(job.Steps)
@@ -212,46 +205,54 @@ func (r *DockerRunner) getImageName(job *types.Job) string {
 	}
 
 	// Map runs-on to Docker images
-	// Primary: catthehacker/ubuntu images - closest to GitHub Actions runners (used by 'act' tool)
-	// Fallback: buildpack-deps images for broader compatibility
+	// Using images that closely match GitHub Actions runners:
+	// - catthehacker/ubuntu:* - Used by 'act' tool, closest to GitHub Actions
+	// - ghcr.io/catthehacker/ubuntu:* - Same images on GitHub Container Registry
+	// - buildpack-deps:* - Good alternative with many build tools
 	runsOn := strings.ToLower(job.RunsOn)
 
-	// GitHub Actions compatible images (catthehacker/ubuntu:act-*)
-	// These images contain most tools that GitHub Actions runners have
+	// Primary mappings using catthehacker images (closest to GitHub Actions)
+	// These images are used by the popular 'act' tool and include
+	// most tools that GitHub Actions runners have
 	imageMap := map[string]string{
-		// GitHub Actions compatible (catthehacker images - used by 'act')
+		// Ubuntu versions - using catthehacker images (GitHub Actions compatible)
 		"ubuntu-24.04":  "catthehacker/ubuntu:act-24.04",
 		"ubuntu-22.04":  "catthehacker/ubuntu:act-22.04",
 		"ubuntu-20.04":  "catthehacker/ubuntu:act-20.04",
 		"ubuntu-latest": "catthehacker/ubuntu:act-22.04",
 
-		// Fallback to buildpack-deps for Debian
+		// Fallback to buildpack-deps for systems without catthehacker images
 		"debian-12":     "buildpack-deps:bookworm",
 		"debian-11":     "buildpack-deps:bullseye",
 		"debian-latest": "buildpack-deps:bookworm",
 
-		// Alpine
+		// Alpine (lightweight)
 		"alpine-3.19":   "alpine:3.19",
 		"alpine-3.18":   "alpine:3.18",
 		"alpine-latest": "alpine:latest",
 
 		// Node.js
-		"node-23": "node:23",
 		"node-22": "node:22",
 		"node-20": "node:20",
 		"node-18": "node:18",
+		"node-16": "node:16",
 
 		// Python
-		"python-3.14": "python:3.14",
-		"python-3.13": "python:3.13",
-		"python-3.12": "python:3.12",
-		"python-3.11": "python:3.11",
+		"python-3.13":   "python:3.13",
+		"python-3.12":   "python:3.12",
+		"python-3.11":   "python:3.11",
+		"python-3.10":   "python:3.10",
+		"python-latest": "python:3",
 
 		// Go
-		"golang-1.23": "golang:1.23",
-		"golang-1.22": "golang:1.22",
-		"golang-1.21": "golang:1.21",
-		"golang-1.20": "golang:1.20",
+		"golang-1.23":   "golang:1.23",
+		"golang-1.22":   "golang:1.22",
+		"golang-1.21":   "golang:1.21",
+		"golang-1.20":   "golang:1.20",
+		"golang-latest": "golang:latest",
+		"go-1.23":       "golang:1.23",
+		"go-1.22":       "golang:1.22",
+		"go-latest":     "golang:latest",
 	}
 
 	if image, ok := imageMap[runsOn]; ok {
@@ -261,7 +262,7 @@ func (r *DockerRunner) getImageName(job *types.Job) string {
 	// Pattern matching for partial matches
 	switch {
 	case strings.Contains(runsOn, "ubuntu"):
-		// Default to GitHub Actions compatible Ubuntu image
+		// Default to catthehacker ubuntu image for GitHub Actions compatibility
 		return "catthehacker/ubuntu:act-22.04"
 	case strings.Contains(runsOn, "debian"):
 		return "buildpack-deps:bookworm"
@@ -273,8 +274,14 @@ func (r *DockerRunner) getImageName(job *types.Job) string {
 		return "python:3"
 	case strings.Contains(runsOn, "golang") || strings.Contains(runsOn, "go"):
 		return "golang:latest"
+	case strings.Contains(runsOn, "rust"):
+		return "rust:latest"
+	case strings.Contains(runsOn, "ruby"):
+		return "ruby:latest"
+	case strings.Contains(runsOn, "java") || strings.Contains(runsOn, "jdk"):
+		return "eclipse-temurin:21"
 	default:
-		// Default to GitHub Actions compatible Ubuntu 22.04
+		// Default to catthehacker ubuntu for best GitHub Actions compatibility
 		return "catthehacker/ubuntu:act-22.04"
 	}
 }
@@ -304,19 +311,33 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 	// Build script from steps
 	script := r.buildJobScript(job)
 
-	// Log script in debug mode
+	// Build environment
+	env := r.buildEnvironment(job)
+
+	// Log details in verbose mode
 	if r.config.Verbose {
 		r.formatter.PrintSection("Generated Script")
 		fmt.Println(script)
+		r.formatter.PrintSection("Environment Variables")
+		for _, e := range env {
+			fmt.Printf("  %s\n", e)
+		}
+		r.formatter.PrintSection("Volumes")
+		fmt.Printf("  %s -> /workspace\n", workdir)
+		if job.Container != nil {
+			for _, vol := range job.Container.Volumes {
+				fmt.Printf("  %s\n", vol)
+			}
+		}
 		r.formatter.PrintSection("Container Configuration")
 	}
 
 	// Prepare container config
 	containerConfig := &container.Config{
 		Image:      imageName,
-		Cmd:        []string{"/bin/sh", "-c", script},
+		Cmd:        []string{"/bin/bash", "-c", script},
 		WorkingDir: "/workspace",
-		Env:        r.buildEnvironment(job),
+		Env:        env,
 		Tty:        false,
 	}
 
@@ -375,8 +396,8 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 func (r *DockerRunner) buildJobScript(job *types.Job) string {
 	var commands []string
 
-	// Add shebang and shell options
-	commands = append(commands, "#!/bin/sh")
+	// Add shebang and shell options - use bash for better compatibility
+	commands = append(commands, "#!/bin/bash")
 	commands = append(commands, "set -e") // Exit on error
 
 	if r.config.Verbose {
@@ -400,7 +421,7 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 		commands = append(commands, "")
 		commands = append(commands, "# Create sudo wrapper for root execution")
 		commands = append(commands, "if [ \"$(id -u)\" = \"0\" ]; then")
-		commands = append(commands, "  echo '#!/bin/sh' > /usr/local/bin/sudo-wrapper")
+		commands = append(commands, "  echo '#!/bin/bash' > /usr/local/bin/sudo-wrapper")
 		commands = append(commands, "  echo 'exec \"$@\"' >> /usr/local/bin/sudo-wrapper")
 		commands = append(commands, "  chmod +x /usr/local/bin/sudo-wrapper")
 		commands = append(commands, "  if [ -f /usr/bin/sudo ]; then")
@@ -426,29 +447,72 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 			if strings.Contains(step.Uses, "actions/checkout") {
 				commands = append(commands, "echo 'Skipping checkout action (code already mounted)'")
 			} else if strings.Contains(step.Uses, "actions/setup-go") {
-				// For setup-go, we should check if Go needs to be installed
-				commands = append(commands, "echo 'Checking Go installation...'")
+				// Extract Go version from step.With if available
+				goVersion := "" // will auto-detect latest
+				if v, ok := step.With["go-version"]; ok {
+					// Clean up the version string (remove ${{ }} expressions)
+					goVersion = r.cleanExpressions(v)
+				}
+				commands = append(commands, "echo 'Setting up Go...'")
 				commands = append(commands, "if ! command -v go >/dev/null 2>&1; then")
-				commands = append(commands, "  echo 'Go not found, please use a Go-based image'")
-				commands = append(commands, "else")
-				commands = append(commands, "  go version")
+				commands = append(commands, "  echo 'Installing Go...'")
+				commands = append(commands, "  export DEBIAN_FRONTEND=noninteractive")
+				commands = append(commands, "  apt-get update -qq")
+				commands = append(commands, "  apt-get install -y -qq wget curl jq tar >/dev/null 2>&1")
+				if goVersion != "" && !strings.Contains(goVersion, ".") {
+					// If only major.minor provided (like "1.23"), we need to find latest patch
+					commands = append(commands, fmt.Sprintf("  GO_WANTED=%s", goVersion))
+					commands = append(commands, "  GO_VERSION=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[].version' | grep \"go${GO_WANTED}\" | head -1 | sed 's/go//')")
+					commands = append(commands, "  if [ -z \"$GO_VERSION\" ]; then GO_VERSION=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/go//'); fi")
+				} else if goVersion != "" {
+					// Full version provided
+					commands = append(commands, fmt.Sprintf("  GO_VERSION=%s", goVersion))
+				} else {
+					// Auto-detect latest stable
+					commands = append(commands, "  GO_VERSION=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[0].version' | sed 's/go//')")
+				}
+				commands = append(commands, "  echo \"Installing Go version: $GO_VERSION\"")
+				commands = append(commands, "  wget -q \"https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz\" -O /tmp/go.tar.gz || { echo 'Failed to download Go'; exit 1; }")
+				commands = append(commands, "  rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz")
+				commands = append(commands, "  rm /tmp/go.tar.gz")
+				commands = append(commands, "  export PATH=$PATH:/usr/local/go/bin")
+				commands = append(commands, "  echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc")
 				commands = append(commands, "fi")
+				commands = append(commands, "export PATH=$PATH:/usr/local/go/bin")
+				commands = append(commands, "go version")
 			} else if strings.Contains(step.Uses, "actions/setup-node") {
-				commands = append(commands, "echo 'Checking Node.js installation...'")
+				nodeVersion := "20" // default LTS
+				if v, ok := step.With["node-version"]; ok {
+					nodeVersion = r.cleanExpressions(v)
+					if nodeVersion == "" {
+						nodeVersion = "20"
+					}
+				}
+				commands = append(commands, "echo 'Setting up Node.js...'")
 				commands = append(commands, "if ! command -v node >/dev/null 2>&1; then")
-				commands = append(commands, "  echo 'Node.js not found, please use a Node-based image'")
-				commands = append(commands, "else")
-				commands = append(commands, "  node --version")
+				commands = append(commands, "  echo 'Installing Node.js...'")
+				commands = append(commands, "  export DEBIAN_FRONTEND=noninteractive")
+				commands = append(commands, "  apt-get update -qq")
+				commands = append(commands, "  apt-get install -y -qq curl >/dev/null 2>&1")
+				commands = append(commands, fmt.Sprintf("  curl -fsSL https://deb.nodesource.com/setup_%s.x | bash -", nodeVersion))
+				commands = append(commands, "  apt-get install -y -qq nodejs >/dev/null 2>&1")
 				commands = append(commands, "fi")
+				commands = append(commands, "node --version")
+				commands = append(commands, "npm --version")
 			} else if strings.Contains(step.Uses, "actions/setup-python") {
-				commands = append(commands, "echo 'Checking Python installation...'")
+				commands = append(commands, "echo 'Setting up Python...'")
 				commands = append(commands, "if ! command -v python3 >/dev/null 2>&1; then")
-				commands = append(commands, "  echo 'Python not found, please use a Python-based image'")
-				commands = append(commands, "else")
-				commands = append(commands, "  python3 --version")
+				commands = append(commands, "  echo 'Installing Python...'")
+				commands = append(commands, "  export DEBIAN_FRONTEND=noninteractive")
+				commands = append(commands, "  apt-get update -qq")
+				commands = append(commands, "  apt-get install -y -qq python3 python3-pip python3-venv >/dev/null 2>&1")
 				commands = append(commands, "fi")
+				commands = append(commands, "python3 --version")
+				commands = append(commands, "pip3 --version || true")
+			} else if strings.Contains(step.Uses, "actions/upload-artifact") || strings.Contains(step.Uses, "actions/download-artifact") {
+				commands = append(commands, fmt.Sprintf("echo 'Artifact actions not supported locally: %s'", step.Uses))
 			} else {
-				commands = append(commands, fmt.Sprintf("echo 'Skipping action: %s (not supported in Docker runner)'", step.Name))
+				commands = append(commands, fmt.Sprintf("echo 'Skipping action: %s (not supported in Docker runner)'", step.Uses))
 			}
 			commands = append(commands, fmt.Sprintf("echo '%s'", strings.Repeat("=", 60)))
 			continue
@@ -472,16 +536,9 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 			commands = append(commands, fmt.Sprintf("export %s='%s'", k, v))
 		}
 
-		// Process the command to handle sudo calls
-		runCommand := step.Run
-
-		// If running as root and command contains sudo, we can strip it or use our wrapper
-		if strings.Contains(imageName, "ubuntu") || strings.Contains(imageName, "debian") || strings.Contains(imageName, "catthehacker") {
-			// The sudo wrapper will handle it, just execute the command as-is
-			commands = append(commands, runCommand)
-		} else {
-			commands = append(commands, runCommand)
-		}
+		// Process the command - handle GitHub Actions expressions
+		runCommand := r.processGitHubExpressions(step.Run, job)
+		commands = append(commands, runCommand)
 
 		// Handle continue-on-error
 		if step.ContinueOnErr {
@@ -509,6 +566,10 @@ func (r *DockerRunner) buildEnvironment(job *types.Job) []string {
 		"GIT_CI=true",
 		"DOCKER_RUNNER=true",
 		fmt.Sprintf("JOB_NAME=%s", job.Name),
+		// GitHub Actions compatible environment variables
+		"GITHUB_ACTIONS=false",
+		"RUNNER_OS=Linux",
+		"RUNNER_ARCH=X64",
 	}
 
 	// Add job environment variables
@@ -529,6 +590,122 @@ func (r *DockerRunner) buildEnvironment(job *types.Job) []string {
 	}
 
 	return env
+}
+
+// cleanExpressions removes or replaces ${{ }} expressions with defaults
+func (r *DockerRunner) cleanExpressions(value string) string {
+	// Remove ${{ }} wrapper and extract the content
+	value = strings.TrimSpace(value)
+
+	// If it's a GitHub expression like ${{ env.GO_VERSION }}, try to extract meaningful default
+	if strings.HasPrefix(value, "${{") && strings.HasSuffix(value, "}}") {
+		inner := strings.TrimPrefix(value, "${{")
+		inner = strings.TrimSuffix(inner, "}}")
+		inner = strings.TrimSpace(inner)
+
+		// Handle common patterns
+		if strings.HasPrefix(inner, "env.") {
+			// Can't resolve env vars at parse time, return empty
+			return ""
+		}
+		if strings.HasPrefix(inner, "matrix.") {
+			// Can't resolve matrix at parse time, return empty
+			return ""
+		}
+		if strings.HasPrefix(inner, "secrets.") {
+			return ""
+		}
+
+		return inner
+	}
+
+	return value
+}
+
+// processGitHubExpressions processes ${{ }} expressions in run commands
+func (r *DockerRunner) processGitHubExpressions(command string, job *types.Job) string {
+	result := command
+
+	// Helper to find and replace expressions with various spacing
+	replaceExpr := func(s, pattern, replacement string) string {
+		// Handle patterns like ${{ matrix.os }}, ${{matrix.os}}, ${{ matrix.os}}
+		variations := []string{
+			"${{ " + pattern + " }}",
+			"${{" + pattern + "}}",
+			"${{ " + pattern + "}}",
+			"${{" + pattern + " }}",
+		}
+		for _, v := range variations {
+			s = strings.ReplaceAll(s, v, replacement)
+		}
+		return s
+	}
+
+	// Replace matrix expressions with environment variable fallbacks
+	result = replaceExpr(result, "matrix.os", "${MATRIX_OS:-linux}")
+	result = replaceExpr(result, "matrix.arch", "${MATRIX_ARCH:-amd64}")
+
+	// Replace runner expressions
+	result = replaceExpr(result, "runner.os", "Linux")
+	result = replaceExpr(result, "runner.arch", "X64")
+
+	// Replace github expressions
+	result = replaceExpr(result, "github.workspace", "/workspace")
+	result = replaceExpr(result, "github.repository", "${GITHUB_REPOSITORY:-local/repo}")
+	result = replaceExpr(result, "github.ref", "${GITHUB_REF:-refs/heads/main}")
+	result = replaceExpr(result, "github.sha", "${GITHUB_SHA:-local}")
+
+	// Replace ${{ env.* }} with shell variable syntax
+	// Find all ${{ env.VAR }} patterns and replace with $VAR
+	for {
+		// Try to find env. pattern with various spacing
+		start := -1
+		for _, prefix := range []string{"${{ env.", "${{env."} {
+			if idx := strings.Index(result, prefix); idx != -1 {
+				start = idx
+				break
+			}
+		}
+		if start == -1 {
+			break
+		}
+
+		end := strings.Index(result[start:], "}}")
+		if end == -1 {
+			break
+		}
+		end += start + 2
+
+		expr := result[start:end]
+		// Extract variable name
+		varName := expr
+		varName = strings.TrimPrefix(varName, "${{ env.")
+		varName = strings.TrimPrefix(varName, "${{env.")
+		varName = strings.TrimSuffix(varName, " }}")
+		varName = strings.TrimSuffix(varName, "}}")
+		varName = strings.TrimSpace(varName)
+
+		result = result[:start] + "${" + varName + "}" + result[end:]
+	}
+
+	// Handle any remaining ${{ }} expressions - warn and replace with empty or default
+	for {
+		start := strings.Index(result, "${{")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start:], "}}")
+		if end == -1 {
+			break
+		}
+		end += start + 2
+
+		expr := result[start:end]
+		r.formatter.PrintWarning(fmt.Sprintf("Unsupported expression: %s (removing)", expr))
+		result = result[:start] + result[end:]
+	}
+
+	return result
 }
 
 func (r *DockerRunner) streamLogs(ctx context.Context, containerID string) error {

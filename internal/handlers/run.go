@@ -57,7 +57,6 @@ func selectJobsToRun(c *cli.Context, pipeline *types.Pipeline) map[string]*types
 	// Filter by specific job name
 	if jobName := c.String("job"); jobName != "" {
 		if job, exists := jobs[jobName]; exists {
-			fmt.Println(job)
 			return map[string]*types.Job{jobName: job}
 		}
 		// Try pattern matching
@@ -283,15 +282,11 @@ func createRunner(c *cli.Context, cfg *config.RunnerConfig) (types.Runner, error
 
 	// Check for Podman runner
 	if c.Bool("podman") {
-		// If Podman runner is implemented
-		// runner, err := runners.NewPodmanRunner(cfg)
-		// if err != nil {
-		//     return nil, fmt.Errorf("failed to create Podman runner: %w", err)
-		// }
-		// return runner, nil
-
-		// For now, fallback to Docker with podman command
-		return nil, fmt.Errorf("podman runner not yet implemented")
+		runner, err := runners.NewPodmanRunner(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Podman runner: %w", err)
+		}
+		return runner, nil
 	}
 
 	// Default to Bash runner
