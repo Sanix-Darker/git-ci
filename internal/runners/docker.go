@@ -211,42 +211,60 @@ func (r *DockerRunner) getImageName(job *types.Job) string {
 		return job.Image
 	}
 
-	// Map runs-on to Docker images - use buildpack-deps images which have more tools
+	// Map runs-on to Docker images
+	// Primary: catthehacker/ubuntu images - closest to GitHub Actions runners (used by 'act' tool)
+	// Fallback: buildpack-deps images for broader compatibility
 	runsOn := strings.ToLower(job.RunsOn)
 
-	// Updated mappings to use buildpack-deps images which include build tools
+	// GitHub Actions compatible images (catthehacker/ubuntu:act-*)
+	// These images contain most tools that GitHub Actions runners have
 	imageMap := map[string]string{
-		"ubuntu-24.04":  "buildpack-deps:24.04",
-		"ubuntu-22.04":  "buildpack-deps:jammy",  // jammy = 22.04
-		"ubuntu-20.04":  "buildpack-deps:focal",   // focal = 20.04
-		"ubuntu-latest": "buildpack-deps:latest",
+		// GitHub Actions compatible (catthehacker images - used by 'act')
+		"ubuntu-24.04":  "catthehacker/ubuntu:act-24.04",
+		"ubuntu-22.04":  "catthehacker/ubuntu:act-22.04",
+		"ubuntu-20.04":  "catthehacker/ubuntu:act-20.04",
+		"ubuntu-latest": "catthehacker/ubuntu:act-22.04",
+
+		// Fallback to buildpack-deps for Debian
 		"debian-12":     "buildpack-deps:bookworm",
 		"debian-11":     "buildpack-deps:bullseye",
+		"debian-latest": "buildpack-deps:bookworm",
+
+		// Alpine
 		"alpine-3.19":   "alpine:3.19",
 		"alpine-3.18":   "alpine:3.18",
-		"node-23":       "node:23",
-		"node-22":       "node:22",
-		"node-20":       "node:20",
-		"node-18":       "node:18",
-		"python-3.14":   "python:3.14",
-		"python-3.13":   "python:3.13",
-		"python-3.12":   "python:3.12",
-		"python-3.11":   "python:3.11",
-		"golang-1.23":   "golang:1.23",
-		"golang-1.22":   "golang:1.22",
-		"golang-1.20":   "golang:1.20",
+		"alpine-latest": "alpine:latest",
+
+		// Node.js
+		"node-23": "node:23",
+		"node-22": "node:22",
+		"node-20": "node:20",
+		"node-18": "node:18",
+
+		// Python
+		"python-3.14": "python:3.14",
+		"python-3.13": "python:3.13",
+		"python-3.12": "python:3.12",
+		"python-3.11": "python:3.11",
+
+		// Go
+		"golang-1.23": "golang:1.23",
+		"golang-1.22": "golang:1.22",
+		"golang-1.21": "golang:1.21",
+		"golang-1.20": "golang:1.20",
 	}
 
 	if image, ok := imageMap[runsOn]; ok {
 		return image
 	}
 
-	// Pattern matching for partial matches - use buildpack-deps for ubuntu
+	// Pattern matching for partial matches
 	switch {
 	case strings.Contains(runsOn, "ubuntu"):
-		return "buildpack-deps:jammy"  // Ubuntu 22.04 with build tools
+		// Default to GitHub Actions compatible Ubuntu image
+		return "catthehacker/ubuntu:act-22.04"
 	case strings.Contains(runsOn, "debian"):
-		return "buildpack-deps:bullseye"
+		return "buildpack-deps:bookworm"
 	case strings.Contains(runsOn, "alpine"):
 		return "alpine:latest"
 	case strings.Contains(runsOn, "node"):
@@ -256,7 +274,8 @@ func (r *DockerRunner) getImageName(job *types.Job) string {
 	case strings.Contains(runsOn, "golang") || strings.Contains(runsOn, "go"):
 		return "golang:latest"
 	default:
-		return "buildpack-deps:jammy"  // Default to Ubuntu 22.04 with tools
+		// Default to GitHub Actions compatible Ubuntu 22.04
+		return "catthehacker/ubuntu:act-22.04"
 	}
 }
 
@@ -369,12 +388,12 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 
 	// Detect if we're using Ubuntu/Debian and install basic tools
 	imageName := r.getImageName(job)
-	if strings.Contains(imageName, "ubuntu") || strings.Contains(imageName, "debian") {
+	if strings.Contains(imageName, "ubuntu") || strings.Contains(imageName, "debian") || strings.Contains(imageName, "catthehacker") {
 		commands = append(commands, "")
 		commands = append(commands, "# Install basic tools if needed")
 		commands = append(commands, "if ! command -v sudo >/dev/null 2>&1; then")
-		commands = append(commands, "  apt-get update -qq >/dev/null 2>&1")
-		commands = append(commands, "  apt-get install -y -qq sudo >/dev/null 2>&1")
+		commands = append(commands, "  apt-get update -qq >/dev/null 2>&1 || true")
+		commands = append(commands, "  apt-get install -y -qq sudo >/dev/null 2>&1 || true")
 		commands = append(commands, "fi")
 
 		// Create a sudo wrapper that just executes commands directly when running as root
@@ -385,9 +404,9 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 		commands = append(commands, "  echo 'exec \"$@\"' >> /usr/local/bin/sudo-wrapper")
 		commands = append(commands, "  chmod +x /usr/local/bin/sudo-wrapper")
 		commands = append(commands, "  if [ -f /usr/bin/sudo ]; then")
-		commands = append(commands, "    mv /usr/bin/sudo /usr/bin/sudo.real")
+		commands = append(commands, "    mv /usr/bin/sudo /usr/bin/sudo.real 2>/dev/null || true")
 		commands = append(commands, "  fi")
-		commands = append(commands, "  ln -sf /usr/local/bin/sudo-wrapper /usr/bin/sudo")
+		commands = append(commands, "  ln -sf /usr/local/bin/sudo-wrapper /usr/bin/sudo 2>/dev/null || true")
 		commands = append(commands, "fi")
 	}
 
@@ -413,6 +432,20 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 				commands = append(commands, "  echo 'Go not found, please use a Go-based image'")
 				commands = append(commands, "else")
 				commands = append(commands, "  go version")
+				commands = append(commands, "fi")
+			} else if strings.Contains(step.Uses, "actions/setup-node") {
+				commands = append(commands, "echo 'Checking Node.js installation...'")
+				commands = append(commands, "if ! command -v node >/dev/null 2>&1; then")
+				commands = append(commands, "  echo 'Node.js not found, please use a Node-based image'")
+				commands = append(commands, "else")
+				commands = append(commands, "  node --version")
+				commands = append(commands, "fi")
+			} else if strings.Contains(step.Uses, "actions/setup-python") {
+				commands = append(commands, "echo 'Checking Python installation...'")
+				commands = append(commands, "if ! command -v python3 >/dev/null 2>&1; then")
+				commands = append(commands, "  echo 'Python not found, please use a Python-based image'")
+				commands = append(commands, "else")
+				commands = append(commands, "  python3 --version")
 				commands = append(commands, "fi")
 			} else {
 				commands = append(commands, fmt.Sprintf("echo 'Skipping action: %s (not supported in Docker runner)'", step.Name))
@@ -443,7 +476,7 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 		runCommand := step.Run
 
 		// If running as root and command contains sudo, we can strip it or use our wrapper
-		if strings.Contains(imageName, "ubuntu") || strings.Contains(imageName, "debian") {
+		if strings.Contains(imageName, "ubuntu") || strings.Contains(imageName, "debian") || strings.Contains(imageName, "catthehacker") {
 			// The sudo wrapper will handle it, just execute the command as-is
 			commands = append(commands, runCommand)
 		} else {

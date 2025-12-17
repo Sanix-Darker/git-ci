@@ -14,8 +14,8 @@ type RunnerConfig struct {
 	WorkDir     string            // Working directory for execution
 	Environment map[string]string // Additional environment variables
 	Timeout     int               // Timeout in minutes (0 = no timeout)
-	//Volumes     []string          // Docker volumes to mount
-	//Network     string            // Docker network mode
+	Volumes     []string          // Docker volumes to mount
+	Network     string            // Docker network mode
 }
 
 // DefaultConfig returns a RunnerConfig with sensible defaults
@@ -30,8 +30,8 @@ func DefaultConfig() *RunnerConfig {
 		WorkDir:     workDir,
 		Environment: make(map[string]string),
 		Timeout:     30, // 30 minutes default timeout
-		//Volumes:     []string{},
-		//Network:     "",
+		Volumes:     []string{},
+		Network:     "",
 	}
 }
 

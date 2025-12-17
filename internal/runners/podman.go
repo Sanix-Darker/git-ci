@@ -1,14 +1,12 @@
 package runners
 
 import (
-	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -19,13 +17,13 @@ import (
 
 // PodmanRunner executes jobs using Podman CLI (lightweight, no SDK dependencies)
 type PodmanRunner struct {
-	config       *config.RunnerConfig
-	containers   []string
-	pods         []string
-	formatter    *OutputFormatter
-	mu           sync.Mutex
-	binaryPath   string // Path to podman binary
-	isDocker     bool   // If true, use docker command instead
+	config     *config.RunnerConfig
+	containers []string
+	pods       []string
+	formatter  *OutputFormatter
+	mu         sync.Mutex
+	binaryPath string // Path to podman binary
+	isDocker   bool   // If true, use docker command instead
 }
 
 // NewPodmanRunner creates a new Podman runner using CLI commands
@@ -139,7 +137,8 @@ func (r *PodmanRunner) RunJob(job *types.Job, workdir string) error {
 	var podName string
 	if len(job.Services) > 0 && !r.isDocker {
 		r.formatter.PrintSection("Setting up services")
-		podName, err := r.createPod(ctx, job)
+		var err error
+		podName, err = r.createPod(ctx, job)
 		if err != nil {
 			return fmt.Errorf("failed to create pod: %w", err)
 		}
@@ -298,7 +297,7 @@ func (r *PodmanRunner) runContainer(ctx context.Context, job *types.Job, imageNa
 		args[len(args)-1] = fmt.Sprintf("%s:/tmp/script.sh:ro,z", scriptFile)
 	}
 
-	// Additional volumes
+	// Additional volumes from config
 	for _, vol := range r.config.Volumes {
 		if !r.isDocker && !strings.Contains(vol, ":z") && !strings.Contains(vol, ":Z") {
 			// Add z flag for SELinux if not present
@@ -565,11 +564,15 @@ func (r *PodmanRunner) Cleanup() error {
 
 	// Remove containers
 	for _, containerID := range r.containers {
+		shortID := containerID
+		if len(containerID) > 12 {
+			shortID = containerID[:12]
+		}
 		cmd := exec.CommandContext(ctx, r.binaryPath, "rm", "-f", containerID)
 		if err := cmd.Run(); err != nil {
-			errors = append(errors, fmt.Sprintf("Failed to remove container %s", containerID[:12]))
+			errors = append(errors, fmt.Sprintf("Failed to remove container %s", shortID))
 		} else {
-			r.formatter.PrintInfo(fmt.Sprintf("Removed container %s", containerID[:12]))
+			r.formatter.PrintInfo(fmt.Sprintf("Removed container %s", shortID))
 		}
 	}
 
@@ -631,13 +634,16 @@ func (r *PodmanRunner) getImageName(job *types.Job) string {
 		return job.Image
 	}
 
-	// Map common runs-on values
+	// Map common runs-on values to GitHub Actions compatible images
 	runsOn := strings.ToLower(job.RunsOn)
 
+	// Use catthehacker/ubuntu images - these are closest to GitHub Actions runners
+	// These images are used by the popular 'act' tool
 	imageMap := map[string]string{
-		"ubuntu-latest": "ubuntu:latest",
-		"ubuntu-22.04":  "ubuntu:22.04",
-		"ubuntu-20.04":  "ubuntu:20.04",
+		"ubuntu-24.04":  "catthehacker/ubuntu:act-24.04",
+		"ubuntu-22.04":  "catthehacker/ubuntu:act-22.04",
+		"ubuntu-20.04":  "catthehacker/ubuntu:act-20.04",
+		"ubuntu-latest": "catthehacker/ubuntu:act-22.04",
 		"debian-latest": "debian:latest",
 		"alpine-latest": "alpine:latest",
 	}
@@ -646,8 +652,17 @@ func (r *PodmanRunner) getImageName(job *types.Job) string {
 		return image
 	}
 
-	// Default
-	return "ubuntu:22.04"
+	// Pattern matching for partial matches
+	switch {
+	case strings.Contains(runsOn, "ubuntu"):
+		return "catthehacker/ubuntu:act-22.04"
+	case strings.Contains(runsOn, "debian"):
+		return "debian:latest"
+	case strings.Contains(runsOn, "alpine"):
+		return "alpine:latest"
+	default:
+		return "catthehacker/ubuntu:act-22.04"
+	}
 }
 
 // RunStep implements Runner interface

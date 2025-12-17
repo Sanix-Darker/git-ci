@@ -128,16 +128,15 @@ func buildRunnerConfig(c *cli.Context) *config.RunnerConfig {
 	// Parse environment variables
 	cfg.Environment = parseEnvironmentVars(c)
 
-	// FIXME: commenting out those for now
-	//// Parse volumes
-	//if volumes := c.StringSlice("volume"); len(volumes) > 0 {
-	//	cfg.Volumes = volumes
-	//}
+	// Parse volumes
+	if volumes := c.StringSlice("volume"); len(volumes) > 0 {
+		cfg.Volumes = volumes
+	}
 
-	//// Set network
-	//if network := c.String("network"); network != "" {
-	//	cfg.Network = network
-	//}
+	// Set network
+	if network := c.String("network"); network != "" {
+		cfg.Network = network
+	}
 
 	return cfg
 }
