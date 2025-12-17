@@ -7,7 +7,6 @@ Run CI/CD pipelines locally with native Go support.
 ## FEATURES
 
 - Local execution of CI/CD workflows
-- Native Go implementation - no shell/exec commands
 - Multiple runner support (Bash, Docker, Podman)
 - Parser support for GitHub Actions, GitLab CI, Azure DevOps (planned)
 - Parallel job execution
