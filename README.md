@@ -4,10 +4,11 @@
 
 Run CI/CD pipelines locally with native Go support.
 
+**⚠️NOTE:** This project is still under development, no stable release so far.
+
 ## FEATURES
 
 - Local execution of CI/CD workflows
-- Native Go implementation — no shell/exec commands
 - Multiple runner support (Bash, Docker, Podman)
 - Parser support for GitHub Actions and GitLab CI
 - Matrix strategy expansion (Cartesian product with include/exclude)
@@ -36,6 +37,9 @@ Run CI/CD pipelines locally with native Go support.
 - [x] Bash (native shell execution)
 - [x] Docker (containerized execution)
 - [x] Podman (rootless containers)
+- [ ] Kubernetes (cloud-native execution)
+- [ ] AWS Lambda (serverless)
+- [ ] Firecracker (microVMs)
 
 ## REQUIREMENTS
 
