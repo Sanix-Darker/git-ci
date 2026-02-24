@@ -1,0 +1,15 @@
+name: Defaults Workflow
+on: push
+defaults:
+  run:
+    shell: bash
+    working-directory: src
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: With defaults
+        run: echo "using defaults"
+      - name: Override shell
+        run: echo "using sh"
+        shell: sh

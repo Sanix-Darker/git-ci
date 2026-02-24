@@ -346,13 +346,14 @@ func (f *OutputFormatter) WrapText(text string, width int) []string {
 
 // TruncateText truncates text to fit within the specified width
 func (f *OutputFormatter) TruncateText(text string, width int) string {
-	if len(text) <= width {
+	runes := []rune(text)
+	if len(runes) <= width {
 		return text
 	}
 	if width <= 3 {
-		return text[:width]
+		return string(runes[:width])
 	}
-	return text[:width-3] + "..."
+	return string(runes[:width-3]) + "..."
 }
 
 // Progress shows a progress indicator for long-running operations

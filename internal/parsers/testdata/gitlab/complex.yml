@@ -1,0 +1,47 @@
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+
+variables:
+  GO_VERSION: "1.22"
+
+default:
+  image: golang:${GO_VERSION}
+  before_script:
+    - go mod download
+
+lint:
+  stage: lint
+  script:
+    - golangci-lint run
+
+test:
+  stage: test
+  script:
+    - go test -race ./...
+  artifacts:
+    reports:
+      junit: report.xml
+    paths:
+      - coverage.out
+
+build:
+  stage: build
+  script:
+    - go build -o app .
+  artifacts:
+    paths:
+      - app
+  needs:
+    - test
+
+deploy:
+  stage: deploy
+  script:
+    - echo "deploying"
+  needs:
+    - build
+  when: manual
+  allow_failure: false

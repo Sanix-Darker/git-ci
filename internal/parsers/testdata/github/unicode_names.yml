@@ -1,0 +1,9 @@
+name: Unicode Workflow 日本語テスト
+on: push
+jobs:
+  test-unicode:
+    name: "Tëst with spëcial chàràctërs"
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Step with émoji 🚀 and üñícödé"
+        run: echo "こんにちは世界 - this is a very long command that should be truncated properly without breaking unicode characters"

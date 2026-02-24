@@ -28,14 +28,14 @@ Run CI/CD pipelines locally with native Go support.
 
 - [x] Bash (native shell execution)
 - [x] Docker (containerized execution)
-- [ ] Podman (rootless containers)
+- [x] Podman (rootless containers)
 - [ ] Kubernetes (cloud-native execution)
 - [ ] AWS Lambda (serverless)
 - [ ] Firecracker (microVMs)
 
 ## REQUIREMENTS
 
-- Go 1.23+ (for building from source)
+- Go 1.24+ (for building from source)
 - Docker/Podman (optional, for containerized execution)
 - Kubernetes cluster (optional, for k8s runner)
 
@@ -48,7 +48,7 @@ go install github.com/sanix-darker/git-ci@latest
 # download binary
 curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-$(uname -s)-$(uname -m) -o gci
 chmod +x gci
-sudo mv git ci /usr/local/bin/
+sudo mv gci /usr/local/bin/
 
 # create git alias
 git config --global alias.ci '!gci'
@@ -67,8 +67,8 @@ git ci run
 git ci run --job test
 
 # run with different runners
-git ci run --runner docker
-git ci run --runner podman
+git ci run --docker
+git ci run --podman
 
 # validate pipeline
 git ci validate
@@ -167,7 +167,8 @@ artifacts:
 --file, -f VALUE     Pipeline file
 --job, -j VALUE      Specific job
 --stage, -s VALUE    Specific stage
---runner VALUE       Runner type (bash|docker|podman|kubernetes)
+--docker             Use Docker runner
+--podman             Use Podman runner
 --parallel, -p       Parallel execution
 --max-parallel N     Max parallel jobs
 --timeout, -t MIN    Job timeout
@@ -188,7 +189,7 @@ git ci run -f .github/workflows/ci.yml
 git ci run --job "test (ubuntu-latest, 1.20)"
 
 # run with docker
-git ci run --runner docker --pull
+git ci run --docker --pull
 ```
 
 ### GITLAB CI

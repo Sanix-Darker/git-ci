@@ -1,0 +1,9 @@
+stages:
+  - test
+
+test_job:
+  stage: test
+  image: golang:1.22
+  script:
+    - echo "Hello World"
+    - go test ./...

@@ -1,0 +1,26 @@
+name: Dependency Chain
+on: push
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Lint
+        run: echo "linting"
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Test
+        run: echo "testing"
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - name: Build
+        run: echo "building"
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        run: echo "deploying"

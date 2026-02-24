@@ -342,6 +342,7 @@ func (p *GitlabParser) parseJob(jobData map[string]interface{}) *GitlabJob {
 	} else {
 		// Job without script is not valid (unless it's a trigger or pages job)
 		if jobData["trigger"] == nil && jobData["pages"] == nil {
+			fmt.Fprintf(os.Stderr, "Warning: job has no 'script' field and is not a trigger/pages job, skipping\n")
 			return nil
 		}
 	}
@@ -1253,8 +1254,8 @@ func (p *GitlabParser) generateStepName(cmd string, index int) string {
 	}
 
 	// Truncate if too long
-	if len(cmd) > 50 {
-		cmd = cmd[:47] + "..."
+	if len([]rune(cmd)) > 50 {
+		cmd = string([]rune(cmd)[:47]) + "..."
 	}
 
 	if cmd == "" {
@@ -1427,36 +1428,11 @@ func (p *GitlabParser) Validate(pipeline *types.Pipeline) error {
 			}
 		}
 
-		// Check for circular dependencies
-		if err := p.checkCircularDependencies(jobName, job, pipeline.Jobs, []string{}); err != nil {
-			errors = append(errors, err.Error())
-		}
+		// Note: circular dependency checking is handled by handlers/validate.go
 	}
 
 	if len(errors) > 0 {
 		return fmt.Errorf("validation errors:\n  - %s", strings.Join(errors, "\n  - "))
-	}
-
-	return nil
-}
-
-func (p *GitlabParser) checkCircularDependencies(jobName string, job *types.Job, allJobs map[string]*types.Job, visited []string) error {
-	// Check if we've already visited this job (circular dependency)
-	for _, v := range visited {
-		if v == jobName {
-			return fmt.Errorf("circular dependency detected: %s", strings.Join(append(visited, jobName), " -> "))
-		}
-	}
-
-	visited = append(visited, jobName)
-
-	// Check dependencies recursively
-	for _, need := range job.Needs {
-		if dependentJob, exists := allJobs[need]; exists {
-			if err := p.checkCircularDependencies(need, dependentJob, allJobs, visited); err != nil {
-				return err
-			}
-		}
 	}
 
 	return nil

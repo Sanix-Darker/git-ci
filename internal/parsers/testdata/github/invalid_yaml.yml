@@ -1,0 +1,9 @@
+name: Invalid
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bad indentation
+      run: echo "broken"
+        extra: invalid

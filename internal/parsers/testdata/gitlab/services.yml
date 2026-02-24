@@ -1,0 +1,15 @@
+stages:
+  - test
+
+integration:
+  stage: test
+  image: golang:1.22
+  services:
+    - name: postgres:15
+      alias: db
+    - name: redis:7
+  variables:
+    POSTGRES_DB: testdb
+    POSTGRES_PASSWORD: testpass
+  script:
+    - echo "Running integration tests"

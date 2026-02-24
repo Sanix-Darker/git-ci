@@ -45,12 +45,11 @@ func main() {
 
 func globalFlags() []cli.Flag {
 	return []cli.Flag{
-		//&cli.BoolFlag{
-		//	Name:    "verbose",
-		//	Aliases: []string{"v"},
-		//	Usage:   "Enable verbose output",
-		//	EnvVars: []string{"GIT_CI_VERBOSE"},
-		//},
+		&cli.BoolFlag{
+			Name:    "verbose",
+			Usage:   "Enable verbose output",
+			EnvVars: []string{"GIT_CI_VERBOSE"},
+		},
 		&cli.BoolFlag{
 			Name:    "debug",
 			Usage:   "Enable debug mode (even more verbose)",
@@ -206,6 +205,16 @@ func commands() []*cli.Command {
 					Usage:   "Docker network mode",
 					EnvVars: []string{"GIT_CI_NETWORK"},
 					Value:   "bridge",
+				},
+				&cli.StringFlag{
+					Name:    "memory",
+					Usage:   "Container memory limit (e.g., 2g, 512m)",
+					EnvVars: []string{"GIT_CI_MEMORY"},
+				},
+				&cli.StringFlag{
+					Name:    "cpus",
+					Usage:   "Container CPU limit (e.g., 2, 0.5)",
+					EnvVars: []string{"GIT_CI_CPUS"},
 				},
 			},
 		},
