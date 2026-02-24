@@ -261,7 +261,7 @@ release: clean build-all
 	# @cd $(DIST_DIR) && zip -q releases/$(BINARY_NAME)-$(VERSION)-windows-386.zip $(BINARY_NAME)-windows-386.exe
 
 	# Generate checksums
-	@cd $(DIST_DIR)/releases && sha256sum *.tar.gz *.zip > checksums.txt
+	@cd $(DIST_DIR)/releases && sha256sum *.tar.gz > checksums.txt
 
 	@echo "Release artifacts created in $(DIST_DIR)/releases/"
 	@ls -lah $(DIST_DIR)/releases/
