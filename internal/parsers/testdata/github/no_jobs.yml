@@ -1,0 +1,3 @@
+name: Empty Workflow
+on: push
+jobs: {}

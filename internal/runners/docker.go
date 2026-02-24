@@ -13,6 +13,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/mount"
+	dnetwork "github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/sanix-darker/git-ci/internal/config"
@@ -20,11 +21,12 @@ import (
 )
 
 type DockerRunner struct {
-	client     *client.Client
-	config     *config.RunnerConfig
-	containers []string
-	formatter  *OutputFormatter
-	mu         sync.Mutex
+	client          *client.Client
+	config          *config.RunnerConfig
+	containers      []string
+	serviceNetworks []string
+	formatter       *OutputFormatter
+	mu              sync.Mutex
 }
 
 // NewDockerRunner creates a new Docker runner
@@ -73,6 +75,18 @@ func NewDockerRunner(cfg *config.RunnerConfig) (*DockerRunner, error) {
 
 func (r *DockerRunner) RunJob(job *types.Job, workdir string) error {
 	ctx := context.Background()
+
+	// Apply timeout from job or config
+	timeoutMin := r.config.Timeout
+	if job.TimeoutMin > 0 {
+		timeoutMin = job.TimeoutMin
+	}
+	if timeoutMin > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMin)*time.Minute)
+		defer cancel()
+	}
+
 	startTime := time.Now()
 
 	imageName := r.getImageName(job)
@@ -106,18 +120,32 @@ func (r *DockerRunner) RunJob(job *types.Job, workdir string) error {
 		progress.Complete(true)
 	}
 
-	// Print services if any
+	// Start service containers if any
+	var serviceNetworkID string
 	if len(job.Services) > 0 {
 		services := make(map[string]string)
 		for name, svc := range job.Services {
 			services[name] = svc.Image
 		}
 		r.formatter.PrintServices(services)
+
+		// Create a network for service communication
+		var err error
+		serviceNetworkID, err = r.createServiceNetwork(ctx, job.Name)
+		if err != nil {
+			return fmt.Errorf("failed to create service network: %w", err)
+		}
+
+		// Start service containers
+		if err := r.startServiceContainers(ctx, job, serviceNetworkID); err != nil {
+			r.cleanupServiceNetwork(ctx, serviceNetworkID)
+			return fmt.Errorf("failed to start service containers: %w", err)
+		}
 	}
 
 	// Create and run container
 	r.formatter.PrintInfo("Creating container")
-	containerID, err := r.createContainer(ctx, job, imageName, workdir)
+	containerID, err := r.createContainer(ctx, job, imageName, workdir, serviceNetworkID)
 	if err != nil {
 		return err
 	}
@@ -144,6 +172,12 @@ func (r *DockerRunner) RunJob(job *types.Job, workdir string) error {
 	select {
 	case err := <-errCh:
 		if err != nil {
+			if ctx.Err() == context.DeadlineExceeded {
+				_ = r.client.ContainerStop(context.Background(), containerID, container.StopOptions{})
+				summary.Success = false
+				summary.Errors = append(summary.Errors, "Job timed out")
+				return fmt.Errorf("job timed out after %d minutes", timeoutMin)
+			}
 			summary.Success = false
 			summary.Errors = append(summary.Errors, fmt.Sprintf("Container wait error: %v", err))
 			return fmt.Errorf("container wait error: %w", err)
@@ -152,10 +186,14 @@ func (r *DockerRunner) RunJob(job *types.Job, workdir string) error {
 		if status.StatusCode != 0 {
 			summary.Success = false
 			summary.Errors = append(summary.Errors, fmt.Sprintf("Container exited with status %d", status.StatusCode))
-			// Logs already streamed above, no need to repeat
 			return fmt.Errorf("container exited with status %d", status.StatusCode)
 		}
 		summary.CompletedSteps = len(job.Steps)
+	case <-ctx.Done():
+		_ = r.client.ContainerStop(context.Background(), containerID, container.StopOptions{})
+		summary.Success = false
+		summary.Errors = append(summary.Errors, "Job timed out")
+		return fmt.Errorf("job timed out after %d minutes", timeoutMin)
 	}
 
 	// Print job summary
@@ -307,7 +345,7 @@ func (r *DockerRunner) pullImage(ctx context.Context, imageName string) error {
 	return nil
 }
 
-func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imageName, workdir string) (string, error) {
+func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imageName, workdir, serviceNetworkID string) (string, error) {
 	// Build script from steps
 	script := r.buildJobScript(job)
 
@@ -341,6 +379,31 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 		Tty:        false,
 	}
 
+	// Determine resource limits: job container config > CLI flags > defaults
+	memoryLimit := int64(2 * 1024 * 1024 * 1024) // 2GB default
+	cpuShares := int64(1024)                      // default
+
+	if r.config.Memory != "" {
+		if parsed := parseMemoryString(r.config.Memory); parsed > 0 {
+			memoryLimit = parsed
+		}
+	}
+	if job.Container != nil && job.Container.Memory != "" {
+		if parsed := parseMemoryString(job.Container.Memory); parsed > 0 {
+			memoryLimit = parsed
+		}
+	}
+	if r.config.CPUs != "" {
+		if parsed := parseCPUString(r.config.CPUs); parsed > 0 {
+			cpuShares = parsed
+		}
+	}
+	if job.Container != nil && job.Container.CPUs != "" {
+		if parsed := parseCPUString(job.Container.CPUs); parsed > 0 {
+			cpuShares = parsed
+		}
+	}
+
 	// Prepare host config
 	hostConfig := &container.HostConfig{
 		Mounts: []mount.Mount{
@@ -352,9 +415,9 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 		},
 		AutoRemove: false,
 		Resources: container.Resources{
-			Memory:     2 * 1024 * 1024 * 1024, // 2GB
-			MemorySwap: 2 * 1024 * 1024 * 1024,
-			CPUShares:  1024,
+			Memory:     memoryLimit,
+			MemorySwap: memoryLimit,
+			CPUShares:  cpuShares,
 		},
 	}
 
@@ -377,11 +440,21 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 		strings.ReplaceAll(strings.ToLower(job.Name), " ", "-"),
 		time.Now().Unix())
 
+	// Attach to service network if one exists
+	var networkingConfig *dnetwork.NetworkingConfig
+	if serviceNetworkID != "" {
+		networkingConfig = &dnetwork.NetworkingConfig{
+			EndpointsConfig: map[string]*dnetwork.EndpointSettings{
+				serviceNetworkID: {},
+			},
+		}
+	}
+
 	resp, err := r.client.ContainerCreate(
 		ctx,
 		containerConfig,
 		hostConfig,
-		nil,
+		networkingConfig,
 		nil,
 		containerName,
 	)
@@ -794,8 +867,107 @@ func (r *DockerRunner) dryRunJob(job *types.Job) error {
 	return nil
 }
 
+// createServiceNetwork creates a Docker bridge network for service communication
+func (r *DockerRunner) createServiceNetwork(ctx context.Context, jobName string) (string, error) {
+	networkName := fmt.Sprintf("git-ci-svc-%s-%d",
+		strings.ReplaceAll(strings.ToLower(jobName), " ", "-"),
+		time.Now().Unix())
+
+	resp, err := r.client.NetworkCreate(ctx, networkName, dnetwork.CreateOptions{
+		Driver: "bridge",
+		Labels: map[string]string{"git-ci": "true"},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create service network: %w", err)
+	}
+
+	r.mu.Lock()
+	r.serviceNetworks = append(r.serviceNetworks, resp.ID)
+	r.mu.Unlock()
+
+	r.formatter.PrintDebug(fmt.Sprintf("Created service network: %s", networkName))
+	return resp.ID, nil
+}
+
+// startServiceContainers starts service containers on the given network
+func (r *DockerRunner) startServiceContainers(ctx context.Context, job *types.Job, networkID string) error {
+	for name, svc := range job.Services {
+		r.formatter.PrintInfo(fmt.Sprintf("Starting service: %s (%s)", name, svc.Image))
+
+		// Pull service image if needed
+		if r.config.PullImages || !r.imageExists(ctx, svc.Image) {
+			if err := r.pullImage(ctx, svc.Image); err != nil {
+				return fmt.Errorf("failed to pull service image %s: %w", svc.Image, err)
+			}
+		}
+
+		// Build environment
+		var env []string
+		for k, v := range svc.Env {
+			env = append(env, fmt.Sprintf("%s=%s", k, v))
+		}
+
+		// Build port bindings
+		containerConfig := &container.Config{
+			Image:  svc.Image,
+			Env:    env,
+			Labels: map[string]string{"git-ci": "true", "service": name},
+		}
+
+		hostConfig := &container.HostConfig{
+			AutoRemove: false,
+		}
+
+		// Add volumes
+		for _, vol := range svc.Volumes {
+			parts := strings.Split(vol, ":")
+			if len(parts) >= 2 {
+				hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{
+					Type:     mount.TypeBind,
+					Source:   parts[0],
+					Target:   parts[1],
+					ReadOnly: len(parts) > 2 && parts[2] == "ro",
+				})
+			}
+		}
+
+		networkingConfig := &dnetwork.NetworkingConfig{
+			EndpointsConfig: map[string]*dnetwork.EndpointSettings{
+				networkID: {
+					Aliases: []string{name}, // DNS alias = service name
+				},
+			},
+		}
+
+		containerName := fmt.Sprintf("git-ci-svc-%s-%d", name, time.Now().Unix())
+		resp, err := r.client.ContainerCreate(ctx, containerConfig, hostConfig, networkingConfig, nil, containerName)
+		if err != nil {
+			return fmt.Errorf("failed to create service container %s: %w", name, err)
+		}
+
+		if err := r.client.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+			return fmt.Errorf("failed to start service container %s: %w", name, err)
+		}
+
+		r.mu.Lock()
+		r.containers = append(r.containers, resp.ID)
+		r.mu.Unlock()
+
+		r.formatter.PrintDebug(fmt.Sprintf("Service %s started: %s", name, resp.ID[:12]))
+	}
+
+	return nil
+}
+
+// cleanupServiceNetwork removes a service network
+func (r *DockerRunner) cleanupServiceNetwork(ctx context.Context, networkID string) {
+	if err := r.client.NetworkRemove(ctx, networkID); err != nil {
+		r.formatter.PrintWarning(fmt.Sprintf("Failed to remove service network: %v", err))
+	}
+}
+
 func (r *DockerRunner) Cleanup() error {
-	if len(r.containers) == 0 {
+	if len(r.containers) == 0 && len(r.serviceNetworks) == 0 {
 		return nil
 	}
 
@@ -827,9 +999,24 @@ func (r *DockerRunner) Cleanup() error {
 		}
 	}
 
-	// Clear the container list
+	// Remove service networks
+	r.mu.Lock()
+	networksToRemove := make([]string, len(r.serviceNetworks))
+	copy(networksToRemove, r.serviceNetworks)
+	r.mu.Unlock()
+
+	for _, networkID := range networksToRemove {
+		if err := r.client.NetworkRemove(ctx, networkID); err != nil {
+			errors = append(errors, fmt.Sprintf("Failed to remove network: %v", err))
+		} else {
+			r.formatter.PrintInfo("Removed service network")
+		}
+	}
+
+	// Clear tracked resources
 	r.mu.Lock()
 	r.containers = []string{}
+	r.serviceNetworks = []string{}
 	r.mu.Unlock()
 
 	if len(errors) > 0 {
@@ -842,4 +1029,54 @@ func (r *DockerRunner) Cleanup() error {
 // GetRunnerType returns the type of this runner
 func (r *DockerRunner) GetRunnerType() types.RunnerType {
 	return types.RunnerTypeDocker
+}
+
+// parseMemoryString parses a memory string like "2g", "512m", "1024k" into bytes
+func parseMemoryString(s string) int64 {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return 0
+	}
+
+	multiplier := int64(1)
+	switch {
+	case strings.HasSuffix(s, "gb"):
+		s = strings.TrimSuffix(s, "gb")
+		multiplier = 1024 * 1024 * 1024
+	case strings.HasSuffix(s, "g"):
+		s = strings.TrimSuffix(s, "g")
+		multiplier = 1024 * 1024 * 1024
+	case strings.HasSuffix(s, "mb"):
+		s = strings.TrimSuffix(s, "mb")
+		multiplier = 1024 * 1024
+	case strings.HasSuffix(s, "m"):
+		s = strings.TrimSuffix(s, "m")
+		multiplier = 1024 * 1024
+	case strings.HasSuffix(s, "kb"):
+		s = strings.TrimSuffix(s, "kb")
+		multiplier = 1024
+	case strings.HasSuffix(s, "k"):
+		s = strings.TrimSuffix(s, "k")
+		multiplier = 1024
+	}
+
+	var value float64
+	if _, err := fmt.Sscanf(s, "%f", &value); err != nil {
+		return 0
+	}
+	return int64(value * float64(multiplier))
+}
+
+// parseCPUString parses a CPU string like "2", "0.5" into CPU shares (1024 per CPU)
+func parseCPUString(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+
+	var value float64
+	if _, err := fmt.Sscanf(s, "%f", &value); err != nil {
+		return 0
+	}
+	return int64(value * 1024)
 }

@@ -16,6 +16,8 @@ type RunnerConfig struct {
 	Timeout     int               // Timeout in minutes (0 = no timeout)
 	Volumes     []string          // Docker volumes to mount
 	Network     string            // Docker network mode
+	Memory      string            // Memory limit (e.g., "2g", "512m")
+	CPUs        string            // CPU limit (e.g., "2", "0.5")
 }
 
 // DefaultConfig returns a RunnerConfig with sensible defaults
@@ -24,7 +26,7 @@ func DefaultConfig() *RunnerConfig {
 
 	return &RunnerConfig{
 		DryRun:      false,
-		Verbose:     false, // maybe should be false... willl see
+		Verbose:     false,
 		PullImages:  true,
 		NoCache:     false,
 		WorkDir:     workDir,

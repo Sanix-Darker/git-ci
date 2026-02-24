@@ -60,6 +60,11 @@ func (r *BashRunner) RunJob(job *types.Job, workdir string) error {
 		r.formatter.PrintDryRun()
 	}
 
+	// Warn about services not being supported in bash runner
+	if len(job.Services) > 0 {
+		r.formatter.PrintWarning("Service containers are not supported in bash runner. Use --docker or --podman for service support.")
+	}
+
 	// Setup job environment
 	jobEnv := r.mergeEnvironments(job.Environment, r.config.Environment)
 	r.setupJobEnvironment(job, absWorkdir)
@@ -131,6 +136,10 @@ func (r *BashRunner) RunJob(job *types.Job, workdir string) error {
 		r.formatter.PrintJobComplete(job.Name, summary.Duration, summary.Success)
 	}
 
+	if !summary.Success {
+		return fmt.Errorf("job '%s' failed: %d step(s) errored", job.Name, summary.FailedSteps)
+	}
+
 	return nil
 }
 
@@ -171,8 +180,9 @@ func (r *BashRunner) RunStep(step *types.Step, env map[string]string, workdir st
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(step.TimeoutMin)*time.Minute)
 		defer cancel()
+		prevDir := cmd.Dir
 		cmd = exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
-		cmd.Dir = workdir
+		cmd.Dir = prevDir
 		cmd.Env = r.buildStepEnvironment(env, step.Env)
 	}
 

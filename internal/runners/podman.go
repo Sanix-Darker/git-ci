@@ -97,6 +97,18 @@ func getContainerVersion(binaryPath string) (string, error) {
 // RunJob executes a job using Podman/Docker CLI
 func (r *PodmanRunner) RunJob(job *types.Job, workdir string) error {
 	ctx := context.Background()
+
+	// Apply timeout from job or config
+	timeoutMin := r.config.Timeout
+	if job.TimeoutMin > 0 {
+		timeoutMin = job.TimeoutMin
+	}
+	if timeoutMin > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutMin)*time.Minute)
+		defer cancel()
+	}
+
 	startTime := time.Now()
 
 	imageName := r.getImageName(job)
@@ -181,6 +193,13 @@ func (r *PodmanRunner) RunJob(job *types.Job, workdir string) error {
 	}
 
 	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			// Kill the container on timeout
+			_ = exec.CommandContext(context.Background(), r.binaryPath, "stop", containerID).Run()
+			summary.Success = false
+			summary.Errors = append(summary.Errors, "Job timed out")
+			return fmt.Errorf("job timed out after %d minutes", timeoutMin)
+		}
 		summary.Success = false
 		summary.Errors = append(summary.Errors, fmt.Sprintf("Container wait error: %v", err))
 		return err
@@ -502,12 +521,10 @@ func (r *PodmanRunner) buildJobScript(job *types.Job) string {
 
 		// Command
 		script.WriteString(step.Run)
-		script.WriteString("\n")
-
-		// Continue on error
 		if step.ContinueOnErr {
-			script.WriteString(" || true\n")
+			script.WriteString(" || true")
 		}
+		script.WriteString("\n")
 
 		script.WriteString("echo 'Step completed'\n\n")
 

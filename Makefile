@@ -38,7 +38,8 @@ LDFLAGS := -ldflags="-w -s \
 # Phony targets
 .PHONY: all build clean test fmt vet lint run install uninstall \
         deps vendor docker release tag help coverage bench \
-        check build-all ci dev watch
+        check build-all ci dev watch \
+        docker-test docker-unit docker-integration
 
 ## help: Display this help message
 help:
@@ -228,6 +229,21 @@ docker-run: docker
 	@echo "Running in Docker..."
 	@docker run --rm -v $(PWD):/workspace $(BINARY_NAME):latest $(ARGS)
 
+## docker-test: Run full Docker test suite (unit + build + integration)
+docker-test:
+	@echo "Running full Docker test suite..."
+	@bash scripts/test-docker.sh all
+
+## docker-unit: Run unit tests inside Docker container
+docker-unit:
+	@echo "Running unit tests in Docker..."
+	@bash scripts/test-docker.sh unit
+
+## docker-integration: Run integration tests in Docker
+docker-integration:
+	@echo "Running integration tests in Docker..."
+	@bash scripts/test-docker.sh integration
+
 ## release: Create release artifacts
 release: clean build-all
 	@echo "Creating release artifacts..."
@@ -245,7 +261,7 @@ release: clean build-all
 	# @cd $(DIST_DIR) && zip -q releases/$(BINARY_NAME)-$(VERSION)-windows-386.zip $(BINARY_NAME)-windows-386.exe
 
 	# Generate checksums
-	@cd $(DIST_DIR)/releases && sha256sum *.tar.gz *.zip > checksums.txt
+	@cd $(DIST_DIR)/releases && sha256sum *.tar.gz > checksums.txt
 
 	@echo "Release artifacts created in $(DIST_DIR)/releases/"
 	@ls -lah $(DIST_DIR)/releases/

@@ -64,7 +64,7 @@ func parseInput(workflowFile string) (*types.Pipeline, error) {
 	return pipeline, nil
 }
 
-// detectParser detects the appropriate parser based on file path
+// detectParser detects the appropriate parser based on file path and content
 func detectParser(filePath string) types.Parser {
 	dir := filepath.Dir(filePath)
 	base := filepath.Base(filePath)
@@ -74,15 +74,31 @@ func detectParser(filePath string) types.Parser {
 	} else if strings.Contains(base, "gitlab") || base == ".gitlab-ci.yml" || base == ".gitlab-ci.yaml" {
 		return &parsers.GitlabParser{}
 	} else if strings.Contains(base, "bitbucket") {
-		// return &parsers.BitbucketParser{} // If implemented
 		return &parsers.GithubParser{} // Fallback
 	} else if strings.Contains(base, "azure") {
-		// return &parsers.AzureParser{} // If implemented
 		return &parsers.GithubParser{} // Fallback
-	} else {
-		// Default to GitHub parser
-		return &parsers.GithubParser{}
 	}
+
+	// Content-based detection: read file and look for provider indicators
+	if data, err := os.ReadFile(filePath); err == nil {
+		content := string(data)
+		// GitHub indicators: "on:" trigger + "jobs:" with "runs-on:"
+		hasGitHubOn := strings.Contains(content, "\non:") || strings.HasPrefix(content, "on:")
+		hasRunsOn := strings.Contains(content, "runs-on:")
+		// GitLab indicators: "stages:" or jobs with "script:"
+		hasStages := strings.Contains(content, "\nstages:") || strings.HasPrefix(content, "stages:")
+		hasScript := strings.Contains(content, "script:")
+
+		if hasGitHubOn && hasRunsOn {
+			return &parsers.GithubParser{}
+		} else if hasStages || hasScript {
+			return &parsers.GitlabParser{}
+		}
+	}
+
+	// Default fallback
+	fmt.Fprintf(os.Stderr, "Warning: could not detect CI provider for %q, defaulting to GitHub Actions parser\n", filePath)
+	return &parsers.GithubParser{}
 }
 
 // getWorkdir gets the working directory from context or current directory
@@ -136,6 +152,14 @@ func buildRunnerConfig(c *cli.Context) *config.RunnerConfig {
 	// Set network
 	if network := c.String("network"); network != "" {
 		cfg.Network = network
+	}
+
+	// Set resource limits
+	if memory := c.String("memory"); memory != "" {
+		cfg.Memory = memory
+	}
+	if cpus := c.String("cpus"); cpus != "" {
+		cfg.CPUs = cpus
 	}
 
 	return cfg

@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/sanix-darker/git-ci/pkg/types"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -287,7 +289,8 @@ func (p *GithubParser) getJobName(jobID string, job *GithubJob) string {
 		return job.Name
 	}
 	// Convert job ID to readable name
-	return strings.ReplaceAll(strings.Title(strings.ReplaceAll(jobID, "-", " ")), "_", " ")
+	caser := cases.Title(language.English)
+	return strings.ReplaceAll(caser.String(strings.ReplaceAll(jobID, "-", " ")), "_", " ")
 }
 
 func (p *GithubParser) getStepName(step GithubStep, index int) string {
@@ -318,8 +321,8 @@ func (p *GithubParser) getStepName(step GithubStep, index int) string {
 			firstLine = strings.TrimPrefix(firstLine, "yarn ")
 			firstLine = strings.TrimPrefix(firstLine, "make ")
 
-			if len(firstLine) > 50 {
-				firstLine = firstLine[:47] + "..."
+			if len([]rune(firstLine)) > 50 {
+				firstLine = string([]rune(firstLine)[:47]) + "..."
 			}
 			return firstLine
 		}
@@ -385,6 +388,7 @@ func (p *GithubParser) parseRunsOn(runsOn interface{}) string {
 			}
 		}
 	}
+	fmt.Fprintf(os.Stderr, "Warning: 'runs-on' not specified, defaulting to ubuntu-latest\n")
 	return "ubuntu-latest"
 }
 
@@ -507,6 +511,7 @@ func (p *GithubParser) parseStrategy(strategy *GithubStrategy) *types.Strategy {
 	// Parse matrix
 	if strategy.Matrix != nil {
 		s.Matrix = p.parseMatrix(strategy.Matrix)
+		s.Include, s.Exclude = p.parseMatrixIncludeExclude(strategy.Matrix)
 	}
 
 	return s
@@ -518,7 +523,7 @@ func (p *GithubParser) parseMatrix(matrix interface{}) map[string][]interface{} 
 	switch v := matrix.(type) {
 	case map[string]interface{}:
 		for key, value := range v {
-			// Skip include/exclude as they're special keys
+			// Skip include/exclude as they're handled by parseMatrixIncludeExclude
 			if key == "include" || key == "exclude" {
 				continue
 			}
@@ -533,6 +538,36 @@ func (p *GithubParser) parseMatrix(matrix interface{}) map[string][]interface{} 
 	}
 
 	return result
+}
+
+// parseMatrixIncludeExclude extracts include and exclude entries from matrix config
+func (p *GithubParser) parseMatrixIncludeExclude(matrix interface{}) (include []map[string]interface{}, exclude []map[string]interface{}) {
+	matrixMap, ok := matrix.(map[string]interface{})
+	if !ok {
+		return nil, nil
+	}
+
+	if inc, ok := matrixMap["include"]; ok {
+		if items, ok := inc.([]interface{}); ok {
+			for _, item := range items {
+				if m, ok := item.(map[string]interface{}); ok {
+					include = append(include, m)
+				}
+			}
+		}
+	}
+
+	if exc, ok := matrixMap["exclude"]; ok {
+		if items, ok := exc.([]interface{}); ok {
+			for _, item := range items {
+				if m, ok := item.(map[string]interface{}); ok {
+					exclude = append(exclude, m)
+				}
+			}
+		}
+	}
+
+	return include, exclude
 }
 
 func (p *GithubParser) convertWith(with map[string]interface{}) map[string]string {
@@ -625,10 +660,7 @@ func (p *GithubParser) Validate(pipeline *types.Pipeline) error {
 			}
 		}
 
-		// Check for circular dependencies
-		if err := p.checkCircularDependencies(jobID, job, pipeline.Jobs, []string{}); err != nil {
-			errors = append(errors, err.Error())
-		}
+		// Note: circular dependency checking is handled by handlers/validate.go
 
 		// Validate each step
 		for i, step := range job.Steps {
@@ -662,28 +694,6 @@ func (p *GithubParser) Validate(pipeline *types.Pipeline) error {
 
 	if len(errors) > 0 {
 		return fmt.Errorf("validation errors:\n  - %s", strings.Join(errors, "\n  - "))
-	}
-
-	return nil
-}
-
-func (p *GithubParser) checkCircularDependencies(jobID string, job *types.Job, allJobs map[string]*types.Job, visited []string) error {
-	// Check if we've already visited this job (circular dependency)
-	for _, v := range visited {
-		if v == jobID {
-			return fmt.Errorf("circular dependency detected: %s", strings.Join(append(visited, jobID), " -> "))
-		}
-	}
-
-	visited = append(visited, jobID)
-
-	// Check dependencies recursively
-	for _, need := range job.Needs {
-		if dependentJob, exists := allJobs[need]; exists {
-			if err := p.checkCircularDependencies(need, dependentJob, allJobs, visited); err != nil {
-				return err
-			}
-		}
 	}
 
 	return nil

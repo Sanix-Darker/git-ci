@@ -1,0 +1,23 @@
+name: Service CI
+on: push
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run integration tests
+        run: echo "Running with postgres and redis"
+        env:
+          DATABASE_URL: postgres://postgres:testpass@localhost:5432/testdb

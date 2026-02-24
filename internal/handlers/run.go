@@ -41,6 +41,9 @@ func CmdRun(c *cli.Context) error {
 		return fmt.Errorf("no jobs to run")
 	}
 
+	// Expand matrix strategies into concrete job instances
+	jobs = expandMatrixJobs(jobs)
+
 	// Check if running in parallel
 	if c.Bool("parallel") {
 		return runJobsParallel(c, jobs, workdir, cfg)
@@ -91,9 +94,15 @@ func selectJobsToRun(c *cli.Context, pipeline *types.Pipeline) map[string]*types
 	return jobs
 }
 
-// runJobsSequential runs jobs one by one
+// runJobsSequential runs jobs one by one in dependency order
 func runJobsSequential(c *cli.Context, jobs map[string]*types.Job, workdir string, cfg *config.RunnerConfig) error {
 	continueOnError := c.Bool("continue-on-error")
+
+	// Sort jobs by dependency order
+	sortedNames, err := topologicalSort(jobs)
+	if err != nil {
+		return fmt.Errorf("failed to resolve job dependencies: %w", err)
+	}
 
 	fmt.Printf("Running %d job(s) sequentially\n", len(jobs))
 	fmt.Println(strings.Repeat("-", 80))
@@ -101,8 +110,19 @@ func runJobsSequential(c *cli.Context, jobs map[string]*types.Job, workdir strin
 	startTime := time.Now()
 	successCount := 0
 	failureCount := 0
+	failedJobs := make(map[string]bool)
 
-	for jobName, job := range jobs {
+	for _, jobName := range sortedNames {
+		job := jobs[jobName]
+
+		// Skip if a dependency failed
+		if shouldSkipJob(job, failedJobs, continueOnError) {
+			fmt.Printf("Job '%s' skipped: dependency failed\n", jobName)
+			failureCount++
+			failedJobs[jobName] = true
+			continue
+		}
+
 		// Set job name if not set
 		if job.Name == "" {
 			job.Name = jobName
@@ -128,10 +148,14 @@ func runJobsSequential(c *cli.Context, jobs map[string]*types.Job, workdir strin
 
 		if err != nil {
 			failureCount++
-			fmt.Printf("Job '%s' failed after %s: %v\n", jobName, formatDuration(jobDuration), err)
-
-			if !continueOnError && !job.AllowFailure {
-				return fmt.Errorf("job '%s' failed: %w", jobName, err)
+			failedJobs[jobName] = true
+			if job.AllowFailure {
+				fmt.Printf("Job '%s' failed (allowed) after %s: %v\n", jobName, formatDuration(jobDuration), err)
+			} else {
+				fmt.Printf("Job '%s' failed after %s: %v\n", jobName, formatDuration(jobDuration), err)
+				if !continueOnError {
+					return fmt.Errorf("job '%s' failed: %w", jobName, err)
+				}
 			}
 		} else {
 			successCount++
@@ -145,14 +169,23 @@ func runJobsSequential(c *cli.Context, jobs map[string]*types.Job, workdir strin
 	fmt.Printf("Pipeline completed in %s\n", formatDuration(totalDuration))
 	fmt.Printf("Success: %d, Failed: %d, Total: %d\n", successCount, failureCount, len(jobs))
 
-	if failureCount > 0 && !continueOnError {
-		return fmt.Errorf("%d job(s) failed", failureCount)
-	}
-
 	return nil
 }
 
-// runJobsParallel runs jobs in parallel
+// shouldSkipJob returns true if any of the job's dependencies have failed
+func shouldSkipJob(job *types.Job, failedJobs map[string]bool, continueOnError bool) bool {
+	if continueOnError {
+		return false
+	}
+	for _, need := range job.Needs {
+		if failedJobs[need] {
+			return true
+		}
+	}
+	return false
+}
+
+// runJobsParallel runs jobs in parallel, respecting dependency levels
 func runJobsParallel(c *cli.Context, jobs map[string]*types.Job, workdir string, cfg *config.RunnerConfig) error {
 	maxParallel := c.Int("max-parallel")
 	if maxParallel <= 0 {
@@ -161,94 +194,95 @@ func runJobsParallel(c *cli.Context, jobs map[string]*types.Job, workdir string,
 
 	continueOnError := c.Bool("continue-on-error")
 
-	fmt.Printf("Running %d job(s) in parallel (max %d)\n", len(jobs), maxParallel)
+	// Group jobs by dependency level
+	levels, err := groupByDependencyLevel(jobs)
+	if err != nil {
+		return fmt.Errorf("failed to resolve job dependencies: %w", err)
+	}
+
+	fmt.Printf("Running %d job(s) in parallel (max %d, %d dependency levels)\n", len(jobs), maxParallel, len(levels))
 	fmt.Println(strings.Repeat("-", 80))
 
 	startTime := time.Now()
+	successCount := 0
+	failureCount := 0
+	failedJobs := make(map[string]bool)
 
-	// Create semaphore for limiting parallelism
-	sem := make(chan struct{}, maxParallel)
-
-	// Create wait group
-	var wg sync.WaitGroup
-
-	// Results channel
 	type jobResult struct {
 		name     string
 		err      error
 		duration time.Duration
 	}
-	results := make(chan jobResult, len(jobs))
 
-	// Run jobs
-	for jobName, job := range jobs {
-		wg.Add(1)
+	// Execute level by level
+	for levelIdx, level := range levels {
+		printVerbose(c, "\nDependency level %d: %s\n", levelIdx+1, strings.Join(level, ", "))
 
-		go func(name string, j *types.Job) {
-			defer wg.Done()
+		sem := make(chan struct{}, maxParallel)
+		var wg sync.WaitGroup
+		results := make(chan jobResult, len(level))
 
-			// Acquire semaphore
-			sem <- struct{}{}
-			defer func() { <-sem }()
+		for _, jobName := range level {
+			job := jobs[jobName]
 
-			// Set job name if not set
-			if j.Name == "" {
-				j.Name = name
+			// Skip if a dependency failed
+			if shouldSkipJob(job, failedJobs, continueOnError) {
+				fmt.Printf("Job '%s' skipped: dependency failed\n", jobName)
+				failureCount++
+				failedJobs[jobName] = true
+				continue
 			}
 
-			printVerbose(c, "Starting parallel job: %s\n", name)
+			wg.Add(1)
+			go func(name string, j *types.Job) {
+				defer wg.Done()
 
-			// Create runner
-			runner, err := createRunner(c, cfg)
-			if err != nil {
-				results <- jobResult{
-					name:     name,
-					err:      fmt.Errorf("failed to create runner: %w", err),
-					duration: 0,
+				sem <- struct{}{}
+				defer func() { <-sem }()
+
+				if j.Name == "" {
+					j.Name = name
 				}
-				return
+
+				printVerbose(c, "Starting parallel job: %s\n", name)
+
+				runner, runnerErr := createRunner(c, cfg)
+				if runnerErr != nil {
+					results <- jobResult{name: name, err: fmt.Errorf("failed to create runner: %w", runnerErr)}
+					return
+				}
+
+				jobStart := time.Now()
+				runErr := runner.RunJob(j, workdir)
+				jobDuration := time.Since(jobStart)
+
+				if cleanupErr := runner.Cleanup(); cleanupErr != nil {
+					printVerbose(c, "Warning: cleanup failed for job %s: %v\n", name, cleanupErr)
+				}
+
+				results <- jobResult{name: name, err: runErr, duration: jobDuration}
+			}(jobName, job)
+		}
+
+		go func() {
+			wg.Wait()
+			close(results)
+		}()
+
+		for result := range results {
+			if result.err != nil {
+				failureCount++
+				failedJobs[result.name] = true
+				fmt.Printf("Job '%s' failed after %s: %v\n", result.name, formatDuration(result.duration), result.err)
+			} else {
+				successCount++
+				fmt.Printf("Job '%s' succeeded in %s\n", result.name, formatDuration(result.duration))
 			}
+		}
 
-			// Run job
-			jobStart := time.Now()
-			err = runner.RunJob(j, workdir)
-			jobDuration := time.Since(jobStart)
-
-			// Cleanup
-			if cleanupErr := runner.Cleanup(); cleanupErr != nil {
-				printVerbose(c, "Warning: cleanup failed for job %s: %v\n", name, cleanupErr)
-			}
-
-			results <- jobResult{
-				name:     name,
-				err:      err,
-				duration: jobDuration,
-			}
-		}(jobName, job)
-	}
-
-	// Wait for all jobs to complete
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	// Collect results
-	successCount := 0
-	failureCount := 0
-	var firstError error
-
-	for result := range results {
-		if result.err != nil {
-			failureCount++
-			fmt.Printf("Job '%s' failed after %s: %v\n", result.name, formatDuration(result.duration), result.err)
-
-			if firstError == nil && !continueOnError {
-				firstError = result.err
-			}
-		} else {
-			successCount++
-			fmt.Printf("Job '%s' succeeded in %s\n", result.name, formatDuration(result.duration))
+		// If not continuing on error and we had failures, stop
+		if failureCount > 0 && !continueOnError {
+			break
 		}
 	}
 
@@ -257,10 +291,6 @@ func runJobsParallel(c *cli.Context, jobs map[string]*types.Job, workdir string,
 	fmt.Println(strings.Repeat("-", 80))
 	fmt.Printf("Pipeline completed in %s\n", formatDuration(totalDuration))
 	fmt.Printf("Success: %d, Failed: %d, Total: %d\n", successCount, failureCount, len(jobs))
-
-	if firstError != nil && !continueOnError {
-		return fmt.Errorf("pipeline failed: %w", firstError)
-	}
 
 	if failureCount > 0 {
 		return fmt.Errorf("%d job(s) failed", failureCount)
