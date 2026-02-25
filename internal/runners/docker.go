@@ -381,7 +381,7 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 
 	// Determine resource limits: job container config > CLI flags > defaults
 	memoryLimit := int64(2 * 1024 * 1024 * 1024) // 2GB default
-	cpuShares := int64(1024)                      // default
+	cpuShares := int64(1024)                     // default
 
 	if r.config.Memory != "" {
 		if parsed := parseMemoryString(r.config.Memory); parsed > 0 {
@@ -609,8 +609,8 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 			commands = append(commands, fmt.Sprintf("export %s='%s'", k, v))
 		}
 
-		// Process the command - handle GitHub Actions expressions
-		runCommand := r.processGitHubExpressions(step.Run, job)
+		// Process common GitHub Actions expressions before execution.
+		runCommand := resolveGitHubExpressions(step.Run)
 		commands = append(commands, runCommand)
 
 		// Handle continue-on-error
@@ -665,120 +665,9 @@ func (r *DockerRunner) buildEnvironment(job *types.Job) []string {
 	return env
 }
 
-// cleanExpressions removes or replaces ${{ }} expressions with defaults
+// cleanExpressions resolves common GitHub expressions in action inputs.
 func (r *DockerRunner) cleanExpressions(value string) string {
-	// Remove ${{ }} wrapper and extract the content
-	value = strings.TrimSpace(value)
-
-	// If it's a GitHub expression like ${{ env.GO_VERSION }}, try to extract meaningful default
-	if strings.HasPrefix(value, "${{") && strings.HasSuffix(value, "}}") {
-		inner := strings.TrimPrefix(value, "${{")
-		inner = strings.TrimSuffix(inner, "}}")
-		inner = strings.TrimSpace(inner)
-
-		// Handle common patterns
-		if strings.HasPrefix(inner, "env.") {
-			// Can't resolve env vars at parse time, return empty
-			return ""
-		}
-		if strings.HasPrefix(inner, "matrix.") {
-			// Can't resolve matrix at parse time, return empty
-			return ""
-		}
-		if strings.HasPrefix(inner, "secrets.") {
-			return ""
-		}
-
-		return inner
-	}
-
-	return value
-}
-
-// processGitHubExpressions processes ${{ }} expressions in run commands
-func (r *DockerRunner) processGitHubExpressions(command string, job *types.Job) string {
-	result := command
-
-	// Helper to find and replace expressions with various spacing
-	replaceExpr := func(s, pattern, replacement string) string {
-		// Handle patterns like ${{ matrix.os }}, ${{matrix.os}}, ${{ matrix.os}}
-		variations := []string{
-			"${{ " + pattern + " }}",
-			"${{" + pattern + "}}",
-			"${{ " + pattern + "}}",
-			"${{" + pattern + " }}",
-		}
-		for _, v := range variations {
-			s = strings.ReplaceAll(s, v, replacement)
-		}
-		return s
-	}
-
-	// Replace matrix expressions with environment variable fallbacks
-	result = replaceExpr(result, "matrix.os", "${MATRIX_OS:-linux}")
-	result = replaceExpr(result, "matrix.arch", "${MATRIX_ARCH:-amd64}")
-
-	// Replace runner expressions
-	result = replaceExpr(result, "runner.os", "Linux")
-	result = replaceExpr(result, "runner.arch", "X64")
-
-	// Replace github expressions
-	result = replaceExpr(result, "github.workspace", "/workspace")
-	result = replaceExpr(result, "github.repository", "${GITHUB_REPOSITORY:-local/repo}")
-	result = replaceExpr(result, "github.ref", "${GITHUB_REF:-refs/heads/main}")
-	result = replaceExpr(result, "github.sha", "${GITHUB_SHA:-local}")
-
-	// Replace ${{ env.* }} with shell variable syntax
-	// Find all ${{ env.VAR }} patterns and replace with $VAR
-	for {
-		// Try to find env. pattern with various spacing
-		start := -1
-		for _, prefix := range []string{"${{ env.", "${{env."} {
-			if idx := strings.Index(result, prefix); idx != -1 {
-				start = idx
-				break
-			}
-		}
-		if start == -1 {
-			break
-		}
-
-		end := strings.Index(result[start:], "}}")
-		if end == -1 {
-			break
-		}
-		end += start + 2
-
-		expr := result[start:end]
-		// Extract variable name
-		varName := expr
-		varName = strings.TrimPrefix(varName, "${{ env.")
-		varName = strings.TrimPrefix(varName, "${{env.")
-		varName = strings.TrimSuffix(varName, " }}")
-		varName = strings.TrimSuffix(varName, "}}")
-		varName = strings.TrimSpace(varName)
-
-		result = result[:start] + "${" + varName + "}" + result[end:]
-	}
-
-	// Handle any remaining ${{ }} expressions - warn and replace with empty or default
-	for {
-		start := strings.Index(result, "${{")
-		if start == -1 {
-			break
-		}
-		end := strings.Index(result[start:], "}}")
-		if end == -1 {
-			break
-		}
-		end += start + 2
-
-		expr := result[start:end]
-		r.formatter.PrintWarning(fmt.Sprintf("Unsupported expression: %s (removing)", expr))
-		result = result[:start] + result[end:]
-	}
-
-	return result
+	return resolveGitHubExpressions(strings.TrimSpace(value))
 }
 
 func (r *DockerRunner) streamLogs(ctx context.Context, containerID string) error {

@@ -166,6 +166,7 @@ func (p *GithubParser) convertToPipeline(workflow *GithubWorkflow) (*types.Pipel
 	pipeline := &types.Pipeline{
 		Name:        workflow.Name,
 		Description: fmt.Sprintf("GitHub Actions workflow: %s", workflow.Name),
+		Provider:    "github",
 		Jobs:        make(map[string]*types.Job),
 		Environment: workflow.Env,
 		Triggers:    p.parseTriggers(workflow.On),

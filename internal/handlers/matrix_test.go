@@ -71,6 +71,40 @@ func TestApplyIncludes(t *testing.T) {
 	}
 }
 
+func TestApplyIncludes_GitHubSemantics(t *testing.T) {
+	combos := []map[string]interface{}{
+		{"fruit": "apple"},
+		{"fruit": "pear"},
+	}
+	includes := []map[string]interface{}{
+		{"fruit": "banana"},
+		{"fruit": "banana", "animal": "cat"},
+	}
+
+	result := applyIncludes(combos, includes)
+	if len(result) != 4 {
+		t.Fatalf("expected 4 combinations after include, got %d", len(result))
+	}
+
+	bananaCount := 0
+	bananaWithAnimal := 0
+	for _, combo := range result {
+		if combo["fruit"] == "banana" {
+			bananaCount++
+			if combo["animal"] == "cat" {
+				bananaWithAnimal++
+			}
+		}
+	}
+
+	if bananaCount != 2 {
+		t.Errorf("expected 2 banana combos, got %d", bananaCount)
+	}
+	if bananaWithAnimal != 1 {
+		t.Errorf("expected 1 banana combo with animal=cat, got %d", bananaWithAnimal)
+	}
+}
+
 func TestExpandMatrixJobs_NoMatrix(t *testing.T) {
 	jobs := map[string]*types.Job{
 		"test": {Name: "Test", Steps: []types.Step{{Run: "echo hi"}}},
@@ -107,6 +141,37 @@ func TestExpandMatrixJobs_WithMatrix(t *testing.T) {
 		}
 		if _, ok := job.Environment["MATRIX_OS"]; !ok {
 			t.Error("expected 'MATRIX_OS' env var in expanded job")
+		}
+	}
+}
+
+func TestExpandMatrixJobs_WithHyphenatedMatrixKey(t *testing.T) {
+	jobs := map[string]*types.Job{
+		"test": {
+			Name: "Test",
+			Strategy: &types.Strategy{
+				Matrix: map[string][]interface{}{
+					"go-version": {"1.22"},
+				},
+			},
+			Steps: []types.Step{{Run: "echo hi"}},
+		},
+	}
+
+	expanded := expandMatrixJobs(jobs)
+	if len(expanded) != 1 {
+		t.Fatalf("expected 1 expanded job, got %d", len(expanded))
+	}
+
+	for _, job := range expanded {
+		if _, ok := job.Environment["go-version"]; !ok {
+			t.Fatal("expected raw matrix key 'go-version' in environment")
+		}
+		if got := job.Environment["MATRIX_GO_VERSION"]; got != "1.22" {
+			t.Fatalf("expected MATRIX_GO_VERSION=1.22, got %q", got)
+		}
+		if _, ok := job.Environment["MATRIX_GO-VERSION"]; ok {
+			t.Fatal("did not expect unnormalized MATRIX_GO-VERSION env var")
 		}
 	}
 }
@@ -150,5 +215,20 @@ func TestFormatCombination(t *testing.T) {
 	result := formatCombination(combo)
 	if result != "1.22, ubuntu" {
 		t.Errorf("expected '1.22, ubuntu', got %q", result)
+	}
+}
+
+func TestNormalizeMatrixEnvKey(t *testing.T) {
+	cases := map[string]string{
+		"go-version": "GO_VERSION",
+		"os":         "OS",
+		"x.y/z":      "X_Y_Z",
+		"___":        "VALUE",
+	}
+
+	for input, expected := range cases {
+		if got := normalizeMatrixEnvKey(input); got != expected {
+			t.Errorf("normalizeMatrixEnvKey(%q) = %q, expected %q", input, got, expected)
+		}
 	}
 }

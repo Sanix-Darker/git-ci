@@ -520,7 +520,7 @@ func (r *PodmanRunner) buildJobScript(job *types.Job) string {
 		}
 
 		// Command
-		script.WriteString(step.Run)
+		script.WriteString(resolveGitHubExpressions(step.Run))
 		if step.ContinueOnErr {
 			script.WriteString(" || true")
 		}

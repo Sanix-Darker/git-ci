@@ -21,6 +21,9 @@ func TestGithubParser_ParseBasic(t *testing.T) {
 	if pipeline.Name != "Basic CI" {
 		t.Errorf("expected name 'Basic CI', got %q", pipeline.Name)
 	}
+	if pipeline.Provider != "github" {
+		t.Errorf("expected provider 'github', got %q", pipeline.Provider)
+	}
 
 	if len(pipeline.Jobs) != 1 {
 		t.Fatalf("expected 1 job, got %d", len(pipeline.Jobs))

@@ -1,6 +1,7 @@
 package runners
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,5 +121,29 @@ func TestLine(t *testing.T) {
 	line := f.Line('=')
 	if len(line) == 0 {
 		t.Error("expected non-empty line")
+	}
+}
+
+func TestResolveGitHubExpressions_Matrix(t *testing.T) {
+	got := resolveGitHubExpressions(`echo "go=${{ matrix.go-version }} os=${{ matrix.os }}"`)
+	if !strings.Contains(got, "${MATRIX_GO_VERSION}") {
+		t.Fatalf("expected MATRIX_GO_VERSION in %q", got)
+	}
+	if !strings.Contains(got, "${MATRIX_OS}") {
+		t.Fatalf("expected MATRIX_OS in %q", got)
+	}
+}
+
+func TestResolveGitHubExpressions_Env(t *testing.T) {
+	got := resolveGitHubExpressions(`echo "${{ env.FOO }}"`)
+	if got != `echo "${FOO}"` {
+		t.Fatalf("unexpected env replacement: %q", got)
+	}
+}
+
+func TestResolveGitHubExpressions_UnknownRemoved(t *testing.T) {
+	got := resolveGitHubExpressions(`echo "x=${{ secrets.TOKEN }}"`)
+	if strings.Contains(got, "${{") {
+		t.Fatalf("expected unresolved expression to be removed, got %q", got)
 	}
 }

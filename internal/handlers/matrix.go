@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/sanix-darker/git-ci/pkg/types"
 )
@@ -42,7 +43,7 @@ func expandMatrixJobs(jobs map[string]*types.Job) map[string]*types.Job {
 			for k, v := range combo {
 				valStr := fmt.Sprintf("%v", v)
 				expandedJob.Environment[k] = valStr
-				expandedJob.Environment["MATRIX_"+strings.ToUpper(k)] = valStr
+				expandedJob.Environment["MATRIX_"+normalizeMatrixEnvKey(k)] = valStr
 			}
 
 			// Update job name to include matrix values
@@ -124,20 +125,28 @@ func computeCartesianProduct(matrix map[string][]interface{}) []map[string]inter
 // applyIncludes adds extra combinations from the include list.
 // Each include entry either extends an existing combination or adds a new one.
 func applyIncludes(combinations []map[string]interface{}, includes []map[string]interface{}) []map[string]interface{} {
+	// GitHub semantics: include entries can merge only into original matrix combinations,
+	// not combinations that were created by previous include entries.
+	original := cloneCombinations(combinations)
+
 	for _, inc := range includes {
 		matched := false
 		for i, combo := range combinations {
-			if includeMatchesCombo(inc, combo) {
+			// Only original combinations are eligible merge targets.
+			if i >= len(original) {
+				continue
+			}
+			if includeMatchesCombo(inc, original[i]) {
 				// Merge additional keys into existing combination
 				for k, v := range inc {
-					combinations[i][k] = v
+					combo[k] = v
 				}
 				matched = true
 			}
 		}
 		if !matched {
 			// Add as a new combination
-			combinations = append(combinations, inc)
+			combinations = append(combinations, cloneMap(inc))
 		}
 	}
 	return combinations
@@ -156,6 +165,43 @@ func includeMatchesCombo(inc, combo map[string]interface{}) bool {
 		}
 	}
 	return hasOverlap
+}
+
+func cloneCombinations(combinations []map[string]interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(combinations))
+	for _, combo := range combinations {
+		out = append(out, cloneMap(combo))
+	}
+	return out
+}
+
+func cloneMap(m map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func normalizeMatrixEnvKey(key string) string {
+	var b strings.Builder
+	for _, r := range key {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(unicode.ToUpper(r))
+			continue
+		}
+		b.WriteRune('_')
+	}
+
+	out := b.String()
+	out = strings.Trim(out, "_")
+	for strings.Contains(out, "__") {
+		out = strings.ReplaceAll(out, "__", "_")
+	}
+	if out == "" {
+		return "VALUE"
+	}
+	return out
 }
 
 // applyExcludes removes combinations that match any exclude entry

@@ -162,7 +162,8 @@ func (r *BashRunner) RunStep(step *types.Step, env map[string]string, workdir st
 
 	// Determine shell and prepare command
 	shell := r.getShell(step.Shell)
-	cmd := r.prepareCommand(shell, step.Run)
+	resolvedRun := resolveGitHubExpressions(step.Run)
+	cmd := r.prepareCommand(shell, resolvedRun)
 
 	// Set working directory
 	if step.WorkingDir != "" {
@@ -188,7 +189,7 @@ func (r *BashRunner) RunStep(step *types.Step, env map[string]string, workdir st
 
 	// Print command if verbose
 	if r.config.Verbose {
-		r.formatter.PrintCommand(step.Run, 2)
+		r.formatter.PrintCommand(resolvedRun, 2)
 	}
 
 	// Execute with retry if configured
