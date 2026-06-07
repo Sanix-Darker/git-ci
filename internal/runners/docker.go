@@ -121,7 +121,7 @@ func (r *DockerRunner) RunJob(job *types.Job, workdir string) error {
 	}
 
 	// Start service containers if any
-	var serviceNetworkID string
+	var serviceNetworkID, serviceNetworkName string
 	if len(job.Services) > 0 {
 		services := make(map[string]string)
 		for name, svc := range job.Services {
@@ -131,13 +131,13 @@ func (r *DockerRunner) RunJob(job *types.Job, workdir string) error {
 
 		// Create a network for service communication
 		var err error
-		serviceNetworkID, err = r.createServiceNetwork(ctx, job.Name)
+		serviceNetworkID, serviceNetworkName, err = r.createServiceNetwork(ctx, job.Name)
 		if err != nil {
 			return fmt.Errorf("failed to create service network: %w", err)
 		}
 
 		// Start service containers
-		if err := r.startServiceContainers(ctx, job, serviceNetworkID); err != nil {
+		if err := r.startServiceContainers(ctx, job, serviceNetworkName); err != nil {
 			r.cleanupServiceNetwork(ctx, serviceNetworkID)
 			return fmt.Errorf("failed to start service containers: %w", err)
 		}
@@ -145,7 +145,7 @@ func (r *DockerRunner) RunJob(job *types.Job, workdir string) error {
 
 	// Create and run container
 	r.formatter.PrintInfo("Creating container")
-	containerID, err := r.createContainer(ctx, job, imageName, workdir, serviceNetworkID)
+	containerID, err := r.createContainer(ctx, job, imageName, workdir, serviceNetworkName)
 	if err != nil {
 		return err
 	}
@@ -324,6 +324,49 @@ func (r *DockerRunner) getImageName(job *types.Job) string {
 	}
 }
 
+// containerShell returns the shell to launch a job script with, based on the
+// image. Minimal images (alpine, busybox) only provide /bin/sh; full images
+// have /bin/bash. Shared by Docker and Podman runners.
+func containerShell(imageName string) string {
+	img := strings.ToLower(imageName)
+	switch {
+	case strings.Contains(img, "alpine"),
+		strings.Contains(img, "busybox"),
+		strings.HasSuffix(img, "-alpine"),
+		strings.Contains(img, ":alpine"),
+		strings.Contains(img, "alpine-"):
+		return "/bin/sh"
+	default:
+		return "/bin/bash"
+	}
+}
+
+// sanitizeContainerName converts a job name into a Docker/Podman-safe resource
+// name segment. Container/pod/network names allow only [a-zA-Z0-9_.-], so any
+// other character (spaces, parentheses from matrix expansion, commas, colons)
+// is collapsed to a single hyphen.
+func sanitizeContainerName(name string) string {
+	var b strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '.' || r == '-':
+			b.WriteRune(r)
+			prevDash = false
+		default:
+			if !prevDash {
+				b.WriteByte('-')
+				prevDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "job"
+	}
+	return out
+}
+
 func (r *DockerRunner) pullImage(ctx context.Context, imageName string) error {
 	reader, err := r.client.ImagePull(ctx, imageName, image.PullOptions{})
 	if err != nil {
@@ -345,7 +388,7 @@ func (r *DockerRunner) pullImage(ctx context.Context, imageName string) error {
 	return nil
 }
 
-func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imageName, workdir, serviceNetworkID string) (string, error) {
+func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imageName, workdir, serviceNetwork string) (string, error) {
 	// Build script from steps
 	script := r.buildJobScript(job)
 
@@ -370,10 +413,12 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 		r.formatter.PrintSection("Container Configuration")
 	}
 
-	// Prepare container config
+	// Prepare container config. Choose the shell based on the image: minimal
+	// images (alpine/busybox) ship only /bin/sh, not /bin/bash.
+	shell := containerShell(imageName)
 	containerConfig := &container.Config{
 		Image:      imageName,
-		Cmd:        []string{"/bin/bash", "-c", script},
+		Cmd:        []string{shell, "-c", script},
 		WorkingDir: "/workspace",
 		Env:        env,
 		Tty:        false,
@@ -437,15 +482,16 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 	}
 
 	containerName := fmt.Sprintf("git-ci-%s-%d",
-		strings.ReplaceAll(strings.ToLower(job.Name), " ", "-"),
+		sanitizeContainerName(job.Name),
 		time.Now().Unix())
 
-	// Attach to service network if one exists
+	// Attach to service network by NAME so Docker's embedded DNS resolves
+	// service aliases from within the job container.
 	var networkingConfig *dnetwork.NetworkingConfig
-	if serviceNetworkID != "" {
+	if serviceNetwork != "" {
 		networkingConfig = &dnetwork.NetworkingConfig{
 			EndpointsConfig: map[string]*dnetwork.EndpointSettings{
-				serviceNetworkID: {},
+				serviceNetwork: {},
 			},
 		}
 	}
@@ -469,8 +515,12 @@ func (r *DockerRunner) createContainer(ctx context.Context, job *types.Job, imag
 func (r *DockerRunner) buildJobScript(job *types.Job) string {
 	var commands []string
 
-	// Add shebang and shell options - use bash for better compatibility
-	commands = append(commands, "#!/bin/bash")
+	imageName := r.getImageName(job)
+	shell := containerShell(imageName)
+
+	// Shebang matches the shell the container is launched with (minimal images
+	// such as alpine/busybox only ship /bin/sh).
+	commands = append(commands, "#!"+shell)
 	commands = append(commands, "set -e") // Exit on error
 
 	if r.config.Verbose {
@@ -481,7 +531,6 @@ func (r *DockerRunner) buildJobScript(job *types.Job) string {
 	commands = append(commands, "echo 'Setting up environment...'")
 
 	// Detect if we're using Ubuntu/Debian and install basic tools
-	imageName := r.getImageName(job)
 	if strings.Contains(imageName, "ubuntu") || strings.Contains(imageName, "debian") || strings.Contains(imageName, "catthehacker") {
 		commands = append(commands, "")
 		commands = append(commands, "# Install basic tools if needed")
@@ -756,10 +805,11 @@ func (r *DockerRunner) dryRunJob(job *types.Job) error {
 	return nil
 }
 
-// createServiceNetwork creates a Docker bridge network for service communication
-func (r *DockerRunner) createServiceNetwork(ctx context.Context, jobName string) (string, error) {
+// createServiceNetwork creates a Docker bridge network for service
+// communication and returns its ID (for cleanup) and name (for endpoint keys).
+func (r *DockerRunner) createServiceNetwork(ctx context.Context, jobName string) (string, string, error) {
 	networkName := fmt.Sprintf("git-ci-svc-%s-%d",
-		strings.ReplaceAll(strings.ToLower(jobName), " ", "-"),
+		sanitizeContainerName(jobName),
 		time.Now().Unix())
 
 	resp, err := r.client.NetworkCreate(ctx, networkName, dnetwork.CreateOptions{
@@ -767,7 +817,7 @@ func (r *DockerRunner) createServiceNetwork(ctx context.Context, jobName string)
 		Labels: map[string]string{"git-ci": "true"},
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to create service network: %w", err)
+		return "", "", fmt.Errorf("failed to create service network: %w", err)
 	}
 
 	r.mu.Lock()
@@ -775,11 +825,12 @@ func (r *DockerRunner) createServiceNetwork(ctx context.Context, jobName string)
 	r.mu.Unlock()
 
 	r.formatter.PrintDebug(fmt.Sprintf("Created service network: %s", networkName))
-	return resp.ID, nil
+	return resp.ID, networkName, nil
 }
 
-// startServiceContainers starts service containers on the given network
-func (r *DockerRunner) startServiceContainers(ctx context.Context, job *types.Job, networkID string) error {
+// startServiceContainers starts service containers on the given network. The
+// network is referenced by NAME so embedded DNS resolves service aliases.
+func (r *DockerRunner) startServiceContainers(ctx context.Context, job *types.Job, networkName string) error {
 	for name, svc := range job.Services {
 		r.formatter.PrintInfo(fmt.Sprintf("Starting service: %s (%s)", name, svc.Image))
 
@@ -822,13 +873,13 @@ func (r *DockerRunner) startServiceContainers(ctx context.Context, job *types.Jo
 
 		networkingConfig := &dnetwork.NetworkingConfig{
 			EndpointsConfig: map[string]*dnetwork.EndpointSettings{
-				networkID: {
+				networkName: {
 					Aliases: []string{name}, // DNS alias = service name
 				},
 			},
 		}
 
-		containerName := fmt.Sprintf("git-ci-svc-%s-%d", name, time.Now().Unix())
+		containerName := fmt.Sprintf("git-ci-svc-%s-%d", sanitizeContainerName(name), time.Now().Unix())
 		resp, err := r.client.ContainerCreate(ctx, containerConfig, hostConfig, networkingConfig, nil, containerName)
 		if err != nil {
 			return fmt.Errorf("failed to create service container %s: %w", name, err)
