@@ -257,7 +257,7 @@ func (r *PodmanRunner) createPod(ctx context.Context, job *types.Job) (string, e
 	if r.isDocker {
 		// Docker doesn't support pods, use network instead
 		networkName := fmt.Sprintf("git-ci-%s-%d",
-			strings.ReplaceAll(strings.ToLower(job.Name), " ", "-"),
+			sanitizeContainerName(job.Name),
 			time.Now().Unix())
 
 		cmd := exec.CommandContext(ctx, r.binaryPath, "network", "create", networkName)
@@ -269,7 +269,7 @@ func (r *PodmanRunner) createPod(ctx context.Context, job *types.Job) (string, e
 	}
 
 	podName := fmt.Sprintf("git-ci-%s-%d",
-		strings.ReplaceAll(strings.ToLower(job.Name), " ", "-"),
+		sanitizeContainerName(job.Name),
 		time.Now().Unix())
 
 	cmd := exec.CommandContext(ctx, r.binaryPath, "pod", "create", "--name", podName)
@@ -298,7 +298,7 @@ func (r *PodmanRunner) runContainer(ctx context.Context, job *types.Job, imageNa
 
 	// Add name
 	containerName := fmt.Sprintf("git-ci-%s-%d",
-		strings.ReplaceAll(strings.ToLower(job.Name), " ", "-"),
+		sanitizeContainerName(job.Name),
 		time.Now().Unix())
 	args = append(args, "--name", containerName)
 
@@ -381,7 +381,7 @@ func (r *PodmanRunner) startServices(ctx context.Context, job *types.Job, podOrN
 		args := []string{"run", "-d"}
 
 		// Name
-		serviceName := fmt.Sprintf("git-ci-svc-%s-%d", name, time.Now().Unix())
+		serviceName := fmt.Sprintf("git-ci-svc-%s-%d", sanitizeContainerName(name), time.Now().Unix())
 		args = append(args, "--name", serviceName)
 
 		// Pod or network
