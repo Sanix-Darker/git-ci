@@ -40,3 +40,4 @@ TO-ASK.md
 
 # Validation scratch workspace
 .tmp-validation/
+.codex/
