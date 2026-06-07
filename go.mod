@@ -1,13 +1,11 @@
 module github.com/sanix-darker/git-ci
 
-go 1.24.2
-
-toolchain go1.24.9
+go 1.25.0
 
 require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/urfave/cli/v2 v2.27.7
-	golang.org/x/text v0.30.0
+	golang.org/x/text v0.37.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
