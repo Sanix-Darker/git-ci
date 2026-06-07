@@ -29,7 +29,14 @@ _test
 # Ignore any .DS_Store files
 .DS_Store
 ./build/gci
+./build/gci-edge
+./build/gci-linux
+./build/gci-test
+build/
 test.txt
+coverage.html
+TO-ASK.md
+.claude/
 
 # Validation scratch workspace
 .tmp-validation/
