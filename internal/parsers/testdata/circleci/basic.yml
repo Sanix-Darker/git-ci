@@ -1,0 +1,49 @@
+version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  go-default:
+    docker:
+      - image: cimg/go:1.22
+
+jobs:
+  test:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Run tests
+          command: go test -v -race ./...
+
+  lint:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Lint
+          command: go vet ./...
+
+  build:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Build
+          command: go build -o app .
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - lint
+      - test:
+          requires:
+            - lint
+      - build:
+          requires:
+            - test

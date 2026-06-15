@@ -1,0 +1,99 @@
+# =============================================================================
+# Drone CI Service Containers — Integration testing with PostgreSQL and Redis
+# =============================================================================
+# Drone supports service containers that run alongside pipeline steps.
+# Services are exposed to steps via Docker networking.
+#
+# Run:   gci run -f examples/drone/services.yml --docker
+#        gci ls -f examples/drone/services.yml
+# =============================================================================
+
+kind: pipeline
+type: docker
+name: services-ci
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+    - pull_request
+
+environment:
+  GO_VERSION: "1.22"
+  CGO_ENABLED: "0"
+  DATABASE_URL: "postgres://appuser:testpass@postgres:5432/appdb?sslmode=disable"
+  REDIS_URL: "redis://redis:6379/0"
+  S3_ENDPOINT: "http://minio:9000"
+  AWS_ACCESS_KEY_ID: "testaccess"
+  AWS_SECRET_ACCESS_KEY: "testsecret"
+  AWS_REGION: "us-east-1"
+
+steps:
+  - name: unit
+    image: golang:${GO_VERSION}
+    commands:
+      - go mod download
+      - go test -short -count=1 ./...
+
+  - name: wait-for-services
+    image: alpine:latest
+    commands:
+      - apk add --no-cache postgresql-client redis
+      - |
+        echo "Waiting for PostgreSQL..."
+        for i in $(seq 1 30); do
+          if pg_isready -h postgres -U appuser -d appdb; then
+            echo "PostgreSQL is ready!"
+            break
+          fi
+          sleep 1
+        done
+        echo "Waiting for Redis..."
+        for i in $(seq 1 30); do
+          if redis-cli -h redis ping; then
+            echo "Redis is ready!"
+            break
+          fi
+          sleep 1
+        done
+    depends_on:
+      - unit
+
+  - name: integration
+    image: golang:${GO_VERSION}
+    commands:
+      - go mod download
+      - go test -tags=integration -v -race -count=1 ./...
+    depends_on:
+      - wait-for-services
+
+  - name: build
+    image: golang:${GO_VERSION}
+    commands:
+      - go mod download
+      - go build -o myapp .
+    depends_on:
+      - integration
+
+services:
+  - name: postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: appdb
+
+  - name: redis
+    image: redis:7-alpine
+
+  - name: minio
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: testaccess
+      MINIO_ROOT_PASSWORD: testsecret
+    entrypoint:
+      - sh
+    command:
+      - -c
+      - minio server /data

@@ -1,0 +1,28 @@
+language: go
+
+env:
+  global:
+    - GO111MODULE=on
+
+jobs:
+  include:
+    - stage: lint
+      go: "1.22"
+      script:
+        - go vet ./...
+        - go fmt ./...
+
+    - stage: test
+      go: "1.22"
+      script:
+        - go test -v -race -count=1 ./...
+
+    - stage: build
+      go: "1.22"
+      script:
+        - go build -o app .
+
+stages:
+  - lint
+  - test
+  - build

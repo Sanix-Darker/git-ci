@@ -1,0 +1,70 @@
+# =============================================================================
+# Travis CI Service Containers — Integration testing with PostgreSQL and Redis
+# =============================================================================
+# Travis CI supports services via the services: directive (pre-installed
+# background services) and addons for managed services.
+#
+# Run:   gci run -f examples/travis/services.yml --docker
+#        gci validate -f examples/travis/services.yml
+#        gci ls -f examples/travis/services.yml
+# =============================================================================
+
+language: go
+
+go:
+  - "1.22"
+
+env:
+  global:
+    - GO111MODULE=on
+    - CGO_ENABLED=0
+    - DATABASE_URL="postgres://appuser:testpass@localhost:5432/appdb?sslmode=disable"
+    - REDIS_URL="redis://localhost:6379/0"
+    - S3_ENDPOINT="http://localhost:9000"
+    - AWS_ACCESS_KEY_ID="testaccess"
+    - AWS_SECRET_ACCESS_KEY="testsecret"
+    - AWS_REGION="us-east-1"
+
+services:
+  - postgresql
+  - redis-server
+  - docker
+
+cache:
+  directories:
+    - $HOME/.cache/go-build
+    - $HOME/go/pkg/mod
+
+before_install:
+  - |
+    # Start PostgreSQL
+    sudo service postgresql start 2>/dev/null || true
+    sleep 2
+    psql -c "CREATE USER appuser WITH PASSWORD 'testpass';" -U postgres 2>/dev/null || true
+    psql -c "CREATE DATABASE appdb OWNER appuser;" -U postgres 2>/dev/null || true
+
+    # Start MinIO for S3-compatible storage
+    docker run -d -p 9000:9000 \
+      -e MINIO_ROOT_USER=testaccess \
+      -e MINIO_ROOT_PASSWORD=testsecret \
+      minio/minio:latest server /data
+    sleep 2
+
+install:
+  - go mod download
+
+script:
+  - go test -short -count=1 ./...
+  - |
+    echo "Waiting for services..."
+    for i in $(seq 1 30); do
+      if pg_isready -h localhost -U appuser -d appdb 2>/dev/null; then
+        echo "PostgreSQL is ready!"
+        break
+      fi
+      sleep 1
+    done
+  - go test -tags=integration -v -race -count=1 ./...
+
+after_success:
+  - go build -o myapp .

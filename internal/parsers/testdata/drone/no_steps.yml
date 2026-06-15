@@ -1,0 +1,11 @@
+kind: pipeline
+type: docker
+name: empty
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+
+steps: []

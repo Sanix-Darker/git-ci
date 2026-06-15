@@ -1,0 +1,84 @@
+# =============================================================================
+# Travis CI Matrix Build — Multi-dimensional with include/exclude patterns
+# =============================================================================
+# Travis CI supports matrix builds via version lists (language versions)
+# and jobs.include entries. The matrix is expanded automatically.
+#
+# Run:   gci run -f examples/travis/matrix.yml --docker
+#        gci validate -f examples/travis/matrix.yml
+#        gci ls -f examples/travis/matrix.yml
+# =============================================================================
+
+language: node_js
+
+node_js:
+  - "16"
+  - "18"
+  - "20"
+
+env:
+  global:
+    - NPM_CONFIG_CACHE=$HOME/.npm
+
+cache:
+  npm: true
+
+install:
+  - npm ci
+
+script:
+  - npm test
+  - npm run lint --if-present
+
+jobs:
+  include:
+    # Pin Ubuntu + Node 20 for coverage reporting
+    - node_js: "20"
+      os: linux
+      env:
+        - COVERAGE=true
+      script:
+        - npm test -- --coverage
+        - npx nyc report --reporter=lcov
+        - echo "Coverage report generated"
+
+    # Experimental Node 21 build
+    - node_js: "21"
+      os: linux
+      env:
+        - EXPERIMENTAL=true
+      script:
+        - npm test
+        - npm run test:e2e --if-present
+
+    # macOS test for Node 18 and 20
+    - node_js: "18"
+      os: osx
+      script:
+        - npm test
+
+    - node_js: "20"
+      os: osx
+      script:
+        - npm test
+
+  exclude:
+    # Don't test Node 16 on Linux (covered by OS test elsewhere)
+    - node_js: "16"
+      os: linux
+    # Skip macOS + Node 16 (unnecessary combination)
+    - node_js: "16"
+      os: osx
+
+  allow_failures:
+    - node_js: "21"
+
+stages:
+  - test
+  - build
+
+build:
+  stage: build
+  node_js: "20"
+  script:
+    - npm run build

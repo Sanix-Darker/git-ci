@@ -1,0 +1,148 @@
+# =============================================================================
+# CircleCI Full Stack CI — Matrix + Services + Parallel + Deploy
+# =============================================================================
+# Combines parameterized jobs, service sidecars, parallel execution, and
+# a Docker build/push workflow with branch filters.
+#
+# Run:   gci run -f examples/circleci/full-stack.yml --docker --parallel
+#        gci ls -f examples/circleci/full-stack.yml
+# =============================================================================
+
+version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  go-executor:
+    docker:
+      - image: cimg/go:1.22
+    environment:
+      GO_VERSION: "1.22"
+      REGISTRY: ghcr.io
+      IMAGE_NAME: myorg/myapp
+
+jobs:
+  lint:
+    executor: go-executor
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Format check
+          command: |
+            test -z $(gofmt -l .) || (gofmt -l . && exit 1)
+            go vet ./...
+      - run:
+          name: Lint
+          command: |
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+            golangci-lint run --out-format=checkstyle --issues-exit-code=0
+
+  test:
+    parameters:
+      go-version:
+        type: string
+        default: "1.22"
+    docker:
+      - image: cimg/go:<< parameters.go-version >>
+      - image: postgres:16-alpine
+        name: postgres
+        environment:
+          POSTGRES_PASSWORD: test
+      - image: redis:7-alpine
+        name: redis
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Test with coverage
+          command: go test -race -coverprofile=coverage.out ./...
+          environment:
+            DATABASE_URL: "postgres://postgres:test@localhost:5432/postgres?sslmode=disable"
+            REDIS_URL: "redis://localhost:6379"
+      - run:
+          name: Upload coverage
+          command: |
+            mkdir -p /tmp/coverage
+            cp coverage.out /tmp/coverage/coverage-<< parameters.go-version >>.out
+
+  e2e:
+    docker:
+      - image: cimg/go:1.22
+      - image: postgres:16-alpine
+        name: postgres
+        environment:
+          POSTGRES_PASSWORD: test
+      - image: redis:7-alpine
+        name: redis
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Build binary
+          command: go build -o /tmp/myapp .
+      - run:
+          name: Run E2E tests
+          command: |
+            /tmp/myapp &
+            sleep 2
+            go test -tags=e2e -v ./...
+          environment:
+            DATABASE_URL: "postgres://postgres:test@localhost:5432/postgres?sslmode=disable"
+            REDIS_URL: "redis://localhost:6379"
+            APP_ADDR: ":8080"
+
+  build:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build and push Docker image
+          command: |
+            echo "$REGISTRY_PASSWORD" | docker login $REGISTRY -u $REGISTRY_USER --password-stdin
+            docker build -t $REGISTRY/$IMAGE_NAME:${CIRCLE_SHA1:0:7} .
+            docker tag $REGISTRY/$IMAGE_NAME:${CIRCLE_SHA1:0:7} $REGISTRY/$IMAGE_NAME:latest
+            docker push $REGISTRY/$IMAGE_NAME:${CIRCLE_SHA1:0:7}
+            docker push $REGISTRY/$IMAGE_NAME:latest
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - lint
+
+      # Matrix: test with multiple Go versions
+      - test:
+          name: test-1.21
+          go-version: "1.21"
+          requires:
+            - lint
+      - test:
+          name: test-1.22
+          go-version: "1.22"
+          requires:
+            - lint
+      - test:
+          name: test-1.23
+          go-version: "1.23"
+          requires:
+            - lint
+
+      # Run E2E in parallel with matrix tests
+      - e2e:
+          requires:
+            - lint
+
+      # Build after all tests pass
+      - build:
+          requires:
+            - test-1.21
+            - test-1.22
+            - test-1.23
+            - e2e
+          filters:
+            branches:
+              only: main

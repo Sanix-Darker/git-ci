@@ -1,0 +1,30 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  CI: "true"
+
+test:
+  stage: test
+  script:
+    - echo "Running tests..."
+    - echo "Add your test commands here"
+
+build:
+  stage: build
+  script:
+    - echo "Building application..."
+    - echo "Add your build commands here"
+  dependencies:
+    - test
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying application..."
+    - echo "Add your deployment commands here"
+  only:
+    - main
+  when: manual

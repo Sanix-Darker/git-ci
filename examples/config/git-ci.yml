@@ -1,0 +1,64 @@
+# =============================================================================
+# git-ci Configuration File
+# =============================================================================
+# Full reference configuration with all available options.
+# Place this file as .git-ci.yml in your project root or use --config.
+#
+# Run:   gci run --config examples/config/git-ci.yml
+#        gci config show
+# =============================================================================
+
+# Default settings applied to all runs
+defaults:
+  runner: bash                    # Default runner: bash, docker, podman
+  timeout: 30                     # Job timeout in minutes (default: 30)
+  parallel: false                 # Run jobs in parallel (default: false)
+  max_parallel: 4                 # Max parallel jobs (default: NumCPU)
+  continue_on_error: false        # Continue pipeline on job failure
+  verbose: false                  # Enable verbose output by default
+
+# Global environment variables (injected into all jobs)
+environment:
+  CI: "true"
+  GIT_CI: "true"
+  LOG_LEVEL: "info"
+
+# Docker runner configuration
+docker:
+  pull: true                      # Pull images before running (default: true)
+  network: bridge                 # Network mode: bridge, host, none
+  registry: docker.io             # Default container registry
+  volumes:                        # Additional bind mounts
+    - ./cache:/cache
+    - ./data:/data:ro
+
+# Cache configuration
+cache:
+  enabled: true
+  key: "${CI_COMMIT_REF_SLUG}"    # Cache key template
+  paths:                          # Directories/files to cache
+    - node_modules
+    - .cache/go-build
+    - vendor/bundle
+    - ~/.npm
+
+# Artifacts configuration
+artifacts:
+  paths:
+    - dist/
+    - build/*.tar.gz
+    - coverage/*.html
+    - "*.log"
+  expire_in: 2 weeks
+
+# Hooks — scripts run before/after jobs and on success/failure
+hooks:
+  before_job:
+    - echo "Starting job: ${JOB_NAME}"
+    - date -u
+  after_job:
+    - echo "Job finished: ${JOB_NAME}"
+  on_success:
+    - echo "All jobs passed!"
+  on_failure:
+    - echo "Pipeline failed — check logs for details"

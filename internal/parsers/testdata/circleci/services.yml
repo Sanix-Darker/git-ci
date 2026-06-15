@@ -1,0 +1,29 @@
+version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  go-default:
+    docker:
+      - image: cimg/go:1.22
+
+jobs:
+  test:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Integration tests
+          command: go test -v -tags=integration ./...
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - test
+
+  nightly:
+    jobs:
+      - test

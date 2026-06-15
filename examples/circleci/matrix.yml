@@ -1,0 +1,129 @@
+# =============================================================================
+# CircleCI Matrix Build — Parameterized jobs with parallelism
+# =============================================================================
+# CircleCI uses job parameters and parallelism for matrix-like execution.
+# Parameters define the matrix dimensions; parallelism controls concurrency.
+#
+# Run:   gci run -f examples/circleci/matrix.yml --docker --parallel
+#        gci ls -f examples/circleci/matrix.yml
+# =============================================================================
+
+version: 2.1
+
+orbs:
+  node: circleci/node@5.0.0
+
+executors:
+  node-executor:
+    docker:
+      - image: cimg/node:current
+    resource_class: medium
+
+jobs:
+  lint:
+    executor: node-executor
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Lint
+          command: npm run lint --if-present
+      - run:
+          name: Type check
+          command: npm run typecheck --if-present
+
+  test:
+    parameters:
+      node-version:
+        type: string
+        default: "20"
+      os:
+        type: string
+        default: linux
+      coverage:
+        type: boolean
+        default: false
+      experimental:
+        type: boolean
+        default: false
+    docker:
+      - image: cimg/node:<< parameters.node-version >>
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Run tests
+          command: npm test
+      - run:
+          name: Run E2E tests
+          command: npm run test:e2e --if-present
+          when: always
+      - run:
+          name: Upload coverage
+          command: |
+            if [ "<< parameters.coverage >>" = "true" ]; then
+              npx nyc report --reporter=lcov
+              echo "Coverage report generated"
+            fi
+          when: always
+
+  build:
+    parameters:
+      node-version:
+        type: string
+        default: "20"
+    docker:
+      - image: cimg/node:<< parameters.node-version >>
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Build
+          command: npm run build
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist/
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - lint
+
+      # Matrix expansion via parameterized test job invocations
+      - test:
+          name: test-linux-16
+          node-version: "16"
+          os: linux
+          requires:
+            - lint
+      - test:
+          name: test-linux-18
+          node-version: "18"
+          os: linux
+          requires:
+            - lint
+      - test:
+          name: test-linux-20
+          node-version: "20"
+          os: linux
+          coverage: true
+          requires:
+            - lint
+      - test:
+          name: test-linux-21
+          node-version: "21"
+          os: linux
+          experimental: true
+          requires:
+            - lint
+
+      - build:
+          name: build-20
+          node-version: "20"
+          requires:
+            - test-linux-20

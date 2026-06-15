@@ -1,0 +1,7 @@
+language: minimal
+
+os: linux
+dist: focal
+
+script:
+  - echo "No jobs..."

@@ -1,0 +1,31 @@
+kind: pipeline
+type: docker
+name: docker-ci
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+
+steps:
+  - name: build
+    image: plugins/docker
+    settings:
+      repo: myorg/myapp
+      tags: latest
+      dockerfile: Dockerfile
+
+  - name: push
+    image: plugins/docker
+    settings:
+      repo: myorg/myapp
+      tags:
+        - latest
+        - "${DRONE_COMMIT_SHA:0:8}"
+      dockerfile: Dockerfile
+    depends_on:
+      - build
+    when:
+      branch:
+        - main

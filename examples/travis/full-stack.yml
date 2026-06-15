@@ -1,0 +1,102 @@
+# =============================================================================
+# Travis CI Full Stack CI — Matrix + Services + Parallel + Deploy
+# =============================================================================
+# Combines multiple features: Go version matrix, PostgreSQL service,
+# parallel stage execution, and Docker-based deployment.
+#
+# Run:   gci run -f examples/travis/full-stack.yml --docker --parallel
+#        gci validate -f examples/travis/full-stack.yml
+#        gci ls -f examples/travis/full-stack.yml
+# =============================================================================
+
+language: go
+
+go:
+  - "1.21"
+  - "1.22"
+  - "1.23"
+
+env:
+  global:
+    - GO111MODULE=on
+    - CGO_ENABLED=0
+    - REGISTRY=ghcr.io
+    - IMAGE_NAME=myorg/myapp
+    - DATABASE_URL="postgres://postgres:test@localhost:5432/postgres?sslmode=disable"
+    - REDIS_URL="redis://localhost:6379"
+
+services:
+  - postgresql
+  - redis-server
+  - docker
+
+cache:
+  directories:
+    - $HOME/.cache/go-build
+    - $HOME/go/pkg/mod
+
+before_install:
+  - go mod download
+
+script:
+  - go test -race -coverprofile=coverage.out ./...
+
+stages:
+  - lint
+  - test
+  - e2e
+  - build
+  - deploy
+
+jobs:
+  include:
+    - stage: lint
+      go: "1.22"
+      script:
+        - test -z $(gofmt -l .) || (gofmt -l . && exit 1)
+        - go vet ./...
+        - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        - golangci-lint run --out-format=checkstyle --issues-exit-code=0
+
+    - stage: test
+      go: "1.21"
+      script:
+        - go test -race -coverprofile=coverage.out ./...
+
+    - stage: test
+      go: "1.22"
+      script:
+        - go test -race -coverprofile=coverage.out ./...
+
+    - stage: test
+      go: "1.23"
+      script:
+        - go test -race -coverprofile=coverage.out ./...
+
+    - stage: e2e
+      go: "1.22"
+      script:
+        - go build -o /tmp/myapp .
+        - /tmp/myapp &
+        - sleep 2
+        - go test -tags=e2e -v ./...
+
+    - stage: build
+      go: "1.22"
+      script:
+        - docker build -t $REGISTRY/$IMAGE_NAME:latest .
+        - docker tag $REGISTRY/$IMAGE_NAME:latest $REGISTRY/$IMAGE_NAME:${TRAVIS_COMMIT:0:7}
+
+    - stage: deploy
+      if: branch = main
+      go: "1.22"
+      script: skip
+      before_deploy:
+        - echo "$REGISTRY_PASSWORD" | docker login $REGISTRY -u "$REGISTRY_USER" --password-stdin
+      deploy:
+        provider: script
+        script: |
+          docker push $REGISTRY/$IMAGE_NAME:latest
+          docker push $REGISTRY/$IMAGE_NAME:${TRAVIS_COMMIT:0:7}
+        on:
+          branch: main

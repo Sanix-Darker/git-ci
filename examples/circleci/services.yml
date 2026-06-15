@@ -1,0 +1,117 @@
+# =============================================================================
+# CircleCI Service Containers — Integration testing with PostgreSQL and Redis
+# =============================================================================
+# CircleCI provides Docker service sidecars for integration testing.
+# Services run as separate containers accessible via localhost.
+#
+# Run:   gci run -f examples/circleci/services.yml --docker
+#        gci ls -f examples/circleci/services.yml
+# =============================================================================
+
+version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  go-executor:
+    docker:
+      - image: cimg/go:1.22
+
+jobs:
+  lint:
+    executor: go-executor
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Run unit tests
+          command: go test -short ./...
+
+  unit:
+    executor: go-executor
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Run unit tests
+          command: go test -short -count=1 ./...
+
+  integration:
+    docker:
+      - image: cimg/go:1.22
+      - image: postgres:16-alpine
+        name: postgres
+        environment:
+          POSTGRES_USER: appuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: appdb
+      - image: redis:7-alpine
+        name: redis
+      - image: minio/minio:latest
+        name: minio
+        entrypoint:
+          - sh
+        command:
+          - -c
+          - minio server /data
+        environment:
+          MINIO_ROOT_USER: testaccess
+          MINIO_ROOT_PASSWORD: testsecret
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Wait for services
+          command: |
+            echo "Waiting for PostgreSQL..."
+            for i in $(seq 1 30); do
+              if pg_isready -h localhost -U appuser -d appdb 2>/dev/null; then
+                echo "PostgreSQL is ready!"
+                break
+              fi
+              sleep 1
+            done
+
+            echo "Waiting for Redis..."
+            for i in $(seq 1 30); do
+              if redis-cli -h localhost ping 2>/dev/null; then
+                echo "Redis is ready!"
+                break
+              fi
+              sleep 1
+            done
+      - run:
+          name: Run integration tests
+          command: go test -tags=integration -v -race -count=1 ./...
+          environment:
+            DATABASE_URL: "postgres://appuser:testpass@localhost:5432/appdb?sslmode=disable"
+            REDIS_URL: "redis://localhost:6379/0"
+            S3_ENDPOINT: "http://localhost:9000"
+            AWS_ACCESS_KEY_ID: "testaccess"
+            AWS_SECRET_ACCESS_KEY: "testsecret"
+            AWS_REGION: "us-east-1"
+
+  build:
+    executor: go-executor
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Build
+          command: go build -o myapp .
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - lint
+      - unit:
+          requires:
+            - lint
+      - integration:
+          requires:
+            - unit
+      - build:
+          requires:
+            - integration

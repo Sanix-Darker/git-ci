@@ -1,0 +1,56 @@
+version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  go-default:
+    docker:
+      - image: cimg/go:1.22
+
+jobs:
+  test:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - go/test:
+          race: true
+          coverprofile: coverage.out
+
+  lint:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Lint
+          command: |
+            go fmt ./...
+            go vet ./...
+            golangci-lint run --timeout 5m
+
+  build:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Build
+          command: go build -ldflags="-s -w" -o app .
+      - persist_to_workspace:
+          root: .
+          paths:
+            - app
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - lint
+      - test:
+          requires:
+            - lint
+      - build:
+          requires:
+            - test

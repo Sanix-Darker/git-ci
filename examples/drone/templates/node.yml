@@ -1,0 +1,34 @@
+kind: pipeline
+type: docker
+name: node-ci
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+    - pull_request
+
+environment:
+  NODE_VERSION: "20"
+
+steps:
+  - name: install
+    image: node:${NODE_VERSION}
+    commands:
+      - npm ci
+
+  - name: test
+    image: node:${NODE_VERSION}
+    commands:
+      - npm test
+      - npm run lint
+    depends_on:
+      - install
+
+  - name: build
+    image: node:${NODE_VERSION}
+    commands:
+      - npm run build
+    depends_on:
+      - test

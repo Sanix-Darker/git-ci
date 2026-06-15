@@ -95,13 +95,20 @@ run: build
 	@echo "Running $(BINARY_NAME)..."
 	@./$(BUILD_DIR)/$(BINARY_NAME) $(ARGS)
 
-## install: Install the binary to GOPATH/bin
+## install: Install the binary to GOPATH/bin (via build + copy)
 install: build
 	@echo "Installing $(BINARY_NAME) to $(GOBIN)..."
 	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOBIN)/
 	@chmod +x $(GOBIN)/$(BINARY_NAME)
 	@echo "Installed to $(GOBIN)/$(BINARY_NAME)"
 	@echo "Make sure $(GOBIN) is in your PATH"
+
+## go-install: Install using 'go install ./cmd' (standard Go method, with version info from local build)
+go-install:
+	@echo "Installing $(BINARY_NAME) via 'go install ./cmd'..."
+	@$(GO) install ./cmd
+	@echo "Installed to $$(go env GOPATH)/bin/$(BINARY_NAME)"
+	@echo "Make sure $$(go env GOPATH)/bin is in your PATH"
 
 ## uninstall: Remove the binary from GOPATH/bin
 uninstall:

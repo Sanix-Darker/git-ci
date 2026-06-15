@@ -1,0 +1,99 @@
+# =============================================================================
+# Drone CI Matrix Build — Multi-dimensional test matrix
+# =============================================================================
+# Drone uses environment variables and the matrix plugin to expand builds
+# across multiple dimensions. Each combination runs as a separate pipeline.
+#
+# Run:   gci run -f examples/drone/matrix.yml --docker --parallel
+#        gci ls -f examples/drone/matrix.yml
+# =============================================================================
+
+kind: pipeline
+type: docker
+name: matrix-ci
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+    - pull_request
+
+environment:
+  CGO_ENABLED: "0"
+
+steps:
+  - name: lint
+    image: node:20
+    commands:
+      - npm ci
+      - npm run lint --if-present
+      - npm run typecheck --if-present
+    when:
+      event:
+        - pull_request
+
+  - name: install-deps
+    image: node:20
+    commands:
+      - npm ci
+    depends_on:
+      - lint
+
+  - name: test-node-16
+    image: node:16
+    commands:
+      - npm ci
+      - npm test
+    depends_on:
+      - install-deps
+
+  - name: test-node-18
+    image: node:18
+    commands:
+      - npm ci
+      - npm test
+    depends_on:
+      - install-deps
+
+  - name: test-node-20
+    image: node:20
+    commands:
+      - npm ci
+      - npm test
+      - npm run test:e2e --if-present
+    depends_on:
+      - install-deps
+
+  - name: test-node-20-coverage
+    image: node:20
+    commands:
+      - npm ci
+      - npm test -- --coverage
+      - npx nyc report --reporter=lcov
+      - echo "Coverage report generated"
+    depends_on:
+      - install-deps
+    when:
+      branch:
+        - main
+
+  - name: test-node-21-experimental
+    image: node:21
+    commands:
+      - npm ci
+      - npm test
+      - npm run test:e2e --if-present
+    depends_on:
+      - install-deps
+
+  - name: build-node-20
+    image: node:20
+    commands:
+      - npm ci
+      - npm run build
+    depends_on:
+      - test-node-16
+      - test-node-18
+      - test-node-20
+      - test-node-21-experimental

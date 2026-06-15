@@ -1,0 +1,102 @@
+# =============================================================================
+# Service Containers — Integration testing with PostgreSQL and Redis
+# =============================================================================
+# Services are accessible via DNS aliases matching their name.
+# Requires Docker runner for service containers.
+#
+# Run:   gci run -f examples/github/services.yml --docker
+#        gci run -f examples/github/services.yml --docker --job integration
+#        gci run -f examples/github/services.yml --docker --verbose
+# List:  gci ls -f examples/github/services.yml
+# =============================================================================
+
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run unit tests
+        run: go test -short ./...
+
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: appuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: appdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: testaccess
+          MINIO_ROOT_PASSWORD: testsecret
+        ports:
+          - 9000:9000
+        options: >-
+          --entrypoint sh
+          -c "minio server /data"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for services
+        run: |
+          echo "Waiting for PostgreSQL..."
+          until pg_isready -h postgres -U appuser -d appdb; do sleep 1; done
+          echo "PostgreSQL is ready!"
+
+          echo "Waiting for Redis..."
+          until redis-cli -h redis ping; do sleep 1; done
+          echo "Redis is ready!"
+
+      - name: Run integration tests
+        run: go test -tags=integration -v -race ./...
+        env:
+          DATABASE_URL: "postgres://appuser:testpass@postgres:5432/appdb?sslmode=disable"
+          REDIS_URL: "redis://redis:6379/0"
+          S3_ENDPOINT: "http://minio:9000"
+          AWS_ACCESS_KEY_ID: "testaccess"
+          AWS_SECRET_ACCESS_KEY: "testsecret"
+          AWS_REGION: "us-east-1"
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [unit, integration]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: docker build -t myapp:latest .

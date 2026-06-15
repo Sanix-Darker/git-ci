@@ -1,0 +1,10 @@
+pipelines:
+  default:
+    - step:
+        name: Test
+        script:
+          - echo "Running tests..."
+    - step:
+        name: Build
+        script:
+          - echo "Building application..."

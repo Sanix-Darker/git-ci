@@ -9,14 +9,14 @@ import (
 // ANSI color codes - subtle/muted versions
 const (
 	ColorReset   = "\033[0m"
-	ColorRed     = "\033[31m"     // Red for errors
-	ColorGreen   = "\033[32m"     // Green for success (subtle)
-	ColorYellow  = "\033[33m"     // Yellow for warnings
-	ColorBlue    = "\033[34m"     // Blue for info
-	ColorGray    = "\033[90m"     // Gray for secondary info
-	ColorDimGray = "\033[2;37m"   // Dim gray for less important
-	ColorBold    = "\033[1m"      // Bold
-	ColorDim     = "\033[2m"      // Dim
+	ColorRed     = "\033[31m"   // Red for errors
+	ColorGreen   = "\033[32m"   // Green for success (subtle)
+	ColorYellow  = "\033[33m"   // Yellow for warnings
+	ColorBlue    = "\033[34m"   // Blue for info
+	ColorGray    = "\033[90m"   // Gray for secondary info
+	ColorDimGray = "\033[2;37m" // Dim gray for less important
+	ColorBold    = "\033[1m"    // Bold
+	ColorDim     = "\033[2m"    // Dim
 
 	// Additional muted colors
 	ColorDarkBlue  = "\033[34;2m" // Darker blue
@@ -28,9 +28,9 @@ const (
 type IndentLevel int
 
 const (
-	IndentNone  IndentLevel = 0
-	IndentJob   IndentLevel = 1
-	IndentStep  IndentLevel = 2
+	IndentNone   IndentLevel = 0
+	IndentJob    IndentLevel = 1
+	IndentStep   IndentLevel = 2
 	IndentDetail IndentLevel = 3
 	IndentOutput IndentLevel = 4
 )
@@ -48,8 +48,8 @@ func NewOutputFormatter(verbose bool) *OutputFormatter {
 	return &OutputFormatter{
 		Verbose:    verbose,
 		Width:      80,
-		UseColor:   true,  // Can be made configurable
-		IndentSize: 2,     // Spaces per indent level
+		UseColor:   true, // Can be made configurable
+		IndentSize: 2,    // Spaces per indent level
 	}
 }
 

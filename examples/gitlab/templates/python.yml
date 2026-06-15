@@ -1,0 +1,37 @@
+image: python:3.11
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+    - venv/
+
+before_script:
+  - python -m venv venv
+  - source venv/bin/activate
+  - pip install -r requirements.txt
+
+test:
+  stage: test
+  script:
+    - pip install pytest flake8
+    - flake8 .
+    - pytest --cov=.
+  coverage: '/TOTAL.*\s+(\d+)%/'
+
+build:
+  stage: build
+  script:
+    - python setup.py bdist_wheel
+  artifacts:
+    paths:
+      - dist/
+  dependencies:
+    - test

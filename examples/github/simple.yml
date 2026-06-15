@@ -1,0 +1,32 @@
+# =============================================================================
+# Simple Pipeline — GitHub Actions
+# =============================================================================
+# Minimal example that pairs with examples/gitlab/simple.yml for cross-provider
+# comparison. Both produce identical execution behavior.
+#
+# Run:   gci run -f examples/github/simple.yml
+#        gci run -f examples/github/simple.yml --docker
+#        gci validate -f examples/github/simple.yml
+# =============================================================================
+
+name: Build & Test
+
+on: push
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run tests
+        run: go test ./...
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build binary
+        run: go build .

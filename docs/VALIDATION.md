@@ -29,8 +29,8 @@ Legend per check: PASS / FAIL(fixed) / BLOCKED.
 | A5 | ls yaml valid | `gci ls -f <gh> --format yaml` |
 | A6 | validate ok | `gci validate -f <gh>` |
 | A7 | validate strict | `gci validate -f <gh> --strict` |
-| A8 | discover | `gci discover` |
-| A9 | discover json | `gci discover --format json \| jq` |
+| A8 | discover | `gci discover` | ✅ Implemented |
+| A9 | discover json | `gci discover --format json \| jq` | ✅ Implemented |
 | A10 | config show/init | `gci config show`, `gci config init` |
 | A11 | env list/set/load | `gci env ...` |
 | A12 | init templates | `gci init -p github -t go -o ...` |
@@ -76,18 +76,18 @@ Legend per check: PASS / FAIL(fixed) / BLOCKED.
 
 ## Group E — Providers (parse + ls + dry-run + real bash run where simple)
 Each provider gets a barebones pipeline; verify ls, validate, and a real run.
-| ID | Provider | File |
-|----|----------|------|
-| E1 | GitHub Actions | `.github/workflows/*.yml` |
-| E2 | GitLab CI | `.gitlab-ci.yml` |
-| E3 | Jenkins | `Jenkinsfile` |
-| E4 | CircleCI | `.circleci/config.yml` |
-| E5 | Azure | `azure-pipelines.yml` |
-| E6 | Bitbucket | `bitbucket-pipelines.yml` |
-| E7 | Drone | `.drone.yml` |
-| E8 | Travis | `.travis.yml` |
-| E9 | Tekton | `tekton.yaml` |
-| E10 | Argo | `argo-workflow.yaml` |
+| ID | Provider | File | Status |
+|----|----------|------|--------|
+| E1 | GitHub Actions | `.github/workflows/*.yml` | ✅ Implemented |
+| E2 | GitLab CI | `.gitlab-ci.yml` | ✅ Implemented |
+| E3 | Jenkins | `Jenkinsfile` | ❌ Not yet implemented — falls back to GitHub parser |
+| E4 | CircleCI | `.circleci/config.yml` | ❌ Not yet implemented — falls back to GitHub parser |
+| E5 | Azure | `azure-pipelines.yml` | ❌ Not yet implemented — falls back to GitHub parser |
+| E6 | Bitbucket | `bitbucket-pipelines.yml` | ❌ Not yet implemented — falls back to GitHub parser |
+| E7 | Drone | `.drone.yml` | ❌ Not yet implemented |
+| E8 | Travis | `.travis.yml` | ❌ Not yet implemented |
+| E9 | Tekton | `tekton.yaml` | ❌ Not yet implemented |
+| E10 | Argo | `argo-workflow.yaml` | ❌ Not yet implemented |
 
 ## Group F — Docker provider runs (real containers, per provider)
 Run a barebones job for each provider through the Docker runner with a small
@@ -96,8 +96,8 @@ image and assert the expected output line appears.
 |----|----------|---------|
 | F1 | GitHub (container) | docker |
 | F2 | GitLab (image: alpine) | docker |
-| F3 | CircleCI (docker image) | docker |
-| F4 | Drone (image) | docker |
+| F3 | CircleCI (docker image) | docker | ❌ Not yet implemented |
+| F4 | Drone (image) | docker | ❌ Not yet implemented |
 
 ## Group G — Filtering & selection
 | ID | Check |

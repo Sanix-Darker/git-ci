@@ -1,0 +1,133 @@
+# =============================================================================
+# Drone CI Full Stack CI — Matrix + Services + Parallel + Deploy
+# =============================================================================
+# Combines multiple features: Go version matrix, service containers, parallel
+# pipeline execution, and Docker deployment.
+#
+# Run:   gci run -f examples/drone/full-stack.yml --docker --parallel
+#        gci ls -f examples/drone/full-stack.yml
+# =============================================================================
+
+kind: pipeline
+type: docker
+name: full-stack-ci
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+    - pull_request
+
+environment:
+  GO_VERSION: "1.22"
+  CGO_ENABLED: "0"
+  REGISTRY: ghcr.io
+  IMAGE_NAME: myorg/myapp
+
+steps:
+  - name: lint
+    image: golang:${GO_VERSION}
+    commands:
+      - go mod download
+      - test -z $(gofmt -l .) || (gofmt -l . && exit 1)
+      - go vet ./...
+      - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+      - golangci-lint run --out-format=checkstyle --issues-exit-code=0
+    when:
+      event:
+        - pull_request
+
+  # Matrix: test with multiple Go versions (run in parallel via depends_on)
+  - name: test-1.21
+    image: golang:1.21
+    commands:
+      - go mod download
+      - go test -race -coverprofile=coverage.out ./...
+    environment:
+      DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      - lint
+
+  - name: test-1.22
+    image: golang:1.22
+    commands:
+      - go mod download
+      - go test -race -coverprofile=coverage.out ./...
+    environment:
+      DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      - lint
+
+  - name: test-1.23
+    image: golang:1.23
+    commands:
+      - go mod download
+      - go test -race -coverprofile=coverage.out ./...
+    environment:
+      DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+    depends_on:
+      - lint
+
+  # E2E tests run in parallel with the matrix
+  - name: e2e
+    image: golang:${GO_VERSION}
+    commands:
+      - go mod download
+      - go build -o /tmp/myapp .
+      - /tmp/myapp &
+      - sleep 2
+      - go test -tags=e2e -v ./...
+    environment:
+      DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+      REDIS_URL: "redis://redis:6379"
+      APP_ADDR: ":8080"
+    depends_on:
+      - lint
+
+  - name: build-and-push
+    image: plugins/docker
+    settings:
+      repo: ${REGISTRY}/${IMAGE_NAME}
+      tags:
+        - latest
+        - "${DRONE_COMMIT_SHA:0:7}"
+      dockerfile: Dockerfile
+      build_args:
+        - VERSION=${DRONE_COMMIT_SHA:0:7}
+    depends_on:
+      - test-1.21
+      - test-1.22
+      - test-1.23
+      - e2e
+    when:
+      branch:
+        - main
+      event:
+        - push
+
+  - name: deploy
+    image: alpine:latest
+    commands:
+      - apk add --no-cache curl
+      - echo "Deploying myorg/myapp:${DRONE_COMMIT_SHA:0:7}"
+      - curl -X POST -d "version=${DRONE_COMMIT_SHA:0:7}" "https://api.example.com/deploy" || echo "Deploy endpoint not configured"
+    depends_on:
+      - build-and-push
+    when:
+      branch:
+        - main
+      event:
+        - push
+
+services:
+  - name: postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: test
+
+  - name: redis
+    image: redis:7-alpine

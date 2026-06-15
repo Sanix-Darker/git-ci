@@ -181,3 +181,9 @@ jobs:
 
       - name: Test validation
         run: ./gci-linux-amd64 validate
+
+      - name: Check template sync
+        run: |
+          mkdir -p build
+          cp ./gci-linux-amd64 build/gci
+          bash scripts/sync-templates.sh --skip-build --check

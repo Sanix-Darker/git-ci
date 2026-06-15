@@ -1,0 +1,110 @@
+# =============================================================================
+# CircleCI Pipeline — Go Project with Orb
+# =============================================================================
+# CircleCI uses a workflow model where jobs are orchestrated with requires.
+# The Go orb provides reusable commands for Go projects.
+#
+# Run:   gci run -f examples/circleci/config.yml --docker
+#        gci run -f examples/circleci/config.yml --docker --job test
+#        gci validate -f examples/circleci/config.yml
+# =============================================================================
+
+version: 2.1
+
+# Orbs provide reusable configuration packages
+orbs:
+  go: circleci/go@3.2.1
+
+# Executors define the runtime environment
+executors:
+  go-default:
+    docker:
+      - image: cimg/go:1.22
+    resource_class: medium
+
+# Jobs are the building blocks of a CircleCI pipeline
+jobs:
+  lint:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Lint
+          command: |
+            go fmt ./...
+            go vet ./...
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+            golangci-lint run --timeout 5m
+
+  test:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - go/test:
+          race: true
+          failfast: false
+          coverprofile: coverage.out
+
+  build:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Build binary
+          command: go build -ldflags="-s -w" -o myapp .
+
+      - persist_to_workspace:
+          root: .
+          paths:
+            - myapp
+
+  docker-build:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build Docker image
+          command: docker build -t myapp:latest .
+
+  deploy:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - run:
+          name: Deploy application
+          command: echo "Deploying myapp to production..."
+
+# Workflows orchestrate jobs with dependencies
+workflows:
+  version: 2
+
+  ci:
+    jobs:
+      - lint
+
+      - test:
+          requires:
+            - lint
+
+      - build:
+          requires:
+            - lint
+            - test
+
+      - docker-build:
+          requires:
+            - build
+
+      # Deploy only runs on the main branch
+      - deploy:
+          requires:
+            - build
+            - docker-build
+          filters:
+            branches:
+              only: main

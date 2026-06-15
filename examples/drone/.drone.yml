@@ -1,0 +1,96 @@
+# =============================================================================
+# Drone CI Pipeline — Go Project (Docker Runner)
+# =============================================================================
+# Drone uses a pipeline model where steps run sequentially in Docker
+# containers, sharing a common workspace. Each step can specify a different
+# image and environment.
+#
+# Run:   gci run -f examples/drone/.drone.yml --docker
+#        gci run -f examples/drone/.drone.yml --docker --job test
+#        gci validate -f examples/drone/.drone.yml
+# =============================================================================
+
+kind: pipeline
+type: docker
+name: default
+
+# Trigger conditions — when this pipeline should run
+trigger:
+  branch:
+    - main
+    - develop
+  event:
+    - push
+    - pull_request
+
+# Environment variables available to all steps
+environment:
+  GO_VERSION: "1.22"
+  CGO_ENABLED: "0"
+
+# Steps run sequentially in isolated containers with a shared workspace
+steps:
+  - name: lint
+    image: golang:${GO_VERSION}
+    commands:
+      - go fmt ./...
+      - go vet ./...
+      - echo "Linting complete"
+    when:
+      event:
+        - pull_request
+
+  - name: test
+    image: golang:${GO_VERSION}
+    commands:
+      - go mod download
+      - go test -v -race -count=1 ./...
+      - go test -race -coverprofile=coverage.out ./...
+
+  - name: build
+    image: golang:${GO_VERSION}
+    commands:
+      - go build -ldflags="-s -w" -o myapp .
+      - ./myapp -version
+    depends_on:
+      - test
+
+  - name: docker-publish
+    image: plugins/docker
+    settings:
+      repo: myorg/myapp
+      tags: latest
+      dockerfile: Dockerfile
+    depends_on:
+      - build
+    when:
+      branch:
+        - main
+      event:
+        - push
+
+  - name: deploy
+    image: alpine:latest
+    commands:
+      - apk add --no-cache curl
+      - echo "Deploying myapp to production..."
+      - curl -X POST https://api.example.com/deploy
+    depends_on:
+      - docker-publish
+    when:
+      branch:
+        - main
+      event:
+        - push
+
+# Services provide background containers (e.g., databases for testing)
+services:
+  - name: postgres
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+
+  - name: redis
+    image: redis:7-alpine

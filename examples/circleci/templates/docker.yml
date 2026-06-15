@@ -1,0 +1,42 @@
+version: 2.1
+
+executors:
+  docker-executor:
+    docker:
+      - image: cimg/base:stable
+
+jobs:
+  build:
+    executor: docker-executor
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build Docker image
+          command: docker build -t myapp:latest .
+
+  push:
+    executor: docker-executor
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Log in to registry
+          command: echo "$REGISTRY_PASSWORD" | docker login ghcr.io -u $REGISTRY_USER --password-stdin
+      - run:
+          name: Push Docker image
+          command: |
+            docker build -t ghcr.io/myorg/myapp:latest .
+            docker push ghcr.io/myorg/myapp:latest
+
+workflows:
+  version: 2
+  docker:
+    jobs:
+      - build
+      - push:
+          requires:
+            - build
+          filters:
+            branches:
+              only: main

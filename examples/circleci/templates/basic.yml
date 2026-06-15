@@ -1,0 +1,35 @@
+version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  default:
+    docker:
+      - image: cimg/base:stable
+
+jobs:
+  test:
+    executor: default
+    steps:
+      - checkout
+      - run:
+          name: Run tests
+          command: echo "Add your test commands here"
+
+  build:
+    executor: default
+    steps:
+      - checkout
+      - run:
+          name: Build
+          command: echo "Add your build commands here"
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test

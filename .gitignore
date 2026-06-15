@@ -41,3 +41,7 @@ TO-ASK.md
 # Validation scratch workspace
 .tmp-validation/
 .codex/
+
+# examples/ contains sample pipeline files for users to explore.
+# They are intentionally tracked and should NOT be added to .gitignore.
+# See examples/README.md for usage instructions.

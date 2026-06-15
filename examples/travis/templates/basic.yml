@@ -1,0 +1,18 @@
+language: generic
+
+os: linux
+dist: focal
+
+script:
+  - echo "Running tests..."
+  - echo "Add your test commands here"
+
+jobs:
+  include:
+    - stage: test
+      script:
+        - echo "Running tests..."
+
+    - stage: build
+      script:
+        - echo "Building application..."

@@ -1,0 +1,149 @@
+# =============================================================================
+# Full Stack CI — Matrix + Services + Parallel Execution
+# =============================================================================
+# Combines multiple features: matrix strategy, service containers, parallel
+# execution, and dependency chaining.
+#
+# Run:   gci run -f examples/github/full-stack.yml --docker --parallel
+#        gci ls -f examples/github/full-stack.yml
+# =============================================================================
+
+name: Full Stack CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: myorg/myapp
+
+jobs:
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Format check
+        run: |
+          test -z $(gofmt -l .) || (gofmt -l . && exit 1)
+          go vet ./...
+
+      - name: Lint
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          golangci-lint run --out-format=checkstyle --issues-exit-code=0
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+      redis:
+        image: redis:7-alpine
+    strategy:
+      matrix:
+        go: ["1.21", "1.22", "1.23"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Test with coverage
+        run: go test -race -coverprofile=coverage.out ./...
+        env:
+          DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+          REDIS_URL: "redis://redis:6379"
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.go }}
+          path: coverage.out
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+      redis:
+        image: redis:7-alpine
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Build binary
+        run: go build -o myapp .
+
+      - name: Start app and run E2E tests
+        run: |
+          ./myapp &
+          sleep 2
+          go test -tags=e2e -v ./...
+        env:
+          DATABASE_URL: "postgres://postgres:test@postgres:5432/postgres?sslmode=disable"
+          REDIS_URL: "redis://redis:6379"
+          APP_ADDR: ":8080"
+
+  build:
+    name: Build & Package
+    runs-on: ubuntu-latest
+    needs: [lint, test, e2e]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=semver,pattern={{version}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

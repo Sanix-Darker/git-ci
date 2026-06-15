@@ -1,0 +1,37 @@
+image: golang:1.21
+
+stages:
+  - test
+  - build
+
+variables:
+  GO111MODULE: "on"
+
+cache:
+  paths:
+    - .go/pkg/mod/
+
+before_script:
+  - mkdir -p .go
+  - export GOPATH=$CI_PROJECT_DIR/.go
+  - export PATH=$PATH:$GOPATH/bin
+
+test:
+  stage: test
+  script:
+    - go mod download
+    - go test -v -race -coverprofile=coverage.out ./...
+    - go vet ./...
+    - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+    - golangci-lint run
+  coverage: '/coverage: \d+.\d+% of statements/'
+
+build:
+  stage: build
+  script:
+    - go build -v -o app ./cmd/...
+  artifacts:
+    paths:
+      - app
+  dependencies:
+    - test

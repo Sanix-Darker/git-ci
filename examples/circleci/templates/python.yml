@@ -1,0 +1,45 @@
+version: 2.1
+
+executors:
+  python-executor:
+    docker:
+      - image: cimg/python:3.11
+
+jobs:
+  test:
+    executor: python-executor
+    parameters:
+      python-version:
+        type: string
+        default: "3.11"
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            pip install pytest flake8
+      - run:
+          name: Lint
+          command: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      - run:
+          name: Test
+          command: pytest
+
+  build:
+    executor: python-executor
+    steps:
+      - checkout
+      - run:
+          name: Build
+          command: python setup.py sdist bdist_wheel
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test

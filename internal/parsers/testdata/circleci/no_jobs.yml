@@ -1,0 +1,14 @@
+version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  default:
+    docker:
+      - image: cimg/base:stable
+
+workflows:
+  version: 2
+  empty:
+    jobs: []

@@ -1,0 +1,21 @@
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: Test
+  jobs:
+  - job: Test
+    steps:
+    - script: echo "Running tests..."
+      displayName: 'Run tests'
+
+- stage: Build
+  dependsOn: Test
+  jobs:
+  - job: Build
+    steps:
+    - script: echo "Building application..."
+      displayName: 'Build application'

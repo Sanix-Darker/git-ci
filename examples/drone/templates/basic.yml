@@ -1,0 +1,23 @@
+kind: pipeline
+type: docker
+name: default
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+    - pull_request
+
+steps:
+  - name: test
+    image: alpine:latest
+    commands:
+      - echo "Running tests..."
+
+  - name: build
+    image: alpine:latest
+    commands:
+      - echo "Building application..."
+    depends_on:
+      - test

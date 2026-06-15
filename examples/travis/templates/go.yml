@@ -1,0 +1,33 @@
+language: go
+
+go:
+  - "1.22"
+  - "1.23"
+
+env:
+  global:
+    - GO111MODULE=on
+    - CGO_ENABLED=0
+
+cache:
+  directories:
+    - $HOME/.cache/go-build
+    - $HOME/go/pkg/mod
+
+install:
+  - go mod download
+
+script:
+  - go test -v -race -count=1 ./...
+  - go vet ./...
+
+after_success:
+  - go build -ldflags="-s -w" -o app .
+
+jobs:
+  include:
+    - stage: lint
+      go: "1.22"
+      script:
+        - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        - golangci-lint run --timeout 5m

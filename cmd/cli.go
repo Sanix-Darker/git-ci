@@ -250,7 +250,7 @@ func commands() []*cli.Command {
 				&cli.StringFlag{
 					Name:    "provider",
 					Aliases: []string{"p"},
-					Usage:   "CI provider (github, gitlab)",
+					Usage:   "CI provider (github, gitlab, circleci, drone, travis, bitbucket, azure)",
 					Value:   "github",
 				},
 				&cli.StringFlag{
@@ -267,6 +267,23 @@ func commands() []*cli.Command {
 				&cli.BoolFlag{
 					Name:  "force",
 					Usage: "Overwrite existing file",
+				},
+			},
+		},
+		{
+			Name:    "discover",
+			Aliases: []string{"scan", "find"},
+			Usage:   "Discover CI/CD configuration files in the project",
+			Action:  handlers.CmdDiscover,
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:  "directory",
+					Usage: "Directory to search for CI/CD files (default: current directory)",
+				},
+				&cli.StringFlag{
+					Name:  "format",
+					Usage: "Output format: tree, json, yaml (default: tree)",
+					Value: "tree",
 				},
 			},
 		},

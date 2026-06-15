@@ -1,0 +1,28 @@
+# =============================================================================
+# Simple Pipeline — GitLab CI
+# =============================================================================
+# Minimal example that pairs with examples/github/simple.yml for cross-provider
+# comparison. Both produce identical execution behavior.
+#
+# Run:   gci run -f examples/gitlab/simple.yml
+#        gci run -f examples/gitlab/simple.yml --docker
+#        gci validate -f examples/gitlab/simple.yml --provider gitlab
+# =============================================================================
+
+stages:
+  - test
+  - build
+
+test:
+  stage: test
+  image: golang:1.22
+  script:
+    - go test ./...
+
+build:
+  stage: build
+  image: golang:1.22
+  script:
+    - go build .
+  needs:
+    - test

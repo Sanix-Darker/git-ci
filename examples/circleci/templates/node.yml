@@ -1,0 +1,46 @@
+version: 2.1
+
+orbs:
+  node: circleci/node@5.0.0
+
+executors:
+  node-executor:
+    docker:
+      - image: cimg/node:20
+
+jobs:
+  test:
+    executor: node-executor
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Run tests
+          command: npm test
+      - run:
+          name: Lint
+          command: npm run lint
+
+  build:
+    executor: node-executor
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Build
+          command: npm run build
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist/
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test

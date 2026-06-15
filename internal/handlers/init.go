@@ -26,6 +26,12 @@ func CmdInit(c *cli.Context) error {
 			output = "bitbucket-pipelines.yml"
 		case "azure":
 			output = "azure-pipelines.yml"
+		case "circleci":
+			output = ".circleci/config.yml"
+		case "drone":
+			output = ".drone.yml"
+		case "travis":
+			output = ".travis.yml"
 		default:
 			output = ".github/workflows/ci.yml"
 		}
@@ -68,6 +74,12 @@ func generatePipelineTemplate(provider, template string) string {
 		return generateGitHubTemplate(template)
 	case "gitlab":
 		return generateGitLabTemplate(template)
+	case "circleci":
+		return generateCircleCITemplate(template)
+	case "drone":
+		return generateDroneTemplate(template)
+	case "travis":
+		return generateTravisTemplate(template)
 	case "bitbucket":
 		return generateBitbucketTemplate(template)
 	case "azure":
@@ -106,6 +118,54 @@ func generateGitLabTemplate(template string) string {
 		return gitlabDockerTemplate
 	default:
 		return gitlabBasicTemplate
+	}
+}
+
+// generateCircleCITemplate generates CircleCI template
+func generateCircleCITemplate(template string) string {
+	switch template {
+	case "node":
+		return circleciNodeTemplate
+	case "python":
+		return circleciPythonTemplate
+	case "go":
+		return circleciGoTemplate
+	case "docker":
+		return circleciDockerTemplate
+	default:
+		return circleciBasicTemplate
+	}
+}
+
+// generateDroneTemplate generates Drone CI template
+func generateDroneTemplate(template string) string {
+	switch template {
+	case "node":
+		return droneNodeTemplate
+	case "python":
+		return dronePythonTemplate
+	case "go":
+		return droneGoTemplate
+	case "docker":
+		return droneDockerTemplate
+	default:
+		return droneBasicTemplate
+	}
+}
+
+// generateTravisTemplate generates Travis CI template
+func generateTravisTemplate(template string) string {
+	switch template {
+	case "node":
+		return travisNodeTemplate
+	case "python":
+		return travisPythonTemplate
+	case "go":
+		return travisGoTemplate
+	case "docker":
+		return travisDockerTemplate
+	default:
+		return travisBasicTemplate
 	}
 }
 
@@ -566,4 +626,545 @@ stages:
     steps:
     - script: echo "Building application..."
       displayName: 'Build application'
+`
+
+// =============================================================================
+// CircleCI Templates
+// =============================================================================
+
+const circleciBasicTemplate = `version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  default:
+    docker:
+      - image: cimg/base:stable
+
+jobs:
+  test:
+    executor: default
+    steps:
+      - checkout
+      - run:
+          name: Run tests
+          command: echo "Add your test commands here"
+
+  build:
+    executor: default
+    steps:
+      - checkout
+      - run:
+          name: Build
+          command: echo "Add your build commands here"
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test
+`
+
+const circleciGoTemplate = `version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  go-default:
+    docker:
+      - image: cimg/go:1.22
+
+jobs:
+  test:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - go/test:
+          race: true
+          coverprofile: coverage.out
+
+  lint:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Lint
+          command: |
+            go fmt ./...
+            go vet ./...
+            golangci-lint run --timeout 5m
+
+  build:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Build
+          command: go build -ldflags="-s -w" -o app .
+      - persist_to_workspace:
+          root: .
+          paths:
+            - app
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - lint
+      - test:
+          requires:
+            - lint
+      - build:
+          requires:
+            - test
+`
+
+const circleciNodeTemplate = `version: 2.1
+
+orbs:
+  node: circleci/node@5.0.0
+
+executors:
+  node-executor:
+    docker:
+      - image: cimg/node:20
+
+jobs:
+  test:
+    executor: node-executor
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Run tests
+          command: npm test
+      - run:
+          name: Lint
+          command: npm run lint
+
+  build:
+    executor: node-executor
+    steps:
+      - checkout
+      - node/install-packages:
+          pkg-manager: npm
+      - run:
+          name: Build
+          command: npm run build
+      - persist_to_workspace:
+          root: .
+          paths:
+            - dist/
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test
+`
+
+const circleciPythonTemplate = `version: 2.1
+
+executors:
+  python-executor:
+    docker:
+      - image: cimg/python:3.11
+
+jobs:
+  test:
+    executor: python-executor
+    parameters:
+      python-version:
+        type: string
+        default: "3.11"
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            python -m pip install --upgrade pip
+            pip install -r requirements.txt
+            pip install pytest flake8
+      - run:
+          name: Lint
+          command: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      - run:
+          name: Test
+          command: pytest
+
+  build:
+    executor: python-executor
+    steps:
+      - checkout
+      - run:
+          name: Build
+          command: python setup.py sdist bdist_wheel
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - test
+      - build:
+          requires:
+            - test
+`
+
+const circleciDockerTemplate = `version: 2.1
+
+executors:
+  docker-executor:
+    docker:
+      - image: cimg/base:stable
+
+jobs:
+  build:
+    executor: docker-executor
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build Docker image
+          command: docker build -t myapp:latest .
+
+  push:
+    executor: docker-executor
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Log in to registry
+          command: echo "$REGISTRY_PASSWORD" | docker login ghcr.io -u $REGISTRY_USER --password-stdin
+      - run:
+          name: Push Docker image
+          command: |
+            docker build -t ghcr.io/myorg/myapp:latest .
+            docker push ghcr.io/myorg/myapp:latest
+
+workflows:
+  version: 2
+  docker:
+    jobs:
+      - build
+      - push:
+          requires:
+            - build
+          filters:
+            branches:
+              only: main
+`
+
+// =============================================================================
+// Drone CI Templates
+// =============================================================================
+
+const droneBasicTemplate = `kind: pipeline
+type: docker
+name: default
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+    - pull_request
+
+steps:
+  - name: test
+    image: alpine:latest
+    commands:
+      - echo "Running tests..."
+
+  - name: build
+    image: alpine:latest
+    commands:
+      - echo "Building application..."
+    depends_on:
+      - test
+`
+
+const droneGoTemplate = `kind: pipeline
+type: docker
+name: go-ci
+
+trigger:
+  branch:
+    - main
+    - develop
+  event:
+    - push
+    - pull_request
+
+environment:
+  GO_VERSION: "1.22"
+  CGO_ENABLED: "0"
+
+steps:
+  - name: lint
+    image: golang:${GO_VERSION}
+    commands:
+      - go fmt ./...
+      - go vet ./...
+
+  - name: test
+    image: golang:${GO_VERSION}
+    commands:
+      - go mod download
+      - go test -v -race -count=1 ./...
+      - go test -race -coverprofile=coverage.out ./...
+
+  - name: build
+    image: golang:${GO_VERSION}
+    commands:
+      - go build -ldflags="-s -w" -o app .
+    depends_on:
+      - test
+`
+
+const droneNodeTemplate = `kind: pipeline
+type: docker
+name: node-ci
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+    - pull_request
+
+environment:
+  NODE_VERSION: "20"
+
+steps:
+  - name: install
+    image: node:${NODE_VERSION}
+    commands:
+      - npm ci
+
+  - name: test
+    image: node:${NODE_VERSION}
+    commands:
+      - npm test
+      - npm run lint
+    depends_on:
+      - install
+
+  - name: build
+    image: node:${NODE_VERSION}
+    commands:
+      - npm run build
+    depends_on:
+      - test
+`
+
+const dronePythonTemplate = `kind: pipeline
+type: docker
+name: python-ci
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+    - pull_request
+
+environment:
+  PYTHON_VERSION: "3.11"
+
+steps:
+  - name: test
+    image: python:${PYTHON_VERSION}
+    commands:
+      - pip install -r requirements.txt
+      - pip install pytest flake8
+      - flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      - pytest
+
+  - name: build
+    image: python:${PYTHON_VERSION}
+    commands:
+      - python setup.py sdist bdist_wheel
+    depends_on:
+      - test
+`
+
+const droneDockerTemplate = `kind: pipeline
+type: docker
+name: docker-ci
+
+trigger:
+  branch:
+    - main
+  event:
+    - push
+
+steps:
+  - name: build
+    image: plugins/docker
+    settings:
+      repo: myorg/myapp
+      tags: latest
+      dockerfile: Dockerfile
+
+  - name: push
+    image: plugins/docker
+    settings:
+      repo: myorg/myapp
+      tags:
+        - latest
+        - "${DRONE_COMMIT_SHA:0:8}"
+      dockerfile: Dockerfile
+    depends_on:
+      - build
+    when:
+      branch:
+        - main
+`
+
+// =============================================================================
+// Travis CI Templates
+// =============================================================================
+
+const travisBasicTemplate = `language: generic
+
+os: linux
+dist: focal
+
+script:
+  - echo "Running tests..."
+  - echo "Add your test commands here"
+
+jobs:
+  include:
+    - stage: test
+      script:
+        - echo "Running tests..."
+
+    - stage: build
+      script:
+        - echo "Building application..."
+`
+
+const travisGoTemplate = `language: go
+
+go:
+  - "1.22"
+  - "1.23"
+
+env:
+  global:
+    - GO111MODULE=on
+    - CGO_ENABLED=0
+
+cache:
+  directories:
+    - $HOME/.cache/go-build
+    - $HOME/go/pkg/mod
+
+install:
+  - go mod download
+
+script:
+  - go test -v -race -count=1 ./...
+  - go vet ./...
+
+after_success:
+  - go build -ldflags="-s -w" -o app .
+
+jobs:
+  include:
+    - stage: lint
+      go: "1.22"
+      script:
+        - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+        - golangci-lint run --timeout 5m
+`
+
+const travisNodeTemplate = `language: node_js
+
+node_js:
+  - "16"
+  - "18"
+  - "20"
+
+cache:
+  npm: true
+
+install:
+  - npm ci
+
+script:
+  - npm test
+  - npm run lint
+
+jobs:
+  include:
+    - stage: build
+      node_js: "20"
+      script:
+        - npm run build
+`
+
+const travisPythonTemplate = `language: python
+
+python:
+  - "3.9"
+  - "3.10"
+  - "3.11"
+
+cache:
+  pip: true
+
+install:
+  - pip install -r requirements.txt
+  - pip install pytest flake8
+
+script:
+  - flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+  - pytest
+
+jobs:
+  include:
+    - stage: build
+      python: "3.11"
+      script:
+        - python setup.py sdist bdist_wheel
+`
+
+const travisDockerTemplate = `language: minimal
+
+os: linux
+dist: focal
+
+services:
+  - docker
+
+env:
+  global:
+    - REGISTRY=ghcr.io
+    - IMAGE_NAME=myorg/myapp
+
+script:
+  - docker build -t $REGISTRY/$IMAGE_NAME:latest .
+
+before_deploy:
+  - echo "$REGISTRY_PASSWORD" | docker login $REGISTRY -u "$REGISTRY_USER" --password-stdin
+
+deploy:
+  provider: script
+  script: docker push $REGISTRY/$IMAGE_NAME:latest
+  on:
+    branch: main
 `
