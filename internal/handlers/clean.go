@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
@@ -20,7 +19,7 @@ func CmdClean(c *cli.Context) error {
 	all := c.Bool("all")
 	containers := c.Bool("containers") || all
 	images := c.Bool("images") || all
-   // TODO: handle pod cleaning too, if needed
+	// TODO: handle pod cleaning too, if needed
 	cache := c.Bool("cache") || all
 	force := c.Bool("force")
 
@@ -98,7 +97,7 @@ func cleanContainers(ctx context.Context, cli *client.Client, force bool) error 
 		}
 
 		// Filter by name prefix
-		var gitCiContainers []types.Container
+		var gitCiContainers []container.Summary
 		for _, c := range containers {
 			for _, name := range c.Names {
 				if strings.Contains(name, "git-ci") {
@@ -120,7 +119,7 @@ func cleanContainers(ctx context.Context, cli *client.Client, force bool) error 
 		if !force {
 			fmt.Printf("    Remove container %s? [y/N]: ", name)
 			var response string
-			fmt.Scanln(&response)
+			_, _ = fmt.Scanln(&response)
 			if response != "y" && response != "Y" {
 				continue
 			}
@@ -180,7 +179,7 @@ func cleanImages(ctx context.Context, cli *client.Client, force bool) error {
 		if !force {
 			fmt.Printf("    Remove image %s? [y/N]: ", tag)
 			var response string
-			fmt.Scanln(&response)
+			_, _ = fmt.Scanln(&response)
 			if response != "y" && response != "Y" {
 				continue
 			}

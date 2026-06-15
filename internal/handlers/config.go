@@ -246,42 +246,42 @@ func applyConfigToContext(c *cli.Context, config *GitCIConfig) {
 
 	// Apply defaults
 	if !c.IsSet("timeout") && config.Defaults.Timeout > 0 {
-		c.Set("timeout", fmt.Sprintf("%d", config.Defaults.Timeout))
+		_ = c.Set("timeout", fmt.Sprintf("%d", config.Defaults.Timeout))
 	}
 
 	if !c.IsSet("parallel") && config.Defaults.Parallel {
-		c.Set("parallel", "true")
+		_ = c.Set("parallel", "true")
 	}
 
 	if !c.IsSet("max-parallel") && config.Defaults.MaxParallel > 0 {
-		c.Set("max-parallel", fmt.Sprintf("%d", config.Defaults.MaxParallel))
+		_ = c.Set("max-parallel", fmt.Sprintf("%d", config.Defaults.MaxParallel))
 	}
 
 	if !c.IsSet("continue-on-error") && config.Defaults.ContinueOnError {
-		c.Set("continue-on-error", "true")
+		_ = c.Set("continue-on-error", "true")
 	}
 
 	if !c.IsSet("verbose") && config.Defaults.Verbose {
-		c.Set("verbose", "true")
+		_ = c.Set("verbose", "true")
 	}
 
 	// Apply Docker configuration
 	if !c.IsSet("docker") && config.Defaults.Runner == "docker" {
-		c.Set("docker", "true")
+		_ = c.Set("docker", "true")
 	}
 
 	if !c.IsSet("pull") && config.Docker.Pull {
-		c.Set("pull", "true")
+		_ = c.Set("pull", "true")
 	}
 
 	if !c.IsSet("network") && config.Docker.Network != "" {
-		c.Set("network", config.Docker.Network)
+		_ = c.Set("network", config.Docker.Network)
 	}
 
 	// Apply volumes
 	if len(config.Docker.Volumes) > 0 && !c.IsSet("volume") {
 		for _, vol := range config.Docker.Volumes {
-			c.Set("volume", vol)
+			_ = c.Set("volume", vol)
 		}
 	}
 

@@ -445,12 +445,12 @@ func (r *PodmanRunner) streamLogs(ctx context.Context, containerID string) error
 
 	go func() {
 		defer wg.Done()
-		io.Copy(os.Stdout, stdout)
+		_, _ = io.Copy(os.Stdout, stdout)
 	}()
 
 	go func() {
 		defer wg.Done()
-		io.Copy(os.Stderr, stderr)
+		_, _ = io.Copy(os.Stderr, stderr)
 	}()
 
 	wg.Wait()
@@ -467,7 +467,7 @@ func (r *PodmanRunner) waitContainer(ctx context.Context, containerID string) (i
 	}
 
 	var exitCode int
-	fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &exitCode)
+	_, _ = fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &exitCode)
 	return exitCode, nil
 }
 
@@ -482,7 +482,7 @@ func (r *PodmanRunner) getExitCode(ctx context.Context, containerID string) (int
 	}
 
 	var exitCode int
-	fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &exitCode)
+	_, _ = fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &exitCode)
 	return exitCode, nil
 }
 

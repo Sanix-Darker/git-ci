@@ -69,27 +69,59 @@ func detectParser(filePath string) types.Parser {
 	dir := filepath.Dir(filePath)
 	base := filepath.Base(filePath)
 
+	// Path-based detection (most reliable)
 	if strings.Contains(dir, ".github/workflows") || strings.Contains(base, "github") {
 		return &parsers.GithubParser{}
-	} else if strings.Contains(base, "gitlab") || base == ".gitlab-ci.yml" || base == ".gitlab-ci.yaml" {
+	} else if base == ".gitlab-ci.yml" || base == ".gitlab-ci.yaml" || strings.Contains(base, "gitlab") {
 		return &parsers.GitlabParser{}
+	} else if strings.Contains(dir, ".circleci") {
+		return parsers.NewCircleCIParser()
+	} else if base == ".drone.yml" || base == ".drone.yaml" {
+		return &parsers.DroneParser{}
+	} else if base == ".travis.yml" || base == ".travis.yaml" {
+		return &parsers.TravisParser{}
 	} else if strings.Contains(base, "bitbucket") {
 		return &parsers.GithubParser{} // Fallback
 	} else if strings.Contains(base, "azure") {
 		return &parsers.GithubParser{} // Fallback
 	}
 
-	// Content-based detection: read file and look for provider indicators
+	// Content-based detection for files with non-standard names
 	if data, err := os.ReadFile(filePath); err == nil {
 		content := string(data)
+
+		// CircleCI indicators: version 2.1 + jobs + workflows
+		hasCircleCIVersion := strings.Contains(content, "version: 2.1")
+		hasCircleCIJobs := strings.Contains(content, "\njobs:") || strings.HasPrefix(content, "jobs:")
+		hasWorkflows := strings.Contains(content, "\nworkflows:")
+		hasExecutor := strings.Contains(content, "executor:") || strings.Contains(content, "executors:")
+
+		// Drone indicators: kind: pipeline
+		hasDroneKind := strings.Contains(content, "kind: pipeline")
+
+		// Travis indicators: language: at top level
+		hasTravisLang := strings.Contains(content, "language:")
+
 		// GitHub indicators: "on:" trigger + "jobs:" with "runs-on:"
 		hasGitHubOn := strings.Contains(content, "\non:") || strings.HasPrefix(content, "on:")
 		hasRunsOn := strings.Contains(content, "runs-on:")
+
 		// GitLab indicators: "stages:" or jobs with "script:"
 		hasStages := strings.Contains(content, "\nstages:") || strings.HasPrefix(content, "stages:")
 		hasScript := strings.Contains(content, "script:")
 
-		if hasGitHubOn && hasRunsOn {
+		// Prioritize most specific indicators first
+		if hasDroneKind {
+			return &parsers.DroneParser{}
+		} else if hasCircleCIVersion && (hasCircleCIJobs || hasWorkflows || hasExecutor) {
+			return parsers.NewCircleCIParser()
+		} else if hasTravisLang && (hasScript || hasStages) && !hasGitHubOn {
+			// Travis has language: at top level, GitHub workflows don't
+			return &parsers.TravisParser{}
+		} else if hasTravisLang {
+			// language: alone is strongly Travis
+			return &parsers.TravisParser{}
+		} else if hasGitHubOn && hasRunsOn {
 			return &parsers.GithubParser{}
 		} else if hasStages || hasScript {
 			return &parsers.GitlabParser{}
@@ -298,47 +330,4 @@ func printVerbose(c *cli.Context, format string, args ...interface{}) {
 	if c.Bool("verbose") || c.Bool("debug") {
 		fmt.Printf(format, args...)
 	}
-}
-
-// printDebug prints message if debug mode is enabled
-func printDebug(c *cli.Context, format string, args ...interface{}) {
-	if c.Bool("debug") {
-		fmt.Printf("[DEBUG] "+format, args...)
-	}
-}
-
-// detectProvider auto-detects CI provider from file or environment
-func detectProvider(c *cli.Context) string {
-	provider := c.String("provider")
-	if provider != "" && provider != "auto" {
-		return provider
-	}
-
-	// Check environment variables
-	if os.Getenv("GITHUB_ACTIONS") != "" {
-		return "github"
-	}
-	if os.Getenv("GITLAB_CI") != "" {
-		return "gitlab"
-	}
-
-	// Check file paths
-	if file := c.String("file"); file != "" {
-		if strings.Contains(file, "github") || strings.Contains(file, ".github") {
-			return "github"
-		}
-		if strings.Contains(file, "gitlab") {
-			return "gitlab"
-		}
-	}
-
-	// Try to detect from existing files
-	if _, err := os.Stat(".github/workflows"); err == nil {
-		return "github"
-	}
-	if _, err := os.Stat(".gitlab-ci.yml"); err == nil {
-		return "gitlab"
-	}
-
-	return "auto"
 }
