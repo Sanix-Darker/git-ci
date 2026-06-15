@@ -1,0 +1,136 @@
+# =============================================================================
+# CircleCI Go CI Pipeline — Full workflow with lint, parallelism, and build
+# =============================================================================
+# Run:   gci run -f examples/circleci/go-ci.yml --docker
+#        gci run -f examples/circleci/go-ci.yml --docker --job test
+#        gci ls -f examples/circleci/go-ci.yml
+# =============================================================================
+
+version: 2.1
+
+orbs:
+  go: circleci/go@3.2.1
+
+executors:
+  go-default:
+    docker:
+      - image: cimg/go:1.22
+    resource_class: medium
+    environment:
+      GO_VERSION: "1.22"
+      CGO_ENABLED: "0"
+
+jobs:
+  lint:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Format check
+          command: |
+            go fmt ./...
+            go vet ./...
+      - run:
+          name: Lint
+          command: |
+            go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+            golangci-lint run --timeout 5m --out-format=colored-line-number
+      - run:
+          name: Check for unchecked errors
+          command: |
+            go install github.com/kisielk/errcheck@latest
+            errcheck ./...
+
+  test:
+    executor: go-default
+    parallelism: 4
+    environment:
+      GOFLAGS: "-mod=mod"
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Run tests with race detection
+          command: |
+            go test -v -race -count=1 ./... 2>&1 | tee /tmp/test-output.log
+      - run:
+          name: Generate coverage report
+          command: |
+            go test -race -coverprofile=coverage.out -covermode=atomic ./...
+            go tool cover -html=coverage.out -o /tmp/coverage.html
+            go tool cover -func=coverage.out
+      - run:
+          name: Check test output for failures
+          command: |
+            if grep -q "FAIL" /tmp/test-output.log; then
+              echo "Tests failed!"
+              exit 1
+            fi
+            echo "All tests passed!"
+
+  build:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Build binary
+          command: go build -ldflags="-s -w -X main.version=${CIRCLE_SHA1:0:7} -X main.commit=${CIRCLE_SHA1}" -o /tmp/app .
+      - run:
+          name: Verify binary
+          command: |
+            file /tmp/app
+            /tmp/app -version 2>/dev/null || echo "Version flag optional"
+      - persist_to_workspace:
+          root: /tmp
+          paths:
+            - app
+
+  integration:
+    executor: go-default
+    steps:
+      - checkout
+      - go/mod-download
+      - run:
+          name: Run integration tests
+          command: |
+            go test -v -tags=integration -count=1 ./...
+
+  deploy:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - attach_workspace:
+          at: /tmp
+      - run:
+          name: Deploy application
+          command: |
+            echo "Deploying app (commit: ${CIRCLE_SHA1})..."
+            echo "Add deployment commands here (e.g., scp, kubectl, aws)"
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - lint
+
+      - test:
+          requires:
+            - lint
+
+      - build:
+          requires:
+            - test
+
+      - integration:
+          requires:
+            - test
+
+      - deploy:
+          requires:
+            - build
+            - integration
+          filters:
+            branches:
+              only: main
