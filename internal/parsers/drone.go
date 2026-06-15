@@ -203,15 +203,33 @@ func (p *DroneParser) convertToPipeline(drone *DronePipeline) *types.Pipeline {
 		}
 	}
 
+	// Build merged environment: pipeline-level env + step-level env (step wins)
+	mergedEnv := make(map[string]string)
+	for k, v := range drone.Environment {
+		mergedEnv[k] = v
+	}
+
 	// Convert each step to a job (Drone pipeline steps map to jobs in gci)
 	// Drone steps are sequential by default, with depends_on for parallel
 	depMap := make(map[string][]string)
 	for _, step := range drone.Steps {
+		// Step-level env overrides pipeline-level env
+		jobEnv := make(map[string]string)
+		for k, v := range mergedEnv {
+			jobEnv[k] = v
+		}
+		for k, v := range step.Environment {
+			jobEnv[k] = v
+		}
+
+		// Resolve ${VAR} templates in image name from merged env
+		image := p.resolveEnvVars(step.Image, jobEnv)
+
 		job := &types.Job{
 			Name:        step.Name,
-			RunsOn:      step.Image,
-			Image:       step.Image,
-			Environment: step.Environment,
+			RunsOn:      image,
+			Image:       image,
+			Environment: jobEnv,
 			Steps:       p.convertStep(step),
 			When:        p.parseWhen(step.When),
 			Services:    services,
@@ -319,6 +337,15 @@ func (p *DroneParser) extractTriggerEvents(trigger *DroneTrigger) []string {
 	}
 
 	return events
+}
+
+// resolveEnvVars resolves ${VAR} template variables in a string using the env map.
+func (p *DroneParser) resolveEnvVars(s string, env map[string]string) string {
+	result := s
+	for k, v := range env {
+		result = strings.ReplaceAll(result, "${"+k+"}", v)
+	}
+	return result
 }
 
 // Validate validates the parsed pipeline

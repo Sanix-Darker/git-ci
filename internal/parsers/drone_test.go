@@ -49,8 +49,8 @@ func TestDroneParser_Services(t *testing.T) {
 		t.Errorf("expected 2 services on test job, got %d", len(job.Services))
 	}
 
-	if job.Image != "golang:${GO_VERSION}" {
-		t.Errorf("expected image 'golang:${GO_VERSION}', got %q", job.Image)
+	if job.Image != "golang:1.22" {
+		t.Errorf("expected image 'golang:1.22' (resolved from ${GO_VERSION}), got %q", job.Image)
 	}
 }
 
