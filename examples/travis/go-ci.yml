@@ -55,8 +55,8 @@ jobs:
         - go vet ./...
         - go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
         - golangci-lint run --timeout 5m
-        - go install golang.org/x/tools/cmd/errcheck@latest
-        - errcheck ./...
+        - go install github.com/kisielk/errcheck@latest
+        - errcheck ./......
 
     - stage: test
       go: "1.22"
