@@ -19,8 +19,7 @@ trigger:
     - pull_request
 
 environment:
-  GO_VERSION: "1.22"
-  CGO_ENABLED: "0"
+  GO_VERSION: "1.24"
   GOFLAGS: "-mod=mod"
 
 steps:
