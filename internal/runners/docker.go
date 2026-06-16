@@ -50,12 +50,12 @@ func NewDockerRunner(cfg *config.RunnerConfig) (*DockerRunner, error) {
 	pingResp, err := cli.Ping(ctx)
 	if err != nil {
 		if strings.Contains(err.Error(), "permission denied") {
-			return nil, fmt.Errorf("Docker daemon permission denied. Try: sudo usermod -aG docker $USER")
+			return nil, fmt.Errorf("docker daemon permission denied; try: sudo usermod -aG docker $USER")
 		}
 		if strings.Contains(err.Error(), "cannot connect") {
-			return nil, fmt.Errorf("Docker daemon is not running. Start Docker and try again")
+			return nil, fmt.Errorf("docker daemon is not running; start Docker and try again")
 		}
-		return nil, fmt.Errorf("Docker daemon is not accessible: %w", err)
+		return nil, fmt.Errorf("docker daemon is not accessible: %w", err)
 	}
 
 	formatter := NewOutputFormatter(cfg.Verbose)
@@ -372,7 +372,7 @@ func (r *DockerRunner) pullImage(ctx context.Context, imageName string) error {
 	if err != nil {
 		return fmt.Errorf("failed to pull image %s: %w", imageName, err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Parse and display pull progress if verbose
 	if r.config.Verbose {
@@ -749,7 +749,7 @@ func (r *DockerRunner) streamLogs(ctx context.Context, containerID string) error
 	if err != nil {
 		return fmt.Errorf("failed to get container logs: %w", err)
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	// Use stdcopy to properly demultiplex stdout/stderr
 	_, err = stdcopy.StdCopy(os.Stdout, os.Stderr, reader)

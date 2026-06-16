@@ -39,8 +39,8 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestGetCacheDir(t *testing.T) {
 	// With env var set
-	os.Setenv("GIT_CI_CACHE_DIR", "/tmp/test-cache")
-	defer os.Unsetenv("GIT_CI_CACHE_DIR")
+	_ = os.Setenv("GIT_CI_CACHE_DIR", "/tmp/test-cache")
+	defer func() { _ = os.Unsetenv("GIT_CI_CACHE_DIR") }()
 
 	dir := GetCacheDir()
 	if dir != "/tmp/test-cache" {
@@ -49,7 +49,7 @@ func TestGetCacheDir(t *testing.T) {
 }
 
 func TestGetCacheDir_Default(t *testing.T) {
-	os.Unsetenv("GIT_CI_CACHE_DIR")
+	_ = os.Unsetenv("GIT_CI_CACHE_DIR")
 
 	dir := GetCacheDir()
 	if dir == "" {
@@ -58,8 +58,8 @@ func TestGetCacheDir_Default(t *testing.T) {
 }
 
 func TestGetConfigDir(t *testing.T) {
-	os.Setenv("GIT_CI_CONFIG_DIR", "/tmp/test-config")
-	defer os.Unsetenv("GIT_CI_CONFIG_DIR")
+	_ = os.Setenv("GIT_CI_CONFIG_DIR", "/tmp/test-config")
+	defer func() { _ = os.Unsetenv("GIT_CI_CONFIG_DIR") }()
 
 	dir := GetConfigDir()
 	if dir != "/tmp/test-config" {
@@ -68,7 +68,7 @@ func TestGetConfigDir(t *testing.T) {
 }
 
 func TestGetConfigDir_Default(t *testing.T) {
-	os.Unsetenv("GIT_CI_CONFIG_DIR")
+	_ = os.Unsetenv("GIT_CI_CONFIG_DIR")
 
 	dir := GetConfigDir()
 	if dir == "" {

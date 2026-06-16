@@ -143,7 +143,7 @@ func (p *DroneParser) Parse(ciFilePath string) (*types.Pipeline, error) {
 	p.baseDir = filepath.Dir(ciFilePath)
 
 	if _, err := os.Stat(ciFilePath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("Drone CI file not found: %s", ciFilePath)
+		return nil, fmt.Errorf("drone CI file not found: %s", ciFilePath)
 	}
 
 	data, err := os.ReadFile(ciFilePath)
@@ -152,7 +152,7 @@ func (p *DroneParser) Parse(ciFilePath string) (*types.Pipeline, error) {
 	}
 
 	if len(data) == 0 {
-		return nil, fmt.Errorf("Drone CI file is empty: %s", ciFilePath)
+		return nil, fmt.Errorf("drone CI file is empty: %s", ciFilePath)
 	}
 
 	var pipeline DronePipeline

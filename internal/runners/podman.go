@@ -291,7 +291,7 @@ func (r *PodmanRunner) runContainer(ctx context.Context, job *types.Job, imageNa
 	if err := os.WriteFile(scriptFile, []byte(script), 0755); err != nil {
 		return "", fmt.Errorf("failed to write script: %w", err)
 	}
-	defer os.Remove(scriptFile)
+	defer func() { _ = os.Remove(scriptFile) }()
 
 	// Build run command
 	args := []string{"run", "-d"}

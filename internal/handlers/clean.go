@@ -56,7 +56,7 @@ func cleanDockerResources(containers, images, force bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	ctx := context.Background()
 

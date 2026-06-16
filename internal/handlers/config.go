@@ -288,7 +288,7 @@ func applyConfigToContext(c *cli.Context, config *GitCIConfig) {
 	// Apply environment variables
 	for key, value := range config.Environment {
 		if os.Getenv(key) == "" {
-			os.Setenv(key, value)
+			_ = os.Setenv(key, value)
 		}
 	}
 }
