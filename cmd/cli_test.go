@@ -205,3 +205,31 @@ func jobKeys(m map[string]interface{}) []string {
 	}
 	return out
 }
+
+// -----------------------------------------------------------------------------
+// BUG #6 real-app regression: `env set --save --file out` (no
+// positional KEY=VALUE) must return an error AND must NOT create the
+// env file AND the error must mention --save so the user can link
+// the failure back to the flag they typed. urfave/cli quirk handling
+// only surfaces through a real *cli.App run, so the stdlib flag test
+// in env_test.go is not enough on its own.
+// -----------------------------------------------------------------------------
+
+func TestCliApp_EnvSetSaveAlone_ErrorsAndNoSideEffect(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "should-not-exist.env")
+
+	runOut, runErr := runAppWithStdout(t, []string{
+		"gci", "env", "set", "--save", "--file", out,
+	})
+	if runErr == nil {
+		t.Fatalf("expected error when env set --save alone, got nil; stdout:\n%s", runOut)
+	}
+	if !strings.Contains(runErr.Error(), "--save") {
+		t.Errorf("BUG #6 regression: error doesn't mention --save so the user can't tie the failure to their --save flag: %v", runErr)
+	}
+
+	if _, statErr := os.Stat(out); statErr == nil {
+		t.Errorf("BUG #6 regression: env file was incorrectly created at %s on the error path (silent side effect)", out)
+	}
+}
