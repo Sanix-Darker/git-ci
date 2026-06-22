@@ -45,6 +45,24 @@ func CmdEnvList(c *cli.Context) error {
 	return nil
 }
 
+// detectSaveFlag returns true when the user typed --save, either as a
+// registered flag (c.Bool("save")) or as a raw positional argument
+// (urfave/cli quirk where --save was not consumed as a flag in some
+// invocations). Used in both the empty-keyValArgs guard and the
+// override-detection block so the user always sees a self-explaining
+// error when --save is set without a KEY=VALUE positional.
+func detectSaveFlag(c *cli.Context, rawArgs []string) bool {
+	if c.Bool("save") {
+		return true
+	}
+	for _, arg := range rawArgs {
+		if arg == "--save" {
+			return true
+		}
+	}
+	return false
+}
+
 // CmdEnvSet handles the env set command
 func CmdEnvSet(c *cli.Context) error {
 	// Filter args to only those that look like KEY=VALUE so flags written
@@ -59,6 +77,16 @@ func CmdEnvSet(c *cli.Context) error {
 	}
 
 	if len(keyValArgs) == 0 {
+		// Bug #6 (v0.4.1): when --save is set, the generic "no
+		// environment variables specified" message leaves the user
+		// guessing why the invocation failed. Extend the message to
+		// tie the failure to --save by name so it's self-explaining.
+		// The "no environment variables specified" substring is
+		// preserved so the existing TestCmdEnvSet_NoArgsStillErrors
+		// keeps passing.
+		if detectSaveFlag(c, rawArgs) {
+			return fmt.Errorf("no environment variables specified; --save requires at least one KEY=VALUE argument. Usage: git-ci env set KEY=VALUE [KEY=VALUE...]")
+		}
 		return fmt.Errorf("no environment variables specified. Usage: git-ci env set KEY=VALUE [KEY=VALUE...]")
 	}
 
@@ -84,20 +112,26 @@ func CmdEnvSet(c *cli.Context) error {
 		fmt.Printf("✓ Set %s=%s\n", key, value)
 	}
 
-	// Determine save intent: prefer c.Bool, but if --save leaked through
-	// after positional args (urfave/cli quirk), detect it in rawArgs.
-	save := c.Bool("save")
+	// Determine save intent (c.Bool + urfave/cli quirk fallback via
+	// detectSaveFlag) and envFile (c.String + rawArgs quirk
+	// fallback for the --file <path> positional form).
+	//
+	// urfave/cli v2.27.7 (pinned in go.mod) stops parsing flags after
+	// the first positional, so --file / --save that appear AFTER a
+	// positional (e.g. `env set KEY=v --save --file out`) leak into
+	// c.Args(). In that case c.String("file") returns the registered
+	// default (".env") rather than "", so we must ALWAYS scan
+	// rawArgs for `--file` / `--file=`. Scanning unconditionally is
+	// safe: when urfave/cli consumed the flag normally, rawArgs
+	// won't contain it and the loop is a no-op. Revisit this when
+	// bumping urfave/cli.
+	save := detectSaveFlag(c, rawArgs)
 	envFile := c.String("file")
-	if !save || envFile != "" {
-		for i, arg := range rawArgs {
-			if arg == "--save" {
-				save = true
-			}
-			if strings.HasPrefix(arg, "--file=") {
-				envFile = strings.TrimPrefix(arg, "--file=")
-			} else if arg == "--file" && i+1 < len(rawArgs) {
-				envFile = rawArgs[i+1]
-			}
+	for i, arg := range rawArgs {
+		if strings.HasPrefix(arg, "--file=") {
+			envFile = strings.TrimPrefix(arg, "--file=")
+		} else if arg == "--file" && i+1 < len(rawArgs) {
+			envFile = rawArgs[i+1]
 		}
 	}
 
