@@ -26,23 +26,32 @@ type PodmanRunner struct {
 	isDocker   bool   // If true, use docker command instead
 }
 
-// NewPodmanRunner creates a new Podman runner using CLI commands
+// NewPodmanRunner creates a new Podman runner using CLI commands. If
+// cfg.Quiet is true, the package-level quiet redirect is acquired so any
+// direct fmt.Printf (dryRunJob) or io.Copy(os.Stdout, ...) writes
+// (streamLogs) are swallowed; Cleanup restores it.
 func NewPodmanRunner(cfg *config.RunnerConfig) (*PodmanRunner, error) {
 	if cfg == nil {
 		cfg = config.DefaultConfig()
 	}
 
 	formatter := NewOutputFormatter(cfg.Verbose)
+	formatter.SetQuiet(cfg.Quiet)
+	acquireQuietRedirect(cfg.Quiet)
 
 	// Find container runtime binary
 	binaryPath, isDocker, err := findContainerRuntime()
 	if err != nil {
+		// Failed to find a runtime; release the redirect we just
+		// claimed so we don't leak the global redirect on the error path.
+		releaseQuietRedirect()
 		return nil, err
 	}
 
 	// Verify it works
 	version, err := getContainerVersion(binaryPath)
 	if err != nil {
+		releaseQuietRedirect()
 		return nil, fmt.Errorf("failed to verify %s: %w", binaryPath, err)
 	}
 
@@ -568,8 +577,17 @@ func (r *PodmanRunner) buildEnvironment(job *types.Job) map[string]string {
 	return env
 }
 
-// Cleanup removes containers and pods
+// Cleanup removes containers and pods. The quiet redirect acquired by the
+// constructor is released at the END of Cleanup so any subprocess teardown
+// output (podman rm / podman pod rm / etc.) still hits /dev/null while
+// Quiet=true. Cleanup is idempotent: callers may invoke it multiple times.
 func (r *PodmanRunner) Cleanup() error {
+	// Single defer covers every exit path below: empty fast-return,
+	// errors, normal completion, and panic. Without it, a panic in any
+	// cleanup step (formatter or exec) would leave the global redirect
+	// installed and host stdout pinned to /dev/null.
+	defer releaseQuietRedirect()
+
 	if len(r.containers) == 0 && len(r.pods) == 0 {
 		return nil
 	}

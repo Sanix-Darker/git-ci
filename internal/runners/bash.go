@@ -25,16 +25,22 @@ type BashRunner struct {
 	mu          sync.Mutex
 }
 
-// NewBashRunner creates a new bash runner with configuration
+// NewBashRunner creates a new bash runner with configuration. If
+// cfg.Quiet is true, the package-level quiet redirect is acquired so any
+// direct fmt.Printf / io.Copy(os.Stdout, ...) writes are swallowed; the
+// redirect is restored by Cleanup.
 func NewBashRunner(cfg *config.RunnerConfig) *BashRunner {
 	if cfg == nil {
 		cfg = config.DefaultConfig()
 	}
 
+	formatter := NewOutputFormatter(cfg.Verbose)
+	formatter.SetQuiet(cfg.Quiet)
+	acquireQuietRedirect(cfg.Quiet)
 	return &BashRunner{
 		config:      cfg,
 		environment: make(map[string]string),
-		formatter:   NewOutputFormatter(cfg.Verbose),
+		formatter:   formatter,
 	}
 }
 
@@ -532,7 +538,11 @@ func (r *BashRunner) printDryRun(step *types.Step) {
 }
 
 func (r *BashRunner) Cleanup() error {
-	// Clean up any temporary resources
+	// BashRunner has no container/pod state to release, but if the
+	// constructor acquired the quiet redirect we must give it back here.
+	// Restore at the END so any teardown subprocess output (e.g. in a
+	// future version that does cleanup) still hits /dev/null if Quiet=true.
+	defer releaseQuietRedirect()
 	return nil
 }
 

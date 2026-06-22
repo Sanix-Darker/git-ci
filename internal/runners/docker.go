@@ -29,17 +29,25 @@ type DockerRunner struct {
 	mu              sync.Mutex
 }
 
-// NewDockerRunner creates a new Docker runner
+// NewDockerRunner creates a new Docker runner. If cfg.Quiet is true, the
+// package-level quiet redirect is acquired so any direct fmt.Printf (in
+// createContainer / dryRunJob verbose branches) or stdcopy.StdCopy writes
+// (in streamLogs) are swallowed; Cleanup restores it.
 func NewDockerRunner(cfg *config.RunnerConfig) (*DockerRunner, error) {
 	if cfg == nil {
 		cfg = config.DefaultConfig()
 	}
+
+	formatter := NewOutputFormatter(cfg.Verbose)
+	formatter.SetQuiet(cfg.Quiet)
+	acquireQuietRedirect(cfg.Quiet)
 
 	cli, err := client.NewClientWithOpts(
 		client.FromEnv,
 		client.WithAPIVersionNegotiation(),
 	)
 	if err != nil {
+		releaseQuietRedirect()
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 
@@ -49,6 +57,7 @@ func NewDockerRunner(cfg *config.RunnerConfig) (*DockerRunner, error) {
 
 	pingResp, err := cli.Ping(ctx)
 	if err != nil {
+		releaseQuietRedirect()
 		if strings.Contains(err.Error(), "permission denied") {
 			return nil, fmt.Errorf("docker daemon permission denied; try: sudo usermod -aG docker $USER")
 		}
@@ -57,8 +66,6 @@ func NewDockerRunner(cfg *config.RunnerConfig) (*DockerRunner, error) {
 		}
 		return nil, fmt.Errorf("docker daemon is not accessible: %w", err)
 	}
-
-	formatter := NewOutputFormatter(cfg.Verbose)
 
 	// Show Docker version in verbose mode
 	if cfg.Verbose {
@@ -903,6 +910,13 @@ func (r *DockerRunner) cleanupServiceNetwork(ctx context.Context, networkID stri
 }
 
 func (r *DockerRunner) Cleanup() error {
+	// Single defer covers every exit path below: empty fast-return,
+	// errors, normal completion, and panic. Without it, a panic in any
+	// cleanup step (r.client.ContainerStop / ContainerRemove / NetworkRemove)
+	// would leave the global redirect installed and host stdout pinned
+	// to /dev/null.
+	defer releaseQuietRedirect()
+
 	if len(r.containers) == 0 && len(r.serviceNetworks) == 0 {
 		return nil
 	}
