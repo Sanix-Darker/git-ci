@@ -47,16 +47,25 @@ func CmdEnvList(c *cli.Context) error {
 
 // CmdEnvSet handles the env set command
 func CmdEnvSet(c *cli.Context) error {
-	args := c.Args().Slice()
+	// Filter args to only those that look like KEY=VALUE so flags written
+	// after positional args (e.g. `env set KEY=v --save --file foo`) don't
+	// leak through and cause an "invalid format" error.
+	rawArgs := c.Args().Slice()
+	keyValArgs := make([]string, 0, len(rawArgs))
+	for _, arg := range rawArgs {
+		if strings.Contains(arg, "=") {
+			keyValArgs = append(keyValArgs, arg)
+		}
+	}
 
-	if len(args) == 0 {
+	if len(keyValArgs) == 0 {
 		return fmt.Errorf("no environment variables specified. Usage: git-ci env set KEY=VALUE [KEY=VALUE...]")
 	}
 
 	// Parse and set environment variables
-	for _, arg := range args {
+	for _, arg := range keyValArgs {
 		parts := strings.SplitN(arg, "=", 2)
-		if len(parts) != 2 {
+		if len(parts) != 2 || parts[0] == "" {
 			return fmt.Errorf("invalid format: %s. Expected KEY=VALUE", arg)
 		}
 
@@ -75,14 +84,30 @@ func CmdEnvSet(c *cli.Context) error {
 		fmt.Printf("✓ Set %s=%s\n", key, value)
 	}
 
+	// Determine save intent: prefer c.Bool, but if --save leaked through
+	// after positional args (urfave/cli quirk), detect it in rawArgs.
+	save := c.Bool("save")
+	envFile := c.String("file")
+	if !save || envFile != "" {
+		for i, arg := range rawArgs {
+			if arg == "--save" {
+				save = true
+			}
+			if strings.HasPrefix(arg, "--file=") {
+				envFile = strings.TrimPrefix(arg, "--file=")
+			} else if arg == "--file" && i+1 < len(rawArgs) {
+				envFile = rawArgs[i+1]
+			}
+		}
+	}
+
 	// Optionally save to .env file
-	if c.Bool("save") {
-		envFile := c.String("file")
+	if save {
 		if envFile == "" {
 			envFile = ".env"
 		}
 
-		if err := saveEnvFile(args, envFile); err != nil {
+		if err := saveEnvFile(keyValArgs, envFile); err != nil {
 			return fmt.Errorf("failed to save to %s: %w", envFile, err)
 		}
 

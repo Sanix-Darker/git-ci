@@ -324,6 +324,13 @@ func commands() []*cli.Command {
 					Name:   "list",
 					Usage:  "List environment variables",
 					Action: handlers.CmdEnvList,
+					Flags: []cli.Flag{
+						&cli.BoolFlag{
+							Name:    "verbose",
+							Aliases: []string{"all"},
+							Usage:   "List all environment variables (lift the GIT_CI_/CI filter)",
+						},
+					},
 				},
 				{
 					Name:      "set",
