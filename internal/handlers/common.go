@@ -164,6 +164,7 @@ func buildRunnerConfig(c *cli.Context) *config.RunnerConfig {
 
 	// Update from flags
 	cfg.Verbose = c.Bool("verbose")
+	cfg.Quiet = c.Bool("quiet")
 	cfg.DryRun = c.Bool("dry-run")
 	cfg.PullImages = c.Bool("pull")
 	cfg.Timeout = c.Int("timeout")

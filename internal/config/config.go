@@ -9,6 +9,7 @@ import (
 type RunnerConfig struct {
 	DryRun      bool              // Show what would be executed without running
 	Verbose     bool              // Enable verbose output
+	Quiet       bool              // Suppress non-essential output (errors still print)
 	PullImages  bool              // Pull Docker images before running
 	NoCache     bool              // Disable caching
 	WorkDir     string            // Working directory for execution
