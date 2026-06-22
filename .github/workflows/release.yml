@@ -86,4 +86,5 @@ jobs:
           files: |
             dist/releases/*.tar.gz
             dist/releases/checksums.txt
+          fail-on-unmatched-files: true
           generate_release_notes: true
