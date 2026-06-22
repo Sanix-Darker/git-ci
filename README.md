@@ -112,7 +112,7 @@ git ci run --docker --memory 2g --cpus 2
 ```
 --verbose            Enable verbose output            [$GIT_CI_VERBOSE]
 --debug              Enable debug mode                [$GIT_CI_DEBUG]
---quiet, -q          Suppress output                  [$GIT_CI_QUIET]
+--quiet, -q          Suppress runner output; errors and step failures still print [$GIT_CI_QUIET]
 --config, -c VALUE   Config file path                 [$GIT_CI_CONFIG]
 --workdir, -w VALUE  Working directory (default: ".")  [$GIT_CI_WORKDIR]
 --version            Print version
@@ -128,10 +128,14 @@ List jobs and pipelines.
 --format VALUE     Output format: tree, json, yaml (default: "tree")
 ```
 
+Use `--format` to switch the output renderer between the default human-friendly tree and machine-readable serialisations. The tree renderer prints stages, runner info, env vars, services, artifacts, cache, and steps; `json` and `yaml` emit the full parsed `Pipeline` model (see `pkg/types/types.go`) so downstream tools can consume the same data the runner sees. The chosen name is the value passed to `--format` exactly (`tree`, `json`, or `yaml`); there is no JSON path flag.
+
 ```bash
 git ci ls
-git ci ls -f .github/workflows/ci.yml
-git ci ls --format json
+git ci ls -f .github/workflows/ci.yml          # explicit file
+git ci ls --format json                         # valid JSON to stdout (pipe through jq)
+git ci ls --format json | jq '.jobs | keys'     # pipe to external tooling
+git ci ls --format yaml > pipeline.yml          # re-emit the parsed model as YAML
 ```
 
 ### run (aliases: r, exec)
@@ -226,14 +230,23 @@ git ci clean --images
 Manage environment variables.
 
 ```bash
-# list environment variables
+# list GIT_CI_* / CI_* environment variables (the default filter)
 git ci env list
 
-# set environment variables
-git ci env set KEY=value OTHER=value2
-git ci env set KEY=value --save --file .env
+# list ALL environment variables, lifting the GIT_CI_/CI_ filter
+git ci env list --verbose
+git ci env list --all         # --all is an alias for --verbose
 
-# load from file
+# set environment variables in the current process
+git ci env set KEY=value OTHER=value2
+
+# set and persist to .env. Flag order is irrelevant — KEY=VAL may come
+# before or after --save / --file:
+git ci env set KEY=value --save --file .env
+git ci env set --save --file .env KEY=value
+git ci env set --file custom.env KEY=value --save   # arbitrary output path
+
+# load from file (default: .env)
 git ci env load
 git ci env load -f .env.production
 ```
@@ -924,8 +937,27 @@ $ git ci run --debug
 # Dry run — shows what would execute without running
 $ git ci run --dry-run --verbose
 
-# Quiet — suppress all non-error output
+# Quiet — suppress non-essential runner output
 $ git ci run --quiet
+$ git ci -q run                              # -q is the short alias
+$ GIT_CI_QUIET=true git ci run               # same effect via env var
+
+# What --quiet actually does:
+#   - job headers, step banners, progress spinners, env dumps: SUPPRESSED
+#   - actual errors and step FAILURES:                          STILL PRINT
+# --quiet never hides real failures; the runner is wired so that a
+# broken step or a parse error is always visible, even when the rest
+# of the output is silenced.
+#
+# --quiet has a few known gaps. The Podman runner's dry-run mode
+# streams directly to stdout, and the Bash runner's stderr stream
+# bypasses the formatter. If you need every byte of output, run
+# without --quiet (or unset GIT_CI_QUIET) — --verbose is unrelated to
+# quiet and shows more, not less, but doesn't undo the gaps either.
+#
+# If both --quiet and --verbose are passed, quiet wins for the silenced
+# output paths and verbose adds debug lines only when quiet is off; the
+# two are independent and both can be true at once.
 
 # Global flags come before subcommand
 $ git ci --verbose --workdir /path/to/project run
