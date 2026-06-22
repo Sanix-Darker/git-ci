@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/sanix-darker/git-ci/pkg/types"
 	cli "github.com/urfave/cli/v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // Tree drawing characters
@@ -19,6 +21,7 @@ const (
 
 func CmdList(c *cli.Context) error {
 	workflowFile := c.String("file")
+	format := c.String("format")
 
 	// Parse input
 	pipeline, err := parseInput(workflowFile)
@@ -26,6 +29,25 @@ func CmdList(c *cli.Context) error {
 		return fmt.Errorf("failed to parse workflow: %w", err)
 	}
 
+	// Honor machine-readable output formats first (json / yaml).
+	switch format {
+	case "json":
+		data, jerr := json.MarshalIndent(pipeline, "", "  ")
+		if jerr != nil {
+			return fmt.Errorf("failed to marshal pipeline as JSON: %w", jerr)
+		}
+		fmt.Println(string(data))
+		return nil
+	case "yaml":
+		data, yerr := yaml.Marshal(pipeline)
+		if yerr != nil {
+			return fmt.Errorf("failed to marshal pipeline as YAML: %w", yerr)
+		}
+		fmt.Print(string(data))
+		return nil
+	}
+
+	// Default: human-readable tree.
 	// Display pipeline information
 	fmt.Printf("\nPipeline: %s\n", pipeline.Name)
 
