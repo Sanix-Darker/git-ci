@@ -130,21 +130,24 @@ func runJobsSequential(c *cli.Context, jobs map[string]*types.Job, workdir strin
 
 		printVerbose(c, "\nStarting job: %s\n", jobName)
 
-		// Create runner
+		// Create runner. RunJob/Cleanup are paired with defer so a panic
+		// during run still releases the quiet redirect (and removes any
+		// container/pod the runner started).
 		runner, err := createRunner(c, cfg)
 		if err != nil {
 			return fmt.Errorf("failed to create runner for job %s: %w", jobName, err)
 		}
+		// Cleanup is idempotent across the three runners; safe to defer.
+		defer func() {
+			if cleanupErr := runner.Cleanup(); cleanupErr != nil {
+				printVerbose(c, "Warning: cleanup failed for job %s: %v\n", jobName, cleanupErr)
+			}
+		}()
 
 		// Run job
 		jobStart := time.Now()
 		err = runner.RunJob(job, workdir)
 		jobDuration := time.Since(jobStart)
-
-		// Cleanup
-		if cleanupErr := runner.Cleanup(); cleanupErr != nil {
-			printVerbose(c, "Warning: cleanup failed for job %s: %v\n", jobName, cleanupErr)
-		}
 
 		if err != nil {
 			failureCount++
@@ -251,14 +254,18 @@ func runJobsParallel(c *cli.Context, jobs map[string]*types.Job, workdir string,
 					results <- jobResult{name: name, err: fmt.Errorf("failed to create runner: %w", runnerErr)}
 					return
 				}
+				// Cleanup is idempotent; defer so a panic mid-RunJob still
+				// releases the global quiet redirect and removes the per-job
+				// container/pod.
+				defer func() {
+					if cleanupErr := runner.Cleanup(); cleanupErr != nil {
+						printVerbose(c, "Warning: cleanup failed for job %s: %v\n", name, cleanupErr)
+					}
+				}()
 
 				jobStart := time.Now()
 				runErr := runner.RunJob(j, workdir)
 				jobDuration := time.Since(jobStart)
-
-				if cleanupErr := runner.Cleanup(); cleanupErr != nil {
-					printVerbose(c, "Warning: cleanup failed for job %s: %v\n", name, cleanupErr)
-				}
 
 				results <- jobResult{name: name, err: runErr, duration: jobDuration}
 			}(jobName, job)
