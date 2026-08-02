@@ -1,0 +1,24 @@
+# Docker Compose deployment variant.
+# For production, replace `git-ci.example.com` with your domain.
+{
+    email security@example.com
+}
+
+git-ci.example.com {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    handle /health {
+        respond "ACCEPTED" 202
+    }
+
+    reverse_proxy git-ci-site:8080
+}
