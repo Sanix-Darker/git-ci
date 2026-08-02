@@ -13,6 +13,18 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+var (
+	newBashRunner = func(cfg *config.RunnerConfig) types.Runner {
+		return runners.NewBashRunner(cfg)
+	}
+	newDockerRunner = func(cfg *config.RunnerConfig) (types.Runner, error) {
+		return runners.NewDockerRunner(cfg)
+	}
+	newPodmanRunner = func(cfg *config.RunnerConfig) (types.Runner, error) {
+		return runners.NewPodmanRunner(cfg)
+	}
+)
+
 // CmdRun handles the run command
 func CmdRun(c *cli.Context) error {
 	// Get file path
@@ -313,7 +325,7 @@ func runJobsParallel(c *cli.Context, jobs map[string]*types.Job, workdir string,
 func createRunner(c *cli.Context, cfg *config.RunnerConfig) (types.Runner, error) {
 	// Check for Docker runner
 	if c.Bool("docker") {
-		runner, err := runners.NewDockerRunner(cfg)
+		runner, err := newDockerRunner(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Docker runner: %w", err)
 		}
@@ -322,7 +334,7 @@ func createRunner(c *cli.Context, cfg *config.RunnerConfig) (types.Runner, error
 
 	// Check for Podman runner
 	if c.Bool("podman") {
-		runner, err := runners.NewPodmanRunner(cfg)
+		runner, err := newPodmanRunner(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create Podman runner: %w", err)
 		}
@@ -330,7 +342,7 @@ func createRunner(c *cli.Context, cfg *config.RunnerConfig) (types.Runner, error
 	}
 
 	// Default to Bash runner
-	return runners.NewBashRunner(cfg), nil
+	return newBashRunner(cfg), nil
 }
 
 // formatDuration formats a duration in a human-readable way

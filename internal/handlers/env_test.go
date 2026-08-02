@@ -198,6 +198,44 @@ func TestCmdEnvSet_NoArgsStillErrors(t *testing.T) {
 	}
 }
 
+func TestCmdEnvSet_NoArgsWithoutSaveErrors(t *testing.T) {
+	fs := flag.NewFlagSet("env set", flag.ContinueOnError)
+	fs.String("file", "", "")
+	fs.Bool("save", false, "")
+
+	if err := fs.Parse([]string{}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	ctx := cli.NewContext(nil, fs, nil)
+
+	err := CmdEnvSet(ctx)
+	if err == nil {
+		t.Fatal("expected error when no KEY=VALUE provided, got nil")
+	}
+	if !strings.Contains(err.Error(), "no environment variables specified") {
+		t.Errorf("expected 'no environment variables specified' error, got: %v", err)
+	}
+}
+
+func TestCmdEnvSet_InvalidFormatWithoutEquals(t *testing.T) {
+	fs := flag.NewFlagSet("env set", flag.ContinueOnError)
+	fs.String("file", "", "")
+	fs.Bool("save", false, "")
+
+	if err := fs.Parse([]string{"NOEQUALSIGN"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	ctx := cli.NewContext(nil, fs, nil)
+
+	err := CmdEnvSet(ctx)
+	if err == nil {
+		t.Fatal("expected invalid-format error, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid format: NOEQUALSIGN") {
+		t.Errorf("expected invalid-format error, got: %v", err)
+	}
+}
+
 func TestCmdEnvSet_DoesNotPersistWithoutSaveFlag(t *testing.T) {
 	dir := t.TempDir()
 	out := joinTempPath(dir, "no-save.env")
@@ -219,6 +257,27 @@ func TestCmdEnvSet_DoesNotPersistWithoutSaveFlag(t *testing.T) {
 
 	if _, err := os.Stat(out); err == nil {
 		t.Errorf("expected no .env file when --save absent, but %s exists", out)
+	}
+}
+
+func TestCmdEnvSet_SetsMultipleVariablesInCurrentProcess(t *testing.T) {
+	fs := flag.NewFlagSet("env set", flag.ContinueOnError)
+	fs.String("file", "", "")
+	fs.Bool("save", false, "")
+
+	if err := fs.Parse([]string{"ONE=alpha", "TWO=beta"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	ctx := cli.NewContext(nil, fs, nil)
+
+	if err := CmdEnvSet(ctx); err != nil {
+		t.Fatalf("CmdEnvSet: %v", err)
+	}
+	if got := os.Getenv("ONE"); got != "alpha" {
+		t.Errorf("expected ONE set in current process, got %q", got)
+	}
+	if got := os.Getenv("TWO"); got != "beta" {
+		t.Errorf("expected TWO set in current process, got %q", got)
 	}
 }
 

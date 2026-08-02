@@ -132,3 +132,139 @@ func TestCmdConfigInit_RefusesOverwriteUntilForce(t *testing.T) {
 		t.Fatalf("expected config file after --force: %v", err)
 	}
 }
+
+func newConfigApplyContext(t *testing.T, args ...string) *cli.Context {
+	t.Helper()
+
+	fs := flag.NewFlagSet("config-apply", flag.ContinueOnError)
+	for _, f := range []cli.Flag{
+		&cli.StringFlag{Name: "config"},
+		&cli.IntFlag{Name: "timeout"},
+		&cli.BoolFlag{Name: "parallel"},
+		&cli.IntFlag{Name: "max-parallel"},
+		&cli.BoolFlag{Name: "continue-on-error"},
+		&cli.BoolFlag{Name: "verbose"},
+		&cli.BoolFlag{Name: "docker"},
+		&cli.BoolFlag{Name: "pull"},
+		&cli.StringFlag{Name: "network"},
+		&cli.StringSliceFlag{Name: "volume"},
+	} {
+		if err := f.Apply(fs); err != nil {
+			t.Fatalf("register flag: %v", err)
+		}
+	}
+
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("parse args %v: %v", args, err)
+	}
+
+	return cli.NewContext(nil, fs, nil)
+}
+
+func TestLoadConfigWithDefaults_AppliesRunnerDefaultsAndEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	configContent := `defaults:
+  runner: docker
+  timeout: 22
+  parallel: true
+  max_parallel: 6
+  continue_on_error: true
+  verbose: true
+docker:
+  pull: true
+  network: host
+  volumes:
+    - ./cache
+    - ./artifacts
+environment:
+  APP: from-config
+  CI: from-config
+  PRESET: should-stay-from-env
+`
+
+	if err := os.WriteFile(".git-ci.yml", []byte(configContent), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	t.Setenv("CI", "")
+	t.Setenv("GIT_CI", "")
+	t.Setenv("PRESET", "from-env")
+
+	ctx := newConfigApplyContext(t, "--config", ".git-ci.yml")
+	loaded, err := LoadConfigWithDefaults(ctx)
+	if err != nil {
+		t.Fatalf("LoadConfigWithDefaults: %v", err)
+	}
+	if loaded == nil || loaded.Defaults.Runner != "docker" {
+		t.Fatalf("expected config to load, got %#v", loaded)
+	}
+
+	if !ctx.Bool("docker") {
+		t.Fatalf("expected defaults.runner=docker to set --docker")
+	}
+	if !ctx.Bool("parallel") {
+		t.Errorf("expected defaults.parallel=true to set --parallel")
+	}
+	if got := ctx.Int("max-parallel"); got != 6 {
+		t.Errorf("expected max-parallel from config, got %d", got)
+	}
+	if got := ctx.Int("timeout"); got != 22 {
+		t.Errorf("expected timeout from config, got %d", got)
+	}
+	if !ctx.Bool("continue-on-error") {
+		t.Errorf("expected continue_on_error from config")
+	}
+	if !ctx.Bool("verbose") {
+		t.Errorf("expected verbose from config")
+	}
+	if !ctx.Bool("pull") {
+		t.Errorf("expected docker.pull from config to set --pull")
+	}
+	if got := ctx.String("network"); got != "host" {
+		t.Fatalf("expected docker.network to set --network, got %q", got)
+	}
+
+	volumes := ctx.StringSlice("volume")
+	if len(volumes) != 2 || volumes[0] != "./cache" || volumes[1] != "./artifacts" {
+		t.Fatalf("expected docker.volumes from config, got %#v", volumes)
+	}
+	if got := os.Getenv("APP"); got != "from-config" {
+		t.Errorf("expected APP injected from config env, got %q", got)
+	}
+	if got := os.Getenv("PRESET"); got != "from-env" {
+		t.Errorf("expected PRESET env to remain from caller, got %q", got)
+	}
+	if got := os.Getenv("CI"); got == "" {
+		t.Errorf("expected CI default env to be injected from config env")
+	}
+}
+
+func TestLoadConfigWithDefaults_UsesExplicitConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if err := os.WriteFile(".git-ci.yml", []byte(`defaults:
+  timeout: 11
+`), 0o644); err != nil {
+		t.Fatalf("write default config: %v", err)
+	}
+	if err := os.WriteFile("override.yml", []byte(`defaults:
+  timeout: 33
+`), 0o644); err != nil {
+		t.Fatalf("write explicit config: %v", err)
+	}
+
+	ctx := newConfigApplyContext(t, "--config", "override.yml")
+	loaded, err := LoadConfigWithDefaults(ctx)
+	if err != nil {
+		t.Fatalf("LoadConfigWithDefaults: %v", err)
+	}
+	if loaded.Defaults.Timeout != 33 {
+		t.Fatalf("expected explicit config timeout 33, got %d", loaded.Defaults.Timeout)
+	}
+	if got := ctx.Int("timeout"); got != 33 {
+		t.Errorf("expected explicit config to be applied via context, got timeout %d", got)
+	}
+}

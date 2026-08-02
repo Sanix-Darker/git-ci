@@ -21,6 +21,24 @@ func TestValidatePipeline_Empty(t *testing.T) {
 	}
 }
 
+func TestValidatePipeline_NoJobsIsDetected(t *testing.T) {
+	pipeline := &types.Pipeline{
+		Name: "No Jobs",
+		Jobs: map[string]*types.Job{},
+	}
+
+	errors := validatePipeline(pipeline, false)
+	hasNoJobs := false
+	for _, e := range errors {
+		if e == "no jobs defined in workflow" || e == "no jobs defined in pipeline" {
+			hasNoJobs = true
+		}
+	}
+	if !hasNoJobs {
+		t.Fatalf("expected no-jobs validation error, got: %v", errors)
+	}
+}
+
 func TestValidatePipeline_Valid(t *testing.T) {
 	pipeline := &types.Pipeline{
 		Name: "Test Pipeline",
@@ -59,6 +77,32 @@ func TestValidatePipeline_InvalidDep(t *testing.T) {
 	}
 	if !hasDepError {
 		t.Errorf("expected dependency error, got %v", errors)
+	}
+}
+
+func TestValidatePipeline_UndefinedStage(t *testing.T) {
+	pipeline := &types.Pipeline{
+		Name:   "Test Pipeline",
+		Stages: []string{"build"},
+		Jobs: map[string]*types.Job{
+			"test": {
+				Stage:  "deploy",
+				Needs:  nil,
+				RunsOn: "ubuntu-latest",
+				Steps:  []types.Step{{Run: "echo hi"}},
+			},
+		},
+	}
+
+	errors := validatePipeline(pipeline, false)
+	hasErr := false
+	for _, e := range errors {
+		if e == "job 'test' references undefined stage 'deploy'" {
+			hasErr = true
+		}
+	}
+	if !hasErr {
+		t.Fatalf("expected undefined-stage validation error, got: %v", errors)
 	}
 }
 

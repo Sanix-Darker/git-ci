@@ -1,6 +1,7 @@
 package runners
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -145,5 +146,42 @@ func TestResolveGitHubExpressions_UnknownRemoved(t *testing.T) {
 	got := resolveGitHubExpressions(`echo "x=${{ secrets.TOKEN }}"`)
 	if strings.Contains(got, "${{") {
 		t.Fatalf("expected unresolved expression to be removed, got %q", got)
+	}
+}
+
+func TestOutputFormatter_DryRunBanner(t *testing.T) {
+	f := NewOutputFormatter(false)
+	f.SetColorEnabled(false)
+
+	out := captureStdoutRunners(t, func() {
+		f.PrintDryRun()
+	})
+
+	if !strings.Contains(out, "DRY RUN MODE - Commands will be displayed but not executed") {
+		t.Fatalf("expected dry-run banner text in formatter output, got %q", out)
+	}
+}
+
+func TestOutputFormatter_StepLifecycleMessages(t *testing.T) {
+	f := NewOutputFormatter(false)
+	f.SetColorEnabled(false)
+
+	out := captureStdoutRunners(t, func() {
+		f.PrintStepComplete(125 * time.Millisecond)
+		f.PrintStepFailed(errors.New("step failed"), 230*time.Millisecond)
+		f.PrintStepSkipped("condition not met")
+		f.PrintJobComplete("build", 2*time.Second, true)
+	})
+
+	expected := []string{
+		"Step completed in",
+		"Step FAILED after",
+		"Step skipped: condition not met",
+		"Job 'build' completed successfully",
+	}
+	for _, want := range expected {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected formatter output to contain %q, got %q", want, out)
+		}
 	}
 }
