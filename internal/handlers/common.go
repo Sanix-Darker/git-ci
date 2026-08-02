@@ -159,11 +159,11 @@ func getWorkdir(c *cli.Context) (string, error) {
 }
 
 // buildRunnerConfig builds runner configuration from CLI context
-func buildRunnerConfig(c *cli.Context) *config.RunnerConfig {
+func buildRunnerConfig(c *cli.Context) (*config.RunnerConfig, error) {
 	cfg := config.DefaultConfig()
 
 	// Update from flags
-	cfg.Verbose = c.Bool("verbose")
+	cfg.Verbose = c.Bool("verbose") || c.Bool("debug")
 	cfg.Quiet = c.Bool("quiet")
 	cfg.DryRun = c.Bool("dry-run")
 	cfg.PullImages = c.Bool("pull")
@@ -175,7 +175,11 @@ func buildRunnerConfig(c *cli.Context) *config.RunnerConfig {
 	}
 
 	// Parse environment variables
-	cfg.Environment = parseEnvironmentVars(c)
+	env, err := parseEnvironmentVars(c)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Environment = env
 
 	// Parse volumes
 	if volumes := c.StringSlice("volume"); len(volumes) > 0 {
@@ -195,11 +199,11 @@ func buildRunnerConfig(c *cli.Context) *config.RunnerConfig {
 		cfg.CPUs = cpus
 	}
 
-	return cfg
+	return cfg, nil
 }
 
 // parseEnvironmentVars parses environment variables from context
-func parseEnvironmentVars(c *cli.Context) map[string]string {
+func parseEnvironmentVars(c *cli.Context) (map[string]string, error) {
 	env := make(map[string]string)
 
 	// Add from --env flags
@@ -212,14 +216,16 @@ func parseEnvironmentVars(c *cli.Context) map[string]string {
 
 	// Add from --env-file
 	if envFile := c.String("env-file"); envFile != "" {
-		if fileEnv, err := loadEnvFile(envFile); err == nil {
-			for k, v := range fileEnv {
-				env[k] = v
-			}
+		fileEnv, err := loadEnvFile(envFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load env file %q: %w", envFile, err)
+		}
+		for k, v := range fileEnv {
+			env[k] = v
 		}
 	}
 
-	return env
+	return env, nil
 }
 
 // loadEnvFile loads environment variables from a file

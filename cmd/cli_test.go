@@ -197,6 +197,34 @@ func TestCliApp_ListFormatYAML_EmitsYAML(t *testing.T) {
 	}
 }
 
+func TestCliApp_Run_DebugPrintsParsedPipeline(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+	out, err := runAppWithStdout(t, []string{
+		"gci", "--debug", "run", "--dry-run", "-f", fixture,
+	})
+	if err != nil {
+		t.Fatalf("gci --debug run --dry-run errored: %v", err)
+	}
+	if !strings.Contains(out, "Parsed pipeline:") {
+		t.Errorf("expected debug output to include parsed pipeline header, got:\n%s", out)
+	}
+}
+
+func TestCliApp_Run_MissingEnvFileFails(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+	missing := filepath.Join(t.TempDir(), "does-not-exist.env")
+
+	out, err := runAppWithStdout(t, []string{
+		"gci", "run", "--dry-run", "--env-file", missing, "--file", fixture,
+	})
+	if err == nil {
+		t.Fatalf("expected error for missing env file, got nil; stdout:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "failed to load env file") {
+		t.Errorf("expected env file load error, got: %v", err)
+	}
+}
+
 // jobKeys returns the sorted key set of a JSON-decoded jobs map.
 func jobKeys(m map[string]interface{}) []string {
 	out := make([]string, 0, len(m))
