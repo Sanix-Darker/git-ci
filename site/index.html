@@ -3,80 +3,79 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>git-ci — local CI runner</title>
+  <title>git-ci · Run CI pipelines locally</title>
+  <meta name="description" content="git-ci parses and runs GitHub, GitLab, CircleCI, Drone, and Travis pipelines locally using Bash, Docker, or Podman." />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <main>
     <section class="hero">
       <p class="eyebrow">Git-CI</p>
-      <h1>Run CI/CD pipelines locally</h1>
+      <h1>Run CI/CD pipelines locally before they reach CI</h1>
       <p class="muted">
-        Execute GitHub, GitLab, CircleCI, Drone, or Travis workflows directly from your repository using bash, Docker, or Podman.
+        Parse and execute common CI workflow files directly from your repo, with filters, matrix expansion, and runner controls.
       </p>
+      <div class="meta">
+        <code>gci</code> · GitHub Actions, GitLab CI, CircleCI, Drone, Travis
+      </div>
       <div class="cta">
-        <a class="btn" href="https://github.com/sanix-darker/git-ci">GitHub</a>
-        <a class="btn btn-ghost" href="https://pkg.go.dev/github.com/sanix-darker/git-ci">Documentation</a>
+        <a class="btn" href="https://github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">GitHub</a>
+        <a class="btn btn-ghost" href="https://pkg.go.dev/github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">Package Docs</a>
+        <a class="btn btn-ghost" href="https://github.com/sanix-darker/git-ci/releases" target="_blank" rel="noreferrer">Releases</a>
       </div>
     </section>
 
     <section class="panel">
-      <h2>Core Commands</h2>
+      <h2>Core workflows</h2>
       <div class="grid">
         <article>
-          <h3>Run</h3>
-          <p>Parse and execute pipelines from detected CI files with filtering, matrix expansion, and parallel scheduling.</p>
-          <pre>gci run --debug --parallel --max-parallel 4 --dry-run</pre>
-        </article>
-        <article>
           <h3>List</h3>
-          <p>Inspect parsed jobs as tree output or machine-readable JSON/YAML.</p>
+          <p>Inspect parsed jobs as tree output or structured JSON/YAML.</p>
           <pre>gci ls --format json | jq '.jobs | keys'</pre>
         </article>
         <article>
+          <h3>Run</h3>
+          <p>Run selected jobs with filtering and dry-run safety.</p>
+          <pre>gci run --only "test-*" --except "e2e-*" --dry-run --parallel</pre>
+        </article>
+        <article>
           <h3>Validate</h3>
-          <p>Run strict syntax checks before execution and detect provider/runner mismatches early.</p>
+          <p>Run syntax checks and strict mode before real execution.</p>
           <pre>gci validate --strict -f .github/workflows/ci.yml</pre>
         </article>
       </div>
     </section>
 
     <section class="panel">
-      <h2>Environment & Runner Controls</h2>
-      <p class="muted">Use <code>--env</code>, <code>--env-file</code>, timeouts, memory, CPU, volumes, and network settings to reproduce production-like runs.</p>
-      <pre>gci run --env-file .env --memory 2g --cpus 2 --network host</pre>
-    </section>
-
-    <section class="panel">
-      <h2>What is git-ci?</h2>
-      <p class="muted">
-        git-ci runs common CI/CD pipeline definitions locally so you can iterate faster before pushing to a shared CI runner.
-        It supports GitHub and GitLab workflows with parser compatibility for CircleCI, Drone, Travis and more via file discovery.
-      </p>
-      <ul>
-        <li>Parse CI pipelines and inspect jobs/stages before execution</li>
-        <li>Run workflows with Bash, Docker, or Podman</li>
-        <li>Validate configuration locally with strict checks</li>
-        <li>Generate starter pipelines for GitHub and GitLab</li>
-      </ul>
+      <h2>Runner & environment controls</h2>
+      <p class="muted">Reproduce CI behavior with env injection, resource limits, and service-style networking.</p>
+      <pre>gci run --docker --env-file .env --memory 2g --cpus 2 --network host</pre>
     </section>
 
     <section class="panel">
       <h2>Install</h2>
-      <p class="muted">Install locally to get <code>gci</code> command access quickly.</p>
+      <p class="muted">Install <code>gci</code> in one of the following ways:</p>
       <pre>go install github.com/sanix-darker/git-ci/cmd@latest</pre>
-      <pre>make install</pre>
+      <pre>git clone https://github.com/sanix-darker/git-ci.git && cd git-ci && make install</pre>
       <pre>curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-$(uname -s)-$(uname -m) -o gci</pre>
-      <pre>chmod +x gci
-sudo mv gci /usr/local/bin/</pre>
+      <pre>chmod +x gci && sudo mv gci /usr/local/bin/gci</pre>
     </section>
 
     <section class="panel">
-      <h2>Release Checklist</h2>
+      <h2>Quick start</h2>
+      <p class="muted">Typical first run from any repo containing CI config:</p>
+      <pre>git ci ls</pre>
+      <pre>git ci run</pre>
+      <pre>git ci run --job test --dry-run</pre>
+    </section>
+
+    <section class="panel">
+      <h2>Project tracking</h2>
+      <p class="muted">We keep user stories and verification logs in a canonical workspace:</p>
       <ul>
-        <li>Feature coverage tracked in <code>user-stories.md</code></li>
-        <li>CSV evidence in <code>user-stories.csv</code></li>
-        <li>Verification artifacts in <code>verification-loop.md</code></li>
+        <li><code>~/tmp/git-ci/user-stories.md</code> + <code>user-stories.csv</code> (features and status)</li>
+        <li><code>~/tmp/git-ci/verification-loop.md</code> (checks run + pass/fail notes)</li>
+        <li>Errors and follow-up fixes are recorded before the next release pass</li>
       </ul>
     </section>
   </main>
