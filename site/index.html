@@ -48,11 +48,35 @@
     </section>
 
     <section class="panel">
+      <h2>What is git-ci?</h2>
+      <p class="muted">
+        git-ci runs common CI/CD pipeline definitions locally so you can iterate faster before pushing to a shared CI runner.
+        It supports GitHub and GitLab workflows with parser compatibility for CircleCI, Drone, Travis and more via file discovery.
+      </p>
+      <ul>
+        <li>Parse CI pipelines and inspect jobs/stages before execution</li>
+        <li>Run workflows with Bash, Docker, or Podman</li>
+        <li>Validate configuration locally with strict checks</li>
+        <li>Generate starter pipelines for GitHub and GitLab</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Install</h2>
+      <p class="muted">Install locally to get <code>gci</code> command access quickly.</p>
+      <pre>go install github.com/sanix-darker/git-ci/cmd@latest</pre>
+      <pre>make install</pre>
+      <pre>curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-$(uname -s)-$(uname -m) -o gci</pre>
+      <pre>chmod +x gci
+sudo mv gci /usr/local/bin/</pre>
+    </section>
+
+    <section class="panel">
       <h2>Release Checklist</h2>
       <ul>
-        <li>Feature coverage tracked in <code>/home/dk/tmp/git-ci/user-stories.md</code></li>
-        <li>CSV evidence in <code>/home/dk/tmp/git-ci/user-stories.csv</code></li>
-        <li>Verification artifacts in <code>/home/dk/tmp/git-ci/verification-loop.md</code></li>
+        <li>Feature coverage tracked in <code>user-stories.md</code></li>
+        <li>CSV evidence in <code>user-stories.csv</code></li>
+        <li>Verification artifacts in <code>verification-loop.md</code></li>
       </ul>
     </section>
   </main>
