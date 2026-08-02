@@ -5,7 +5,7 @@ Static site contents for `git-ci.sanixdk.xyz` style hosting.
 Files:
 
 - `index.html` — minimal project page with install commands and links
-- `styles.css` — compact dark template used by the landing page
+- `styles.css` — sparse black-and-white layout used by the landing page
 
 Local preview:
 

@@ -3,91 +3,47 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>git-ci · Terminal view</title>
-    <meta
-      name="description"
-      content="Run CI pipelines locally before they hit your remote CI provider."
-    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Run CI workflows locally with git-ci." />
+    <title>git-ci</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <div class="scanlines"></div>
     <main>
-      <section class="hero panel">
-        <p class="eyebrow">GIT-CI // TERMINAL MODE</p>
-        <h1><span class="prompt">&gt;</span> local-ci execution lab</h1>
-        <p class="muted">
-          Parse and run GitHub Actions / GitLab CI / CircleCI / Drone / Travis
-          workflows from your repo before pushing.
-        </p>
+      <header>
+        <p class="mark">git-ci</p>
+        <h1>Run CI before you push.</h1>
+        <p class="intro">A local runner for GitHub Actions and GitLab CI.</p>
+        <nav aria-label="Project links">
+          <a href="https://github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">source</a>
+          <a href="https://pkg.go.dev/github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">docs</a>
+        </nav>
+      </header>
 
-        <p class="status">
-          SERVICE: <span class="ok">ONLINE</span> · HEALTH: <span class="path">/health</span>
-          returns <span class="code">202</span>
-        </p>
-
-        <pre class="terminal">
-$ gci --help
-parsers: github, gitlab, circleci, drone, travis
-runners: bash, docker, podman
-features: matrix, dependency graph, dry-run, strict validation
-        </pre>
+      <section aria-labelledby="install-title">
+        <h2 id="install-title">Install</h2>
+        <pre><code>git clone https://github.com/sanix-darker/git-ci.git
+cd git-ci && make install</code></pre>
+        <p>Requires Go 1.24 or newer.</p>
       </section>
 
-      <section class="panel">
-        <h2>What git-ci does</h2>
-        <div class="grid">
-          <article>
-            <h3>Inspect pipelines</h3>
-            <p>List and inspect jobs in tree, JSON, or YAML output.</p>
-            <pre>$ gci ls --format json | jq '.jobs | keys'</pre>
-          </article>
-          <article>
-            <h3>Run what matters</h3>
-            <p>Filter jobs, set envs, tune resources, then execute.</p>
-            <pre>$ gci run --only "test-*" --except "integration-*" --dry-run --parallel</pre>
-          </article>
-          <article>
-            <h3>Validate before run</h3>
-            <p>Validate strict mode first; catch config issues before execution.</p>
-            <pre>$ gci validate --strict -f .github/workflows/ci.yml</pre>
-          </article>
-        </div>
+      <section aria-labelledby="use-title">
+        <h2 id="use-title">Use</h2>
+        <pre><code>gci ls
+gci validate --strict
+gci run --job test --docker</code></pre>
+        <p>List jobs. Validate a workflow. Run one locally.</p>
       </section>
 
-      <section class="panel">
-        <h2>Install / usage</h2>
-        <p class="muted">Pick one install path.</p>
-        <pre>$ go install github.com/sanix-darker/git-ci/cmd@latest</pre>
-        <pre>$ git clone https://github.com/sanix-darker/git-ci.git && cd git-ci && make install</pre>
-        <pre>
-$ curl -L https://github.com/sanix-darker/git-ci/releases/latest/download/gci-$(uname -s)-$(uname -m) -o gci
-$ chmod +x gci && sudo mv gci /usr/local/bin/gci
-        </pre>
+      <section aria-labelledby="works-title">
+        <h2 id="works-title">Works with</h2>
+        <p>GitHub Actions · GitLab CI · Bash · Docker · Podman</p>
       </section>
 
-      <section class="panel">
-        <h2>Quick command matrix</h2>
-        <pre>
-gci run --job test
-gci run --job test --docker --memory 2g --cpus 2 --network host
-gci validate
-gci run --job test --dry-run
-        </pre>
-      </section>
-
-      <section class="panel">
-        <h2>Health probe</h2>
-        <p class="muted">For uptime checks and deployment validation:</p>
-        <pre>$ curl -s -i https://git-ci.sanixdk.xyz/health | head -n 1
-HTTP/2 202</pre>
-      </section>
-
-      <section class="cta">
-        <a class="btn" href="https://github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">GitHub</a>
-        <a class="btn btn-ghost" href="https://pkg.go.dev/github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">Docs</a>
-        <a class="btn btn-ghost" href="https://github.com/sanix-darker/git-ci/releases" target="_blank" rel="noreferrer">Releases</a>
-      </section>
+      <footer>
+        <a href="/health">health: 202</a>
+        <span>local CI runner</span>
+      </footer>
     </main>
   </body>
 </html>
