@@ -1,0 +1,18 @@
+#
+# Shared-host-ready snippet for git-ci.sanixdk.xyz.
+# Copy this block into your host's /etc/caddy/Caddyfile and reload Caddy.
+#
+git-ci.sanixdk.xyz {
+    tls internal
+
+    handle /health {
+        respond "ACCEPTED" 202
+    }
+
+    reverse_proxy 127.0.0.1:8080
+}
+
+www.git-ci.sanixdk.xyz {
+    tls internal
+    redir https://git-ci.sanixdk.xyz{uri} permanent
+}

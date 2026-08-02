@@ -83,7 +83,27 @@ openssl s_client -connect <origin-ip>:443 -servername git-ci.example.com < /dev/
 
 If the output includes `no peer certificate available`, the host Caddy config is
 missing a matching TLS cert for that hostname or is not matching it on that host
-block. Add the block from `deploy/Caddyfile.host-snippet` and reload/restart Caddy.
+block.
+
+For this project on `git-ci.sanixdk.xyz`, the quickest fix is to add the concrete
+block from `deploy/Caddyfile.sanixdk-host` to your shared host `/etc/caddy/Caddyfile`
+and reload Caddy:
+
+```bash
+scp deploy/Caddyfile.sanixdk-host root@178.105.18.9:/etc/caddy/git-ci-host-snippet
+ssh root@178.105.18.9 "printf '\nimport /etc/caddy/git-ci-host-snippet\n' >> /etc/caddy/Caddyfile && caddy reload --config /etc/caddy/Caddyfile"
+```
+
+Then verify on origin and edge:
+
+```bash
+openssl s_client -connect 178.105.18.9:443 -servername git-ci.sanixdk.xyz < /dev/null
+curl -ksI https://git-ci.sanixdk.xyz/health
+```
+
+You should see a certificate presented and `HTTP/2 202` for `/health`.
+
+Add the block from `deploy/Caddyfile.host-snippet` (or `deploy/Caddyfile.sanixdk-host` for this host) and reload/restart Caddy.
 
 ## Safety / hygiene
 
