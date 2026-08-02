@@ -1,15 +1,17 @@
-# git-ci.sanixdk.xyz-style Landing Site
+# git-ci.sanixdk.xyz landing page
 
-This folder contains a lightweight static site scaffold for the `git-ci` project:
+Static site contents for `git-ci.sanixdk.xyz` style hosting.
 
-- `index.html`
-- `styles.css`
+Files:
 
-Run a local preview with:
+- `index.html` — minimal project page with install commands and links
+- `styles.css` — compact dark template used by the landing page
+
+Local preview:
 
 ```bash
-cd site
+cd /home/dk/github/git-ci/site
 python3 -m http.server 4173
 ```
 
-Then open `http://localhost:4173` in a browser.
+Open `http://127.0.0.1:4173`.
