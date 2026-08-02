@@ -33,7 +33,10 @@ func CmdRun(c *cli.Context) error {
 	}
 
 	// Build runner configuration
-	cfg := buildRunnerConfig(c)
+	cfg, err := buildRunnerConfig(c)
+	if err != nil {
+		return err
+	}
 
 	// Determine which jobs to run
 	jobs := selectJobsToRun(c, pipeline)
