@@ -225,6 +225,108 @@ func TestCliApp_Run_MissingEnvFileFails(t *testing.T) {
 	}
 }
 
+func writeStageWorkflowFixture(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	wf := filepath.Join(dir, ".gitlab-ci.yml")
+	src := `stages:
+  - test
+  - build
+test:
+  stage: test
+  script:
+    - echo test
+build:
+  stage: build
+  needs: [test]
+  script:
+    - echo build
+`
+	if err := os.WriteFile(wf, []byte(src), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	return wf
+}
+
+func TestCliApp_ListAliasLs(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+
+	out, err := runAppWithStdout(t, []string{"gci", "ls", "--format", "json", "-f", fixture})
+	if err != nil {
+		t.Fatalf("gci ls --format json errored: %v", err)
+	}
+
+	var doc map[string]interface{}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); err != nil {
+		t.Fatalf("expected JSON from ls alias: %v\nstdout:\n%s", err, out)
+	}
+	if _, ok := doc["jobs"]; !ok {
+		t.Fatalf("expected jobs in ls output: %v", doc)
+	}
+}
+
+func TestCliApp_Run_DryRunRunsFilteredJob(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+
+	out, err := runAppWithStdout(t, []string{"gci", "run", "--dry-run", "--job", "hello", "-f", fixture})
+	if err != nil {
+		t.Fatalf("run --dry-run --job hello errored: %v\nstdout:\n%s", err, out)
+	}
+	if !strings.Contains(out, "Running 1 job(s) sequentially") {
+		t.Errorf("expected single-job dry-run message, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Job 'hello' succeeded") {
+		t.Errorf("expected hello job completion marker, got:\n%s", out)
+	}
+}
+
+func TestCliApp_Run_OnlyPatternNoMatchWarnsAndErrors(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+
+	out, err := runAppWithStdout(t, []string{
+		"gci", "run", "--dry-run", "--job", "does-not-exist", "-f", fixture,
+	})
+	if err == nil {
+		t.Fatalf("expected no-job error, got nil; stdout:\n%s", out)
+	}
+	if !strings.Contains(out, "Warning: job 'does-not-exist' not found") {
+		t.Errorf("expected unmatched-job warning, got:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "no jobs to run") {
+		t.Errorf("expected no-jobs-to-run error, got: %v", err)
+	}
+}
+
+func TestCliApp_Run_OnlyPatternByWildcard(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+
+	out, err := runAppWithStdout(t, []string{"gci", "run", "--dry-run", "--job", "h*", "-f", fixture})
+	if err != nil {
+		t.Fatalf("run --dry-run --job h* errored: %v\nstdout:\n%s", err, out)
+	}
+	if !strings.Contains(out, "Running 1 job(s) sequentially") {
+		t.Errorf("expected one selected job in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Job 'hello'") {
+		t.Errorf("expected selected hello job to run, got:\n%s", out)
+	}
+}
+
+func TestCliApp_Run_StageFilter(t *testing.T) {
+	fixture := writeStageWorkflowFixture(t)
+
+	out, err := runAppWithStdout(t, []string{
+		"gci", "run", "--dry-run", "--stage", "test", "-f", fixture,
+	})
+	if err != nil {
+		t.Fatalf("run --dry-run --stage test errored: %v\nstdout:\n%s", err, out)
+	}
+	if !strings.Contains(out, "Running 1 job(s) sequentially") {
+		t.Errorf("expected one test-stage job, got:\n%s", out)
+	}
+}
+
 // jobKeys returns the sorted key set of a JSON-decoded jobs map.
 func jobKeys(m map[string]interface{}) []string {
 	out := make([]string, 0, len(m))
