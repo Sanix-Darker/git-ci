@@ -197,12 +197,15 @@ All four confirmed bugs verified post-fix on a freshly rebuilt `build/gci` (`go 
 | #3 bwc (no flags) | `gci env set SIMPLE=z` | ✅ | prints `✓ Set SIMPLE=z` and exits 0 |
 | #3 ambiguous ordering | `gci env set --save TV2=world --file r3b.env` | ✅ | file written |
 | #4 `--quiet` | `gci --quiet run --dry-run -f ...` | ✅ | output drops from 75 → 0 (or to error lines only); direct `fmt.Printf` / `io.Copy(os.Stdout, ...)` callers in podman/docker `dryRunJob` & `streamLogs` now go through the package-level quiet redirect |
+| #6 env set `--save` (no KEY=VALUE) | `gci env set --save --file x.env` | ✅ | error now says `--save requires at least one KEY=VALUE argument` so the failure ties back to the flag the user typed; no file written on the error path |
+| #6 env set `--save` urfave/cli quirk path | `gci env set KEY=v --save --file x.env` (after positional) | ✅ | file written to user-supplied path even when urfave/cli v2.27.7's parser stops at the first positional and `--save` / `--file` leak into `c.Args()` |
+| #6 `--save` false-positive guard | `detectSaveFlag(KEY=--save-something, KEY=--save, KEY=--save=true, KEY=save-but-not-flag)` | ✅ | helper still returns false on KEY=... literals whose value contains `save`; canonical match returns true |
 
 ### Remaining gaps (documented, not fixed — pre-regression-suite)
 
 - Direct subprocess output via OS fd 1/2 inheritance (processes that shell out without setting `cmd.Stdout = io.Discard`) still reaches the host terminal even under `--quiet`. Podman/Docker pull in verbose mode is the most visible case; non-verbose pull already uses `-q`.
 - `Progress.quiet` is captured at construction time. If any caller toggles `OutputFormatter.Quiet` mid-pipeline, in-flight `Progress` objects keep their stale value.
-- `gci env set --save` (no `KEY=VALUE`) still succeeds silently without writing a file when no env vars are present. (We preserved the explicit error for the “no args” case.)
+- ~~`gci env set --save` (no `KEY=VALUE`)~~ — FIXED in v0.4.1 (commit `e3284d9`, merged via PR #28): the early-return error now explicitly mentions `--save`, and the override-detection block scans rawArgs unconditionally to handle the urfave/cli v2.27.7 quirk where `--file <path>` after a positional leaks into `c.Args()`. See TEST RESULTS rows `#6` and REGRESSION SUITE row `#6` for the 7-test coverage.
 
 ## REGRESSION SUITE
 
@@ -219,6 +222,7 @@ go test -count=1 -run 'CmdList_Format|CmdEnvList_|CmdEnvSet_|OutputFormatter_Qui
 | #3 | `internal/handlers/env_test.go` + `cmd/cli_test.go` | handler-level sanity (filter to KEY=VAL args) + real-app trip that exercises urfave/cli's flag-after-positional quirk (stdlib `flag.FlagSet` does not reproduce it) |
 | #4 | `internal/runners/quiet_test.go` | formatter silence for every Print method (PrintError/PrintStepFailed intentionally bypass); + `TestNewBashRunner_PropagatesQuiet` / `_PropagatesVerbose` / `_DefaultsAreQuietFalse` guarding the constructor wiring |
 | #5 | `internal/runners/quiet_redirect_test.go` | helper unit tests (acquire/release round-trip, ref-count math, defensive releases, `fmt.Printf` swallowing) + runner integration tests (`BashRunner.RunJob` + `PodmanRunner.dryRunJob` under Quiet → zero bytes on host stdout, parity checks under non-Quiet) |
+| #6 | `internal/handlers/env_test.go` + `cmd/cli_test.go` | handler-level (`TestCmdEnvSet_SaveFlagAlone_ErrorsMentioningSave`, `TestCmdEnvSet_SaveFlagAndFileNoKeyVal_NoFileWritten`, `TestCmdEnvSet_SaveFlagInRawArgs_QuirkPath_ErrorsMentioningSave`, `TestDetectSaveFlag_FalsePositiveKeyValContainsSaveLiteral_DoesNotMatch` with 7 `t.Run` subtests) + real `cli.App.Run` (`TestCliApp_EnvSetSaveAlone_ErrorsAndNoSideEffect`, `TestCliApp_EnvSetSaveAfterPositional_PersistsFile` serves as the regression-proof for the urfave/cli quirk case) |
 
 ### Remaining gaps (post-regression-suite)
 
