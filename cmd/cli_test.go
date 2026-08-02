@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,6 +19,7 @@ func buildApp() *cli.App {
 	return &cli.App{
 		Name:     "git-ci",
 		Usage:    "Run CI/CD pipelines locally",
+		Version:  formatVersion(),
 		Flags:    globalFlags(),
 		Commands: commands(),
 	}
@@ -54,6 +56,17 @@ func runAppWithStdout(t *testing.T, args []string) (string, error) {
 	<-done
 
 	return buf.String(), runErr
+}
+
+func runGoRunCommandOutput(t *testing.T, args []string) (string, error) {
+	t.Helper()
+
+	cmd := exec.Command("go", append([]string{"run", "."}, args...)...)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	runErr := cmd.Run()
+	return out.String(), runErr
 }
 
 // writeWorkflowFixture drops a minimal GitHub workflow into t.TempDir()/.github/workflows/ci.yml.
@@ -361,5 +374,42 @@ func TestCliApp_EnvSetSaveAlone_ErrorsAndNoSideEffect(t *testing.T) {
 
 	if _, statErr := os.Stat(out); statErr == nil {
 		t.Errorf("BUG #6 regression: env file was incorrectly created at %s on the error path (silent side effect)", out)
+	}
+}
+
+func TestCliApp_NoArgsShowsHelp(t *testing.T) {
+	out, err := runAppWithStdout(t, []string{"gci"})
+	if err != nil {
+		t.Fatalf("running git-ci with no args should show help, got error: %v", err)
+	}
+	if !strings.Contains(out, "USAGE:") || !strings.Contains(out, "git-ci") {
+		t.Errorf("expected top-level usage in output, got:\n%s", out)
+	}
+}
+
+func TestCliApp_HelpFlagWorks(t *testing.T) {
+	out, err := runAppWithStdout(t, []string{"gci", "--help"})
+	if err != nil {
+		t.Fatalf("gci --help should not fail, got: %v", err)
+	}
+	if !strings.Contains(out, "USAGE:") || !strings.Contains(out, "COMMANDS:") {
+		t.Errorf("expected help sections in output, got:\n%s", out)
+	}
+}
+
+func TestCliApp_VersionFlag(t *testing.T) {
+	out, err := runAppWithStdout(t, []string{"gci", "--version"})
+	if err != nil {
+		t.Fatalf("gci --version should not fail, got: %v", err)
+	}
+	if !strings.Contains(out, "git-ci version ") {
+		t.Errorf("expected version string in output, got:\n%s", out)
+	}
+}
+
+func TestCliApp_UnknownSubcommand(t *testing.T) {
+	out, err := runGoRunCommandOutput(t, []string{"banana"})
+	if !strings.Contains(out, "No help topic for 'banana'") {
+		t.Fatalf("expected unknown-subcommand message, got: %v (stdout: %s)", err, out)
 	}
 }
