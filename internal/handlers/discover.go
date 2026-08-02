@@ -108,7 +108,8 @@ func CmdDiscover(c *cli.Context) error {
 
 	// Attempt to parse each discovered file to count jobs
 	for idx := range discovered {
-		jobs, detected := countJobs(discovered[idx].Path)
+		fullPath := filepath.Join(absDir, discovered[idx].Path)
+		jobs, detected := countJobs(fullPath)
 		discovered[idx].Jobs = jobs
 		discovered[idx].Detected = detected
 	}
