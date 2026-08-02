@@ -96,6 +96,71 @@ jobs:
 	return wf
 }
 
+func writeGitLabWorkflowFixture(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	wf := filepath.Join(dir, ".gitlab-ci.yml")
+	src := `stages:
+  - test
+  - verify
+test:
+  stage: test
+  script:
+    - echo test
+verify:
+  stage: verify
+  script:
+    - echo verify
+  needs: [test]
+`
+	if err := os.WriteFile(wf, []byte(src), 0o644); err != nil {
+		t.Fatalf("write gitlab fixture: %v", err)
+	}
+	return wf
+}
+
+func writeTwoJobWorkflowFixture(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	wf := filepath.Join(dir, ".github", "workflows", "ci.yml")
+	src := `name: cli-test-two-jobs
+on: [push]
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+  world:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo world
+`
+	if err := os.MkdirAll(filepath.Dir(wf), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(wf, []byte(src), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	return wf
+}
+
+func writeTravisStyleFixture(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	wf := filepath.Join(dir, ".travis.yml")
+	src := `language: go
+script:
+  - echo hello
+`
+	if err := os.WriteFile(wf, []byte(src), 0o644); err != nil {
+		t.Fatalf("write travis fixture: %v", err)
+	}
+	return wf
+}
+
 // -----------------------------------------------------------------------------
 // BUG #2 real-app regression: cli.go must register a BoolFlag named
 // `verbose` on the `env list` subcommand. urfave/cli only complains
@@ -207,6 +272,26 @@ func TestCliApp_ListFormatYAML_EmitsYAML(t *testing.T) {
 	}
 	if strings.Contains(out, "Pipeline:") || strings.Contains(out, "├──") {
 		t.Errorf("yaml output looked like plain-text tree:\n%s", out)
+	}
+}
+
+func TestCliApp_ListSupportsGitLabPath(t *testing.T) {
+	fixture := writeGitLabWorkflowFixture(t)
+	out, err := runAppWithStdout(t, []string{"gci", "list", "--format", "json", "-f", fixture})
+	if err != nil {
+		t.Fatalf("list --format json -f .gitlab-ci.yml errored: %v", err)
+	}
+
+	var doc map[string]interface{}
+	if jerr := json.Unmarshal([]byte(strings.TrimSpace(out)), &doc); jerr != nil {
+		t.Fatalf("expected JSON output, got: %v", jerr)
+	}
+	jobs, ok := doc["jobs"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing jobs object: %#v", doc["jobs"])
+	}
+	if _, ok := jobs["test"]; !ok {
+		t.Fatalf("expected gitlab fixture job 'test', got keys: %v", jobKeys(jobs))
 	}
 }
 
@@ -337,6 +422,41 @@ func TestCliApp_Run_StageFilter(t *testing.T) {
 	}
 	if !strings.Contains(out, "Running 1 job(s) sequentially") {
 		t.Errorf("expected one test-stage job, got:\n%s", out)
+	}
+}
+
+func TestCliApp_Run_DryRunRunsAllJobs(t *testing.T) {
+	fixture := writeTwoJobWorkflowFixture(t)
+
+	out, err := runAppWithStdout(t, []string{"gci", "run", "--dry-run", "-f", fixture})
+	if err != nil {
+		t.Fatalf("run --dry-run -f fixture errored: %v\nstdout:\n%s", err, out)
+	}
+	if !strings.Contains(out, "Running 2 job(s) sequentially") {
+		t.Errorf("expected full run with two jobs, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Job 'hello' succeeded") {
+		t.Errorf("expected hello job completion marker, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Job 'world' succeeded") {
+		t.Errorf("expected world job completion marker, got:\n%s", out)
+	}
+}
+
+func TestCliApp_Validate_ProviderForcesParser(t *testing.T) {
+	fixture := writeTravisStyleFixture(t)
+
+	autoOut, autoErr := runAppWithStdout(t, []string{"gci", "validate", "--provider", "auto", "-f", fixture})
+	if autoErr != nil {
+		t.Fatalf("validate --provider auto should follow auto-detection, got %v output:\n%s", autoErr, autoOut)
+	}
+
+	githubOut, githubErr := runAppWithStdout(t, []string{"gci", "validate", "--provider", "github", "-f", fixture})
+	if githubErr == nil {
+		t.Fatalf("validate --provider github should force GitHub parser on travis fixture, expected validation parse failure, got success; output:\n%s", githubOut)
+	}
+	if !strings.Contains(githubErr.Error(), "validation failed") && !strings.Contains(githubOut, "Validation errors found") {
+		t.Fatalf("expected validation failure output for forced parser path, got error=%v output:\n%s", githubErr, githubOut)
 	}
 }
 
