@@ -69,6 +69,111 @@ func runGoRunCommandOutput(t *testing.T, args []string) (string, error) {
 	return out.String(), runErr
 }
 
+func TestSetupEnvironment_PopulatesDefaultCIValues(t *testing.T) {
+	originalCI := os.Getenv("CI")
+	originalGitCI := os.Getenv("GIT_CI")
+	originalGitCIVersion := os.Getenv("GIT_CI_VERSION")
+
+	t.Cleanup(func() {
+		_ = os.Setenv("CI", originalCI)
+		_ = os.Setenv("GIT_CI", originalGitCI)
+		_ = os.Setenv("GIT_CI_VERSION", originalGitCIVersion)
+	})
+
+	if err := os.Setenv("CI", ""); err != nil {
+		t.Fatalf("set CI: %v", err)
+	}
+	if err := os.Setenv("GIT_CI", ""); err != nil {
+		t.Fatalf("set GIT_CI: %v", err)
+	}
+	if err := os.Setenv("GIT_CI_VERSION", ""); err != nil {
+		t.Fatalf("set GIT_CI_VERSION: %v", err)
+	}
+
+	setupEnvironment()
+
+	if got := os.Getenv("CI"); got != "true" {
+		t.Fatalf("expected CI=true, got %q", got)
+	}
+	if got := os.Getenv("GIT_CI"); got != "true" {
+		t.Fatalf("expected GIT_CI=true, got %q", got)
+	}
+	if got := os.Getenv("GIT_CI_VERSION"); got == "" {
+		t.Fatalf("expected GIT_CI_VERSION to be set")
+	}
+}
+
+func TestSetupEnvironment_PreservesExistingCIValues(t *testing.T) {
+	originalCI := os.Getenv("CI")
+	originalGitCI := os.Getenv("GIT_CI")
+
+	t.Cleanup(func() {
+		_ = os.Setenv("CI", originalCI)
+		_ = os.Setenv("GIT_CI", originalGitCI)
+	})
+
+	if err := os.Setenv("CI", "from-user"); err != nil {
+		t.Fatalf("set CI: %v", err)
+	}
+	if err := os.Setenv("GIT_CI", "from-user"); err != nil {
+		t.Fatalf("set GIT_CI: %v", err)
+	}
+
+	setupEnvironment()
+
+	if got := os.Getenv("CI"); got != "from-user" {
+		t.Fatalf("expected CI to remain from user, got %q", got)
+	}
+	if got := os.Getenv("GIT_CI"); got != "from-user" {
+		t.Fatalf("expected GIT_CI to remain from user, got %q", got)
+	}
+}
+
+func TestCliApp_Run_RespectsGITCIFileEnvVar(t *testing.T) {
+	t.Helper()
+
+	dir := t.TempDir()
+	fixture := filepath.Join(dir, ".github", "workflows", "ci.yml")
+	if err := os.MkdirAll(filepath.Dir(fixture), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	src := `name: cli-test-regression
+on: [push]
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if err := os.WriteFile(fixture, []byte(src), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	originalWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	workdir := dir
+	if err := os.Setenv("GIT_CI_FILE", fixture); err != nil {
+		t.Fatalf("set GIT_CI_FILE: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("GIT_CI_FILE", "")
+		_ = os.Chdir(originalWD)
+	})
+	if err := os.Chdir(workdir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+
+	out, err := runAppWithStdout(t, []string{"gci", "run", "--dry-run"})
+	if err != nil {
+		t.Fatalf("gci run --dry-run using GIT_CI_FILE failed: %v\nout: %s", err, out)
+	}
+	if !strings.Contains(out, "Running 1 job(s) sequentially") {
+		t.Fatalf("expected run to execute selected workflow from GIT_CI_FILE, got: %s", out)
+	}
+}
+
 // writeWorkflowFixture drops a minimal GitHub workflow into t.TempDir()/.github/workflows/ci.yml.
 func writeWorkflowFixture(t *testing.T) string {
 	t.Helper()

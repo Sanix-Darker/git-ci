@@ -247,6 +247,26 @@ test:
 	}
 }
 
+func TestParseInput_InvalidYAMLReturnsFileNameInError(t *testing.T) {
+	path := t.TempDir()
+	file := filepath.Join(path, "broken.yml")
+	if err := os.WriteFile(file, []byte(`on: [push
+jobs:`), 0o644); err != nil {
+		t.Fatalf("write broken workflow: %v", err)
+	}
+
+	_, err := parseInput(file)
+	if err == nil {
+		t.Fatalf("expected parse error for malformed YAML")
+	}
+	if !strings.Contains(err.Error(), "failed to parse workflow") {
+		t.Fatalf("expected parse wrapper error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), file) {
+		t.Fatalf("expected workflow path in error message, got: %v", err)
+	}
+}
+
 func TestGetWorkdir_DefaultUsesCurrentDir(t *testing.T) {
 	tmp := t.TempDir()
 	if err := os.Chdir(tmp); err != nil {

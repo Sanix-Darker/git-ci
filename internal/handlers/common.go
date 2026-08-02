@@ -70,7 +70,7 @@ func parseInputWithProvider(workflowFile, provider string) (*types.Pipeline, err
 
 	pipeline, err := parser.Parse(workflowFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse workflow: %w", err)
+		return nil, fmt.Errorf("failed to parse workflow %q: %w", workflowFile, err)
 	}
 
 	return pipeline, nil
