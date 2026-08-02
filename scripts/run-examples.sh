@@ -201,8 +201,7 @@ done
 header "CircleCI Examples (${#CIRCLECI_FILES[@]} files)"
 for file in "${CIRCLECI_FILES[@]}"; do
   if [ -f "$file" ]; then
-    # CircleCI files use GitHub parser (with --provider github)
-    run_example_tests "$file" "--provider github"
+    run_example_tests "$file" "--provider circleci"
   else
     skip_msg "File not found: $file"
     SKIP_COUNT=$((SKIP_COUNT + 1))
@@ -213,8 +212,7 @@ done
 header "Drone CI Examples (${#DRONE_FILES[@]} files)"
 for file in "${DRONE_FILES[@]}"; do
   if [ -f "$file" ]; then
-    # Drone files fall back to GitHub parser
-    run_example_tests "$file" "--provider github"
+    run_example_tests "$file" "--provider drone"
   else
     skip_msg "File not found: $file"
     SKIP_COUNT=$((SKIP_COUNT + 1))
@@ -225,8 +223,7 @@ done
 header "Travis CI Examples (${#TRAVIS_FILES[@]} files)"
 for file in "${TRAVIS_FILES[@]}"; do
   if [ -f "$file" ]; then
-    # Travis files fall back to GitHub parser
-    run_example_tests "$file" "--provider github"
+    run_example_tests "$file" "--provider travis"
   else
     skip_msg "File not found: $file"
     SKIP_COUNT=$((SKIP_COUNT + 1))
