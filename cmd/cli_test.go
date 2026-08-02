@@ -466,6 +466,28 @@ func TestCliApp_Run_DryRunRunsAllJobs(t *testing.T) {
 	}
 }
 
+func TestCliApp_Run_PullEqualsFalseIsAccepted(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+
+	out, err := runAppWithStdout(t, []string{
+		"gci", "run", "--dry-run", "--pull=false", "-f", fixture,
+	})
+	if err != nil {
+		t.Fatalf("run --dry-run --pull=false should be accepted, got: %v\nstdout:\n%s", err, out)
+	}
+}
+
+func TestCliApp_Run_PullEqualsTrueIsAccepted(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+
+	out, err := runAppWithStdout(t, []string{
+		"gci", "run", "--dry-run", "--pull=true", "-f", fixture,
+	})
+	if err != nil {
+		t.Fatalf("run --dry-run --pull=true should be accepted, got: %v\nstdout:\n%s", err, out)
+	}
+}
+
 func TestCliApp_Validate_ProviderForcesParser(t *testing.T) {
 	fixture := writeTravisStyleFixture(t)
 

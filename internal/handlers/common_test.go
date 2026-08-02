@@ -232,3 +232,35 @@ func TestGetWorkdir_MissingDirErrors(t *testing.T) {
 		t.Fatalf("expected workdir missing message, got %v", err)
 	}
 }
+
+func TestGetWorkdir_AbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		t.Fatalf("abs root: %v", err)
+	}
+
+	// Use a relative path to ensure getWorkdir returns an absolute path.
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	if err := os.MkdirAll("nested/workdir", 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	fs := flag.NewFlagSet("workdir", flag.ContinueOnError)
+	fs.String("workdir", ".", "")
+	if err := fs.Parse([]string{"--workdir", "nested/workdir"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	ctx := cli.NewContext(nil, fs, nil)
+
+	got, err := getWorkdir(ctx)
+	if err != nil {
+		t.Fatalf("getWorkdir: %v", err)
+	}
+	want := filepath.Join(absRoot, "nested", "workdir")
+	if got != want {
+		t.Fatalf("expected workdir %q, got %q", want, got)
+	}
+}

@@ -260,6 +260,27 @@ func TestCmdEnvSet_DoesNotPersistWithoutSaveFlag(t *testing.T) {
 	}
 }
 
+func TestCmdEnvSet_SetsMultipleVariablesInCurrentProcess(t *testing.T) {
+	fs := flag.NewFlagSet("env set", flag.ContinueOnError)
+	fs.String("file", "", "")
+	fs.Bool("save", false, "")
+
+	if err := fs.Parse([]string{"ONE=alpha", "TWO=beta"}); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	ctx := cli.NewContext(nil, fs, nil)
+
+	if err := CmdEnvSet(ctx); err != nil {
+		t.Fatalf("CmdEnvSet: %v", err)
+	}
+	if got := os.Getenv("ONE"); got != "alpha" {
+		t.Errorf("expected ONE set in current process, got %q", got)
+	}
+	if got := os.Getenv("TWO"); got != "beta" {
+		t.Errorf("expected TWO set in current process, got %q", got)
+	}
+}
+
 // -----------------------------------------------------------------------------
 // BUG #6 sanity check at the handler level. The FEATURES.md gap claim
 // is "env set --save (no KEY=VALUE) succeeds silently without writing
