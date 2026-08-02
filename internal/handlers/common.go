@@ -195,6 +195,7 @@ func buildRunnerConfig(c *cli.Context) (*config.RunnerConfig, error) {
 	cfg.Verbose = c.Bool("verbose") || c.Bool("debug")
 	cfg.Quiet = c.Bool("quiet")
 	cfg.DryRun = c.Bool("dry-run")
+	cfg.NoCache = c.Bool("no-cache")
 	cfg.PullImages = c.Bool("pull")
 	cfg.Timeout = c.Int("timeout")
 

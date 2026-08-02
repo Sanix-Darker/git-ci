@@ -14,6 +14,12 @@ func buildRunContext(t *testing.T, args ...string) *cli.Context {
 	t.Helper()
 
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
+	if err := (&cli.BoolFlag{Name: "no-cache"}).Apply(fs); err != nil {
+		t.Fatalf("register no-cache flag: %v", err)
+	}
+	if err := (&cli.BoolFlag{Name: "pull"}).Apply(fs); err != nil {
+		t.Fatalf("register pull flag: %v", err)
+	}
 	if err := (&cli.BoolFlag{Name: "verbose"}).Apply(fs); err != nil {
 		t.Fatalf("register verbose flag: %v", err)
 	}
@@ -25,6 +31,21 @@ func buildRunContext(t *testing.T, args ...string) *cli.Context {
 	}
 	if err := (&cli.StringFlag{Name: "env-file"}).Apply(fs); err != nil {
 		t.Fatalf("register env-file flag: %v", err)
+	}
+	if err := (&cli.StringFlag{Name: "network"}).Apply(fs); err != nil {
+		t.Fatalf("register network flag: %v", err)
+	}
+	if err := (&cli.StringFlag{Name: "memory"}).Apply(fs); err != nil {
+		t.Fatalf("register memory flag: %v", err)
+	}
+	if err := (&cli.StringFlag{Name: "cpus"}).Apply(fs); err != nil {
+		t.Fatalf("register cpus flag: %v", err)
+	}
+	if err := (&cli.StringSliceFlag{Name: "volume"}).Apply(fs); err != nil {
+		t.Fatalf("register volume flag: %v", err)
+	}
+	if err := (&cli.IntFlag{Name: "timeout"}).Apply(fs); err != nil {
+		t.Fatalf("register timeout flag: %v", err)
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -75,6 +96,45 @@ func TestBuildRunnerConfig_EnvFileMissingReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to load env file") {
 		t.Errorf("unexpected error message %q", err)
+	}
+}
+
+func TestBuildRunnerConfig_AppliesRuntimeFlags(t *testing.T) {
+	ctx := buildRunContext(t,
+		"--pull=false",
+		"--no-cache",
+		"--network", "host",
+		"--memory", "1g",
+		"--cpus", "2",
+		"--volume", "./cache",
+		"--volume", "./artifacts",
+		"--timeout", "42",
+	)
+
+	cfg, err := buildRunnerConfig(ctx)
+	if err != nil {
+		t.Fatalf("buildRunnerConfig: %v", err)
+	}
+	if cfg.PullImages {
+		t.Fatalf("expected --pull=false to disable image pulls")
+	}
+	if !cfg.NoCache {
+		t.Fatalf("expected --no-cache to enable NoCache")
+	}
+	if got := cfg.Network; got != "host" {
+		t.Fatalf("expected network host, got %q", got)
+	}
+	if got := cfg.Memory; got != "1g" {
+		t.Fatalf("expected memory 1g, got %q", got)
+	}
+	if got := cfg.CPUs; got != "2" {
+		t.Fatalf("expected cpus 2, got %q", got)
+	}
+	if got := cfg.Timeout; got != 42 {
+		t.Fatalf("expected timeout 42, got %d", got)
+	}
+	if got := cfg.Volumes; len(got) != 2 || got[0] != "./cache" || got[1] != "./artifacts" {
+		t.Fatalf("expected two mounted volumes in order, got %#v", got)
 	}
 }
 
