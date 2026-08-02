@@ -14,6 +14,27 @@ import (
 	cli "github.com/urfave/cli/v2"
 )
 
+type cleanDockerClient interface {
+	ContainerList(ctx context.Context, options container.ListOptions) ([]container.Summary, error)
+	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
+	ImageList(ctx context.Context, options image.ListOptions) ([]image.Summary, error)
+	ImageRemove(ctx context.Context, imageID string, options image.RemoveOptions) ([]image.DeleteResponse, error)
+	ImagesPrune(ctx context.Context, filterArgs filters.Args) (image.PruneReport, error)
+	Close() error
+}
+
+var newCleanDockerClient = func() (cleanDockerClient, error) {
+	cli, err := client.NewClientWithOpts(
+		client.FromEnv,
+		client.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return cli, nil
+}
+
 // CmdClean handles the clean command
 func CmdClean(c *cli.Context) error {
 	all := c.Bool("all")
@@ -49,10 +70,7 @@ func CmdClean(c *cli.Context) error {
 // cleanDockerResources cleans Docker containers and images
 func cleanDockerResources(containers, images, force bool) error {
 	// Create Docker client
-	cli, err := client.NewClientWithOpts(
-		client.FromEnv,
-		client.WithAPIVersionNegotiation(),
-	)
+	cli, err := newCleanDockerClient()
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
@@ -80,7 +98,7 @@ func cleanDockerResources(containers, images, force bool) error {
 }
 
 // cleanContainers removes git-ci related containers
-func cleanContainers(ctx context.Context, cli *client.Client, force bool) error {
+func cleanContainers(ctx context.Context, cli cleanDockerClient, force bool) error {
 	// List containers with git-ci label or name prefix
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("label", "git-ci=true")
@@ -151,7 +169,7 @@ func cleanContainers(ctx context.Context, cli *client.Client, force bool) error 
 }
 
 // cleanImages removes git-ci related images
-func cleanImages(ctx context.Context, cli *client.Client, force bool) error {
+func cleanImages(ctx context.Context, cli cleanDockerClient, force bool) error {
 	// List images
 	images, err := cli.ImageList(ctx, image.ListOptions{})
 	if err != nil {
