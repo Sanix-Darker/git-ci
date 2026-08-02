@@ -105,6 +105,11 @@ git ci run --only "test-*" --except "test-integration"
 git ci run --docker --memory 2g --cpus 2
 ```
 
+## WEB VIEW DEPLOYMENT
+
+Static site assets are in [`site/`](./site), and deployment examples are in
+[`deploy/`](./deploy) for a stable web deployment setup.
+
 ## CLI REFERENCE
 
 ### GLOBAL OPTIONS

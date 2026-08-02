@@ -1,0 +1,12 @@
+# Snippet for a shared host Caddyfile (e.g. same machine as s2c).
+# Replace `git-ci.example.com` with the real domain.
+# Keep this as a snippet and paste it inside the host's main /etc/caddy/Caddyfile.
+
+git-ci.example.com {
+    handle /health {
+        respond "ACCEPTED" 202
+    }
+
+    # Route site traffic through the local service at 127.0.0.1:8080.
+    reverse_proxy 127.0.0.1:8080
+}
