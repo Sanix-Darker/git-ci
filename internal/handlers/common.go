@@ -14,8 +14,20 @@ import (
 
 // parseInput parses the workflow file with auto-detection
 func parseInput(workflowFile string) (*types.Pipeline, error) {
+	return parseInputWithProvider(workflowFile, "auto")
+}
+
+func parseInputWithProvider(workflowFile, provider string) (*types.Pipeline, error) {
 	// Auto-detect parser based on file path
 	var parser types.Parser
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider != "" && provider != "auto" {
+		selectedParser, err := parserFromProvider(provider)
+		if err != nil {
+			return nil, err
+		}
+		parser = selectedParser
+	}
 
 	if workflowFile == "" {
 		// Try to auto-detect workflow file
@@ -62,6 +74,23 @@ func parseInput(workflowFile string) (*types.Pipeline, error) {
 	}
 
 	return pipeline, nil
+}
+
+func parserFromProvider(provider string) (types.Parser, error) {
+	switch provider {
+	case "github", "gh":
+		return &parsers.GithubParser{}, nil
+	case "gitlab":
+		return &parsers.GitlabParser{}, nil
+	case "circleci", "circle":
+		return parsers.NewCircleCIParser(), nil
+	case "drone":
+		return &parsers.DroneParser{}, nil
+	case "travis":
+		return &parsers.TravisParser{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported CI provider %q", provider)
+	}
 }
 
 // detectParser detects the appropriate parser based on file path and content

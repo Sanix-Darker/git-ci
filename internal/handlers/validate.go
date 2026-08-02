@@ -12,9 +12,10 @@ import (
 func CmdValidate(c *cli.Context) error {
 	filePath := c.String("file")
 	strict := c.Bool("strict")
+	provider := c.String("provider")
 
 	// Parse pipeline
-	pipeline, err := parseInput(filePath)
+	pipeline, err := parseInputWithProvider(filePath, provider)
 	if err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}

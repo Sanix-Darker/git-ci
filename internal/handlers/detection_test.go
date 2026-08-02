@@ -186,3 +186,27 @@ func TestDetectParser_FallbackToGitHubForUnknown(t *testing.T) {
 		t.Fatalf("expected fallback github validation failure, got %v", err)
 	}
 }
+
+func TestParseInputWithProvider_ForcesRequestedParser(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "pipeline.yml")
+	if err := os.WriteFile(path, []byte(`language: go
+script:
+  - go test ./...
+`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	autoPipeline, err := parseInputWithProvider(path, "auto")
+	if err != nil {
+		t.Fatalf("parseInputWithProvider(auto): %v", err)
+	}
+	if autoPipeline.Provider != "travis" {
+		t.Fatalf("expected auto provider detection to infer travis, got %q", autoPipeline.Provider)
+	}
+
+	_, err = parseInputWithProvider(path, "github")
+	if err == nil {
+		t.Fatalf("expected forced github parser to fail on travis fixture, got success")
+	}
+}
