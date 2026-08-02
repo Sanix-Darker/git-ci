@@ -8,8 +8,7 @@ Type=simple
 User=git-ci
 Group=git-ci
 WorkingDirectory=/opt/git-ci
-Environment=GIT_CI_SITE_ROOT=/opt/git-ci/site
-ExecStart=/usr/bin/caddy file-server --listen 127.0.0.1:8080 --root ${GIT_CI_SITE_ROOT}
+ExecStart=/usr/bin/caddy file-server --listen 127.0.0.1:8080 --root /opt/git-ci/site
 Restart=always
 RestartSec=3
 NoNewPrivileges=true
