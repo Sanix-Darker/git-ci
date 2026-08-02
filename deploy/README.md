@@ -71,6 +71,20 @@ Use when you already have a shared host Caddy and only want this service on loca
    curl -fsS http://127.0.0.1:8080/ >/dev/null
    ```
 
+### Quick 525 troubleshooting
+
+Cloudflare `525` usually means origin TLS/HTTPS handshake failure.
+
+From the server (or another host inside your network), run:
+
+```bash
+openssl s_client -connect <origin-ip>:443 -servername git-ci.example.com < /dev/null
+```
+
+If the output includes `no peer certificate available`, the host Caddy config is
+missing a matching TLS cert for that hostname or is not matching it on that host
+block. Add the block from `deploy/Caddyfile.host-snippet` and reload/restart Caddy.
+
 ## Safety / hygiene
 
 - This repo is public. Do not store credentials, API keys, tokens, real host credentials, or TLS material here.
