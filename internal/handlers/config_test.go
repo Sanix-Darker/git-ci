@@ -240,3 +240,31 @@ environment:
 		t.Errorf("expected CI default env to be injected from config env")
 	}
 }
+
+func TestLoadConfigWithDefaults_UsesExplicitConfigPath(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	if err := os.WriteFile(".git-ci.yml", []byte(`defaults:
+  timeout: 11
+`), 0o644); err != nil {
+		t.Fatalf("write default config: %v", err)
+	}
+	if err := os.WriteFile("override.yml", []byte(`defaults:
+  timeout: 33
+`), 0o644); err != nil {
+		t.Fatalf("write explicit config: %v", err)
+	}
+
+	ctx := newConfigApplyContext(t, "--config", "override.yml")
+	loaded, err := LoadConfigWithDefaults(ctx)
+	if err != nil {
+		t.Fatalf("LoadConfigWithDefaults: %v", err)
+	}
+	if loaded.Defaults.Timeout != 33 {
+		t.Fatalf("expected explicit config timeout 33, got %d", loaded.Defaults.Timeout)
+	}
+	if got := ctx.Int("timeout"); got != 33 {
+		t.Errorf("expected explicit config to be applied via context, got timeout %d", got)
+	}
+}
