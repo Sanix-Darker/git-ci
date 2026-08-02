@@ -3,10 +3,20 @@
 # Keep this as a snippet and paste it inside the host's main /etc/caddy/Caddyfile.
 
 git-ci.example.com {
+    # Use the same policy as your shared setup:
+    # - For Cloudflare Full mode with self-signed origin certs (common on shared hosts), keep `tls internal`.
+    # - If this host already manages public ACME certs, remove `tls internal`.
+    tls internal
+
     handle /health {
         respond "ACCEPTED" 202
     }
 
     # Route site traffic through the local service at 127.0.0.1:8080.
     reverse_proxy 127.0.0.1:8080
+}
+
+# Optional: keep canonical host, if DNS points to both hostnames.
+www.git-ci.example.com {
+    redir https://git-ci.example.com{uri} permanent
 }
