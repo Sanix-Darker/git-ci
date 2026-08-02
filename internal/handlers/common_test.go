@@ -78,6 +78,38 @@ func TestBuildRunnerConfig_EnvFileMissingReturnsError(t *testing.T) {
 	}
 }
 
+func TestBuildRunnerConfig_RespectsEnvFileCommentsAndQuotes(t *testing.T) {
+	file := writeTempEnvFile(t, `# leading comment
+
+PLAIN=plain_value
+QUOTED="value with spaces"
+SINGLE='single quoted value'
+EMPTY=
+`)
+
+	ctx := buildRunContext(t, "--env-file", file)
+	cfg, err := buildRunnerConfig(ctx)
+	if err != nil {
+		t.Fatalf("buildRunnerConfig: %v", err)
+	}
+
+	if got := cfg.Environment["PLAIN"]; got != "plain_value" {
+		t.Errorf("expected plain value from env-file, got %q", got)
+	}
+	if got := cfg.Environment["QUOTED"]; got != "value with spaces" {
+		t.Errorf("expected quotes to be stripped for quoted value, got %q", got)
+	}
+	if got := cfg.Environment["SINGLE"]; got != "single quoted value" {
+		t.Errorf("expected single quotes to be stripped, got %q", got)
+	}
+	if _, ok := cfg.Environment["EMPTY"]; !ok {
+		t.Errorf("expected empty variable key to be parsed from env-file")
+	}
+	if got := cfg.Environment["EMPTY"]; got != "" {
+		t.Errorf("expected empty variable value from env-file, got %q", got)
+	}
+}
+
 func writeTempFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
 

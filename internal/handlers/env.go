@@ -70,9 +70,22 @@ func CmdEnvSet(c *cli.Context) error {
 	// leak through and cause an "invalid format" error.
 	rawArgs := c.Args().Slice()
 	keyValArgs := make([]string, 0, len(rawArgs))
-	for _, arg := range rawArgs {
+	for idx := 0; idx < len(rawArgs); idx++ {
+		arg := rawArgs[idx]
+		if strings.HasPrefix(arg, "--") {
+			if arg == "--file" && idx+1 < len(rawArgs) {
+				idx++
+			}
+			continue
+		}
+
 		if strings.Contains(arg, "=") {
 			keyValArgs = append(keyValArgs, arg)
+			continue
+		}
+
+		if arg != "" {
+			return fmt.Errorf("invalid format: %s. Expected KEY=VALUE", arg)
 		}
 	}
 

@@ -42,6 +42,20 @@ func TestDetectParser_PathBasedTravis(t *testing.T) {
 	}
 }
 
+func TestDetectParser_PathBasedBitbucketFallbackToGitHub(t *testing.T) {
+	parser := detectParser("bitbucket-pipelines.yml")
+	if parser == nil || parser.GetProviderName() != "github" {
+		t.Fatalf("expected github fallback parser for bitbucket file name, got %#v", parser)
+	}
+}
+
+func TestDetectParser_PathBasedAzureFallbackToGitHub(t *testing.T) {
+	parser := detectParser("azure-pipelines.yml")
+	if parser == nil || parser.GetProviderName() != "github" {
+		t.Fatalf("expected github fallback parser for azure file name, got %#v", parser)
+	}
+}
+
 func TestDetectParser_ContentBasedCircleCI(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "weird-ci.yml")
@@ -184,6 +198,26 @@ func TestDetectParser_FallbackToGitHubForUnknown(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "validation failed") {
 		t.Fatalf("expected fallback github validation failure, got %v", err)
+	}
+}
+
+func TestDetectParser_FallbackToGitHubForUnrecognizableContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "custom.yml")
+	if err := os.WriteFile(path, []byte(`not-a-known-schema: true
+still-not-known: yes
+`), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	parser := detectParser(path)
+	if parser == nil || parser.GetProviderName() != "github" {
+		t.Fatalf("expected fallback github parser for unrecognized content, got %#v", parser)
+	}
+
+	_, err := parser.Parse(path)
+	if err == nil {
+		t.Fatalf("expected github parser to fail on unrecognized content")
 	}
 }
 

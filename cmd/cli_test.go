@@ -259,6 +259,16 @@ func TestCliApp_ListFormatJSON_EmitsValidJSON(t *testing.T) {
 	}
 }
 
+func TestCliApp_List_MissingFileErrorsClearly(t *testing.T) {
+	out, err := runAppWithStdout(t, []string{"gci", "list", "--file", "i-do-not-exist.yml"})
+	if err == nil {
+		t.Fatalf("expected list on missing file to fail, got nil\nstdout:\n%s", out)
+	}
+	if !strings.Contains(err.Error(), "workflow file not found") {
+		t.Fatalf("expected missing-file error, got: %v", err)
+	}
+}
+
 func TestCliApp_ListFormatYAML_EmitsYAML(t *testing.T) {
 	fixture := writeWorkflowFixture(t)
 	out, err := runAppWithStdout(t, []string{"gci", "list", "--format", "yaml", "-f", fixture})
@@ -305,6 +315,19 @@ func TestCliApp_Run_DebugPrintsParsedPipeline(t *testing.T) {
 	}
 	if !strings.Contains(out, "Parsed pipeline:") {
 		t.Errorf("expected debug output to include parsed pipeline header, got:\n%s", out)
+	}
+}
+
+func TestCliApp_Run_VerbosePrintsParsedPipeline(t *testing.T) {
+	fixture := writeWorkflowFixture(t)
+	out, err := runAppWithStdout(t, []string{
+		"gci", "--verbose", "run", "--dry-run", "-f", fixture,
+	})
+	if err != nil {
+		t.Fatalf("gci --verbose run --dry-run errored: %v", err)
+	}
+	if !strings.Contains(out, "Parsed pipeline:") {
+		t.Errorf("expected verbose output to include parsed pipeline header, got:\n%s", out)
 	}
 }
 
