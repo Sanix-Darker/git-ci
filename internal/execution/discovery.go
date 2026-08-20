@@ -553,7 +553,7 @@ func normalizeDefinition(
 		return Definition{}, fmt.Errorf("parser returned no pipeline")
 	}
 	if file.provider == ProviderGitHubActions {
-		if err := expandLocalReusableWorkflows(root, file.absolute, pipeline); err != nil {
+		if err := expandGitHubLocalCalls(root, file.absolute, pipeline); err != nil {
 			return Definition{}, fmt.Errorf("expand reusable workflows: %w", err)
 		}
 	}

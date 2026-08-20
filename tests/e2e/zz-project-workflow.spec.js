@@ -70,6 +70,15 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
   await page.goto("/app/workflows");
 
+  const composite = page.locator("details.workflow-detail").filter({ hasText: "Composite Delivery" });
+  await composite.locator("summary").click();
+  await expect(composite).toContainText("Local check / Prepare input");
+  await expect(composite).toContainText("Local check / Verify input");
+  await composite.getByRole("button", { name: /RUN WORKFLOW/ }).click();
+  await expect(page).toHaveURL(/\/app\/runs\//);
+  await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
+  await page.goto("/app/workflows");
+
   const manual = page.locator("details.workflow-detail").filter({ hasText: "Failure CI" });
   await manual.locator("summary").click();
   await expect(pipeline).not.toHaveAttribute("open", "");
