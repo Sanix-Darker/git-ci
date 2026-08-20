@@ -62,10 +62,20 @@ jobs:
           name: coverage-report
           path: coverage.html
 
+  public-surface-e2e:
+    name: Public Surface E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Run containment topology
+        run: make e2e-public
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, public-surface-e2e]
     strategy:
       matrix:
         os: [linux] # FIXME: darwin, windows (will re-activate after an MVP

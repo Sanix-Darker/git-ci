@@ -39,7 +39,7 @@ LDFLAGS := -ldflags="-w -s \
 .PHONY: all build clean test fmt vet lint run install uninstall \
         deps vendor docker release tag help coverage bench \
         check build-all ci dev watch \
-        docker-test docker-unit docker-integration
+        docker-test docker-unit docker-integration e2e-public
 
 ## help: Display this help message
 help:
@@ -250,6 +250,10 @@ docker-unit:
 docker-integration:
 	@echo "Running integration tests in Docker..."
 	@bash scripts/test-docker.sh integration
+
+## e2e-public: Exercise the static service and containment proxy in Docker
+e2e-public:
+	@bash scripts/e2e-public-surface.sh
 
 ## release: Create release artifacts
 release: clean build-all

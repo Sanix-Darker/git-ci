@@ -1,9 +1,9 @@
-# Replace `git-ci.example.com` and upstream with your production values before use.
+# Replace `gci.example.com` and upstream with your production values before use.
 {
     email security@example.com
 }
 
-git-ci.example.com {
+gci.example.com {
     encode zstd gzip
 
     header {
@@ -15,15 +15,27 @@ git-ci.example.com {
         -Server
     }
 
-    # Optional health probe for monitoring.
+    # Keep privileged service routes unavailable until application authentication
+    # and project authorization are configured.
+    @privileged path /api /api/* /app /app/*
+    respond @privileged 404
+
+    # Health is served by the real upstream, not synthesized by the proxy.
     handle /health {
-        respond "ACCEPTED" 202
+        rewrite * /healthz
+        reverse_proxy 127.0.0.1:8087
+    }
+
+    handle /healthz {
+        reverse_proxy 127.0.0.1:8087
     }
 
     # If you run the web service on a local bind:
-    # reverse_proxy 127.0.0.1:8080
+    # reverse_proxy 127.0.0.1:8087
     #
     # If you use the docker-compose setup from this repository, replace this line
-    # with `reverse_proxy git-ci-site:8080` in deploy/Caddyfile.
-    reverse_proxy 127.0.0.1:8080
+    # with `reverse_proxy git-ci-site:8087` in deploy/Caddyfile.
+    handle {
+        reverse_proxy 127.0.0.1:8087
+    }
 }

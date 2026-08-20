@@ -7,11 +7,12 @@ All files are deployment *examples* only. Replace placeholder values locally bef
 
 - `docker-compose.yml` – containerized deployment using a dedicated static web service + Caddy.
 - `Dockerfile` – builds a small static image for `site/` using `caddy file-server`.
-- `Caddyfile` – production compose variant (reverse-proxies to `git-ci-site:8080`).
-- `Caddyfile.example` – local/systemd variant example (reverse-proxies to `127.0.0.1:8080`).
+- `Caddyfile` – production compose variant (reverse-proxies to `git-ci-site:8087`).
+- `Caddyfile.example` – local/systemd variant example (reverse-proxies to `127.0.0.1:8087`).
 - `git-ci-site.service` – bare-metal/systemd sample service for the static site.
 - `.env.example` – optional local override for the compose image name.
-- `/health` probe: Caddy responds with HTTP `202` so you can add an easy uptime check.
+- `/healthz` and `/health` probe the real upstream static service.
+- `/api`, `/api/*`, `/app`, and `/app/*` return `404` during the containment phase.
 
 ## Option A: Docker Compose (recommended on a fresh host)
 
@@ -22,11 +23,11 @@ docker compose up -d --build
 ```
 
 By default this exposes HTTPS on ports `80/443` via Caddy and serves `site/` through
-`git-ci-site:8080`.
+`git-ci-site:8087`.
 
 Before going online:
 
-1. Edit `deploy/Caddyfile` and replace `git-ci.example.com` with your real domain.
+1. Set `GCI_SITE_ADDRESS` or edit `deploy/Caddyfile` and replace `gci.example.com` with your real domain.
 2. Ensure DNS points to this host and port 80/443 are reachable.
 3. Confirm:
    ```bash
@@ -40,13 +41,13 @@ Before going online:
    - If your origin is proxied (Cloudflare), ensure origin TLS mode and certificate strategy match your Caddy setup.
    - Quick probe:
      ```bash
-     curl -s -I https://git-ci.example.com/health
+     curl -s -I https://gci.example.com/healthz
      ```
 
 You should see:
 
 ```
-HTTP/2 202
+HTTP/2 200
 ```
 
 ## Option B: Bare-metal with systemd + existing Caddy
@@ -61,14 +62,14 @@ Use when you already have a shared host Caddy and only want this service on loca
    ```
 2. Build/install the site from this repo under `/opt/git-ci` (or adjust `WorkingDirectory`/`GIT_CI_SITE_ROOT`).
 3. Add a local reverse-proxy block for this site:
-   - map `git-ci.example.com` to `127.0.0.1:8080`
-   - keep `/health` route returning `202` (copy from `Caddyfile.example`)
+   - map `gci.example.com` to `127.0.0.1:8087`
+   - keep `/healthz` routed to the upstream (copy from `Caddyfile.example`)
    - if you already have a shared host Caddyfile, you can copy `Caddyfile.host-snippet`
      and paste it there.
 4. Validate:
    ```bash
    systemctl is-active git-ci-site
-   curl -fsS http://127.0.0.1:8080/ >/dev/null
+   curl -fsS http://127.0.0.1:8087/ >/dev/null
    ```
 
 ### Quick 525 troubleshooting
@@ -85,7 +86,7 @@ If the output includes `no peer certificate available`, the host Caddy config is
 missing a matching TLS cert for that hostname or is not matching it on that host
 block.
 
-For this project on `git-ci.sanixdk.xyz`, the quickest fix is to add the concrete
+For this project on `gci.sanixdk.xyz`, the quickest fix is to add the concrete
 block from `deploy/Caddyfile.sanixdk-host` to your shared host `/etc/caddy/Caddyfile`
 and reload Caddy:
 
@@ -97,11 +98,20 @@ ssh root@178.105.18.9 "printf '\nimport /etc/caddy/git-ci-host-snippet\n' >> /et
 Then verify on origin and edge:
 
 ```bash
-openssl s_client -connect 178.105.18.9:443 -servername git-ci.sanixdk.xyz < /dev/null
-curl -ksI https://git-ci.sanixdk.xyz/health
+openssl s_client -connect 178.105.18.9:443 -servername gci.sanixdk.xyz < /dev/null
+curl -ksI https://gci.sanixdk.xyz/healthz
 ```
 
-You should see a certificate presented and `HTTP/2 202` for `/health`.
+You should see a certificate presented and `HTTP/2 200` for `/healthz`.
+
+## Containment E2E
+
+Run the real static-service and edge-proxy topology in Docker, then verify the
+public and denied route contracts:
+
+```bash
+make e2e-public
+```
 
 Add the block from `deploy/Caddyfile.host-snippet` (or `deploy/Caddyfile.sanixdk-host` for this host) and reload/restart Caddy.
 
