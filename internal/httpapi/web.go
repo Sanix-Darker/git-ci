@@ -176,12 +176,18 @@ func (a *API) handleCreateProjectWeb(writer http.ResponseWriter, request *http.R
 		a.renderAppSection(writer, request, "projects", "Project created but audit recording failed.", http.StatusInternalServerError)
 		return
 	}
+	notice := "PROJECT REGISTERED / WORKFLOWS SYNCED"
+	if _, err := a.execution.SyncProject(request.Context(), project.ID); err != nil {
+		notice = "PROJECT REGISTERED / WORKFLOW SCAN FAILED"
+	} else {
+		a.recordExecutionAudit(request, "workflow.synced", "project", project.ID)
+	}
 	if !isHTMX(request) {
-		http.Redirect(writer, request, "/app/projects", http.StatusSeeOther)
+		http.Redirect(writer, request, "/app/projects?notice="+strings.ReplaceAll(notice, " ", "%20"), http.StatusSeeOther)
 		return
 	}
 	writer.Header().Set("HX-Trigger", "projectRegistered")
-	a.renderAppSectionState(writer, request, "projects", "", "PROJECT REGISTERED", http.StatusOK)
+	a.renderAppSectionState(writer, request, "projects", "", notice, http.StatusOK)
 }
 
 func (a *API) renderAppSection(writer http.ResponseWriter, request *http.Request, section, message string, status int) {

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -137,6 +139,12 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 	workflowNames := make(map[string]string)
 	for _, project := range data.Projects {
 		projectNames[project.ID] = project.Name
+		path := stringValue(project.CanonicalPath)
+		health, healthDetail, dot := projectCheckoutHealth(path)
+		projectView := webui.ProjectView{
+			ID: project.ID, Name: project.Name, Slug: project.Slug, CanonicalPath: path,
+			Health: health, HealthDetail: healthDetail, Dot: dot,
+		}
 		workflows, err := a.store.ListWorkflows(ctx, project.ID)
 		if err != nil {
 			return err
@@ -145,12 +153,18 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 			var definition execdomain.Definition
 			_ = json.Unmarshal(workflow.Definition, &definition)
 			workflowNames[workflow.ID] = workflow.Name
-			data.Workflows = append(data.Workflows, webui.WorkflowView{
+			view := webui.WorkflowView{
 				ID: workflow.ID, ProjectID: project.ID, ProjectName: project.Name,
 				Name: workflow.Name, Key: workflow.Key, Provider: strings.ToUpper(string(definition.Provider)),
 				File: definition.File, Revision: int(workflow.Revision), JobCount: len(definition.Jobs),
-			})
+				DefaultRef: project.DefaultBranch,
+			}
+			populateWorkflowDefinitionView(&view, workflow.Definition)
+			data.Workflows = append(data.Workflows, view)
+			projectView.Workflows = append(projectView.Workflows, view)
 		}
+		projectView.WorkflowCount = len(projectView.Workflows)
+		data.ProjectViews = append(data.ProjectViews, projectView)
 		runs, err := a.store.ListRuns(ctx, project.ID)
 		if err != nil {
 			return err
@@ -187,6 +201,95 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 		data.SelectedRun = &detail
 	}
 	return nil
+}
+
+type workflowDefinitionDocument struct {
+	Triggers         []string        `json:"triggers"`
+	Stages           []string        `json:"stages"`
+	TopologicalOrder []string        `json:"topologicalOrder"`
+	Jobs             json.RawMessage `json:"jobs"`
+}
+
+type workflowDefinitionJobDocument struct {
+	Key          string                           `json:"key"`
+	Name         string                           `json:"name"`
+	Stage        string                           `json:"stage"`
+	RunnerHint   string                           `json:"runnerHint"`
+	Needs        []string                         `json:"needs"`
+	Requires     []string                         `json:"requires"`
+	AllowFailure bool                             `json:"allowFailure"`
+	Steps        []workflowDefinitionStepDocument `json:"steps"`
+}
+
+type workflowDefinitionStepDocument struct {
+	Name    string `json:"name"`
+	Command string `json:"command"`
+	Action  string `json:"action"`
+}
+
+func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
+	var definition workflowDefinitionDocument
+	if json.Unmarshal(raw, &definition) != nil {
+		return
+	}
+	view.Triggers = definition.Triggers
+	view.Stages = definition.Stages
+
+	jobsByKey := make(map[string]workflowDefinitionJobDocument)
+	var jobs []workflowDefinitionJobDocument
+	if err := json.Unmarshal(definition.Jobs, &jobs); err == nil {
+		for _, job := range jobs {
+			jobsByKey[job.Key] = job
+		}
+	} else {
+		_ = json.Unmarshal(definition.Jobs, &jobsByKey)
+	}
+	order := append([]string(nil), definition.TopologicalOrder...)
+	if len(order) == 0 {
+		for key := range jobsByKey {
+			order = append(order, key)
+		}
+		sort.Strings(order)
+	}
+	runJobs := make([]webui.RunJobView, 0, len(order))
+	for _, key := range order {
+		job, ok := jobsByKey[key]
+		if !ok {
+			continue
+		}
+		dependencies := append([]string(nil), job.Needs...)
+		dependencies = append(dependencies, job.Requires...)
+		workflowJob := webui.WorkflowJobView{
+			Key: key, Name: job.Name, Stage: job.Stage, Runner: job.RunnerHint,
+			Dependencies: strings.Join(dependencies, ", "), AllowFailure: job.AllowFailure,
+		}
+		if workflowJob.Name == "" {
+			workflowJob.Name = key
+		}
+		for _, step := range job.Steps {
+			workflowJob.Steps = append(workflowJob.Steps, webui.WorkflowStepView{
+				Name: step.Name, Command: step.Command, Action: step.Action,
+			})
+		}
+		view.Jobs = append(view.Jobs, workflowJob)
+		runJobs = append(runJobs, webui.RunJobView{
+			Key: key, Name: workflowJob.Name, Status: "READY", Dot: "dot-green",
+			Runner: workflowJob.Runner, Dependencies: workflowJob.Dependencies,
+			DependencyKeys: dependencies, AllowFailure: workflowJob.AllowFailure,
+		})
+	}
+	view.GraphRows = buildGraphRows(runJobs)
+}
+
+func projectCheckoutHealth(path string) (string, string, string) {
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return "PATH MISSING", "The registered checkout is not available on this host.", "dot-red"
+	}
+	if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
+		return "NOT A GIT CHECKOUT", "Discovery can read files, but commit-pinned execution requires Git metadata.", "dot-red"
+	}
+	return "READY", "Git checkout available for discovery and commit-pinned runs.", "dot-green"
 }
 
 func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflowNames map[string]string, csrfToken string) (webui.RunDetailView, error) {

@@ -78,9 +78,9 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await page.getByRole("link", { name: "Workflows" }).click();
   await expect(page).toHaveURL(/\/app\/workflows$/);
   await page.getByRole("button", { name: "SYNC ALPHA-SERVICE" }).click();
-  await expect(page.locator("article.workflow-card", { hasText: "Alpha CI" })).toBeVisible();
+  await expect(page.locator("details.workflow-detail", { hasText: "Alpha CI" })).toBeVisible();
   await page.getByRole("button", { name: "SYNC BETA-WORKER" }).click();
-  await expect(page.locator("article.workflow-card", { hasText: ".gitlab-ci.yml" })).toBeVisible();
+  await expect(page.locator("details.workflow-detail", { hasText: ".gitlab-ci.yml" })).toBeVisible();
   await expect(page.getByText("GITHUB", { exact: true })).toHaveCount(2);
   await expect(page.getByText("GITLAB", { exact: true })).toBeVisible();
 
@@ -96,8 +96,9 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
 
   await page.getByRole("link", { name: "Workflows" }).click();
 
-  const alphaWorkflow = page.locator("article.workflow-card", { hasText: "Alpha CI" });
-  await alphaWorkflow.getByRole("button", { name: /RUN NOW/ }).click();
+  const alphaWorkflow = page.locator("details.workflow-detail", { hasText: "Alpha CI" });
+  await alphaWorkflow.locator("summary").click();
+  await alphaWorkflow.getByRole("button", { name: /RUN WORKFLOW/ }).click();
   await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+$/);
   await expect(page.getByRole("heading", { name: "Alpha CI" })).toBeVisible();
   await expect(page.locator(".run-node").filter({ has: page.getByText("Prepare", { exact: true }) })).toBeVisible();
@@ -135,8 +136,9 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.getByLabel("Run provenance")).toContainText("JOB REPLAY");
 
   await page.getByRole("link", { name: "Workflows" }).click();
-  const failureWorkflow = page.locator("article.workflow-card", { hasText: "Failure CI" });
-  await failureWorkflow.getByRole("button", { name: /RUN NOW/ }).click();
+  const failureWorkflow = page.locator("details.workflow-detail", { hasText: "Failure CI" });
+  await failureWorkflow.locator("summary").click();
+  await failureWorkflow.getByRole("button", { name: /RUN WORKFLOW/ }).click();
   await expect(page.locator(".run-detail-state")).toContainText("FAILED", { timeout: 15000 });
   const failedRunURL = page.url();
   const failedJob = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Fail", exact: true }) });
@@ -177,7 +179,8 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.locator("body")).not.toContainText("environment-e2e-secret");
 
   await page.getByRole("link", { name: "Workflows" }).click();
-  await page.locator("article.workflow-card", { hasText: "Alpha CI" }).getByRole("button", { name: /RUN NOW/ }).click();
+  await alphaWorkflow.locator("summary").click();
+  await alphaWorkflow.getByRole("button", { name: /RUN WORKFLOW/ }).click();
   await expect(page.locator(".run-detail-state")).toContainText("WAITING", { timeout: 15000 });
   await page.getByRole("link", { name: "Deployments" }).click();
   const approval = page.locator("article.approval-card").filter({ has: page.getByRole("heading", { name: "Deploy", exact: true }) });
