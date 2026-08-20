@@ -91,6 +91,7 @@ type JobDefinition struct {
 	Services           map[string]*types.Service            `json:"services,omitempty"`
 	Artifacts          *types.ArtifactConfig                `json:"artifacts,omitempty"`
 	Cache              *types.CacheConfig                   `json:"cache,omitempty"`
+	Outputs            map[string]string                    `json:"outputs,omitempty"`
 	Steps              []StepDefinition                     `json:"steps"`
 }
 
@@ -692,6 +693,7 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		Services:        copyServices(job.Services),
 		Artifacts:       copyArtifactConfig(job.Artifacts),
 		Cache:           copyCacheConfig(job.Cache),
+		Outputs:         copyStringMap(job.Outputs),
 		Steps:           normalizeSteps(key, job.Steps),
 	}
 	if job.Strategy != nil {
@@ -750,6 +752,13 @@ func applyMatrixVariant(job *JobDefinition, variant executionsemantics.MatrixVar
 	}
 	if err := resolveMatrixCacheConfig(job.Cache, variant.Values); err != nil {
 		return err
+	}
+	for key, value := range job.Outputs {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(value, variant.Values)
+		if err != nil {
+			return err
+		}
+		job.Outputs[key] = resolved
 	}
 	if err := resolveMatrixContainer(job.Container, variant.Values); err != nil {
 		return err
@@ -849,7 +858,7 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 		"concurrency": job.Concurrency, "interruptible": job.Interruptible,
 		"failFast": job.FailFast, "maxParallel": job.MaxParallel,
 		"workflowCall": job.WorkflowCall, "container": job.Container, "services": job.Services,
-		"artifacts": job.Artifacts, "cache": job.Cache,
+		"artifacts": job.Artifacts, "cache": job.Cache, "outputs": job.Outputs,
 	}
 	encoded, err := json.Marshal(metadata)
 	if err != nil {

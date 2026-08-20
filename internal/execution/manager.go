@@ -493,6 +493,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 	}
 	statuses := make(map[string]store.Status, len(graph.Jobs))
 	allowedFailure := make(map[string]bool, len(graph.Jobs))
+	outputContext := newRuntimeOutputContext()
 	secretValues := map[string]string{}
 	if m.secrets != nil {
 		secretValues, err = m.secrets.ResolveProject(ctx, run.ProjectID)
@@ -514,7 +515,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 			continue
 		}
 		dependencies := decodeStringList(item.Job.DependencyKeys)
-		decision := evaluateJobExecution(graph.Run, item.Job, dependencies, statuses, allowedFailure)
+		decision := evaluateJobExecution(graph.Run, item.Job, dependencies, statuses, allowedFailure, outputContext)
 		if !decision.Run {
 			if err := m.skipJobWithReason(ctx, item, decision.Reason); err != nil {
 				return err
@@ -552,7 +553,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 		if preparation.Secrets != nil {
 			jobSecrets = preparation.Secrets
 		}
-		jobConcurrencyLease, err := m.acquireJobConcurrency(ctx, graph.Run, item.Job)
+		jobConcurrencyLease, err := m.acquireJobConcurrency(ctx, graph.Run, item.Job, outputContext)
 		if err != nil {
 			return err
 		}
@@ -571,7 +572,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 		} else {
 			close(concurrencyDone)
 		}
-		status, err := m.executeJob(jobCtx, graph.Run, item, workspacePath, jobSecrets)
+		status, err := m.executeJob(jobCtx, graph.Run, item, workspacePath, jobSecrets, outputContext)
 		stopConcurrency()
 		<-concurrencyDone
 		if jobConcurrencyLease != nil {
@@ -857,7 +858,7 @@ func isTerminalExecutionStatus(status store.Status) bool {
 	}
 }
 
-func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph, workspacePath string, secretValues map[string]string) (store.Status, error) {
+func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph, workspacePath string, secretValues map[string]string, outputContext *runtimeOutputContext) (store.Status, error) {
 	if _, err := m.store.TransitionJob(ctx, item.Job.ID, store.StatusRunning); err != nil {
 		return "", fmt.Errorf("execution: start job: %w", err)
 	}
@@ -869,6 +870,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	if semanticsPresent {
 		semantics = &jobSemantics
 	}
+	outputContext.beginJob(decodeStringList(item.Job.DependencyKeys))
 	if semantics != nil && semantics.Cache != nil {
 		if err := m.restoreDeclaredCache(ctx, run, item.Steps, workspacePath, semantics.Cache); err != nil && len(item.Steps) > 0 {
 			_ = m.appendSystem(ctx, item.Steps[0].ID, "cache restore warning: "+err.Error())
@@ -923,7 +925,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 			stepStatuses[pointerValue(step.Key)] = store.StatusSkipped
 			continue
 		}
-		conditionContext := buildConditionContext(run, item.Job, semantics, nil, nil, stepStatuses, !jobFailed, jobFailed)
+		conditionContext := buildConditionContext(run, item.Job, semantics, nil, nil, stepStatuses, !jobFailed, jobFailed, outputContext)
 		shouldRun, reason := evaluateConditionContract(condition, conditionContext)
 		if !shouldRun {
 			if err := m.skipStepWithReason(ctx, step, reason); err != nil {
@@ -935,7 +937,18 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 		if _, err := m.store.TransitionStep(ctx, step.ID, store.StatusRunning); err != nil {
 			return "", fmt.Errorf("execution: start step: %w", err)
 		}
-		err = m.executeStepInRuntime(jobCtx, run, item.Job, step, workspacePath, secretValues, runtime, semantics)
+		stepOutputValues, stepErr := m.executeStepInRuntime(jobCtx, run, item.Job, step, workspacePath, secretValues, runtime, semantics, outputContext)
+		err = stepErr
+		stepOutputValues, mappingErr := applyStepOutputMappings(step.Environment, outputContext.expressionValues(), stepOutputValues)
+		if err == nil {
+			err = mappingErr
+		}
+		if outputErr := outputContext.recordStep(pointerValue(step.Key), stepOutputValues); err == nil {
+			err = outputErr
+		}
+		if len(stepOutputValues) > 0 {
+			_ = m.appendSystem(ctx, step.ID, "outputs set: "+strings.Join(sortedOutputNames(stepOutputValues), ", "))
+		}
 		if err == nil {
 			if _, transitionErr := m.store.TransitionStep(ctx, step.ID, store.StatusSucceeded); transitionErr != nil {
 				return "", transitionErr
@@ -989,6 +1002,10 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 			}
 		}
 	}
+	jobOutputNames := outputContext.finishJob(item.Job, semantics)
+	if len(jobOutputNames) > 0 && len(item.Steps) > 0 {
+		_ = m.appendSystem(ctx, item.Steps[len(item.Steps)-1].ID, "job outputs set: "+strings.Join(jobOutputNames, ", "))
+	}
 	if _, err := m.store.TransitionJob(ctx, item.Job.ID, status); err != nil {
 		return "", fmt.Errorf("execution: finish job: %w", err)
 	}
@@ -996,23 +1013,31 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 }
 
 func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job, step store.Step, workspacePath string, secretValues map[string]string) error {
-	return m.executeStepInRuntime(ctx, run, job, step, workspacePath, secretValues, nil, nil)
+	outputContext := newRuntimeOutputContext()
+	outputContext.beginJob(nil)
+	_, err := m.executeStepInRuntime(ctx, run, job, step, workspacePath, secretValues, nil, nil, outputContext)
+	return err
 }
 
-func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job store.Job, step store.Step, workspacePath string, secretValues map[string]string, runtime *dockerJobSession, semantics *frozenJobSemantics) error {
+func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job store.Job, step store.Step, workspacePath string, secretValues map[string]string, runtime *dockerJobSession, semantics *frozenJobSemantics, outputContext *runtimeOutputContext) (map[string]string, error) {
+	var err error
+	step, err = resolveRuntimeStep(step, outputContext.expressionValues())
+	if err != nil {
+		return nil, err
+	}
 	if step.Action != nil {
 		handled, err := m.executeBuiltinAction(ctx, run, job, step, workspacePath)
 		if handled {
-			return err
+			return nil, err
 		}
-		return fmt.Errorf("unsupported action %q", *step.Action)
+		return nil, fmt.Errorf("unsupported action %q", *step.Action)
 	}
 	if step.Command == nil {
-		return errors.New("step has no command")
+		return nil, errors.New("step has no command")
 	}
 	directory, err := containedWorkingDirectory(workspacePath, pointerValue(step.WorkingDirectory))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	var stepCtx context.Context
 	var cancel context.CancelFunc
@@ -1027,6 +1052,7 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 	defer close(cancelPollingDone)
 
 	commandText := expandSecrets(*step.Command, secretValues)
+	commandText = resolveOutputExpressions(commandText, outputContext.expressionValues())
 	if runtime != nil {
 		commandText = runtime.resolveServiceExpressions(commandText)
 	}
@@ -1039,13 +1065,22 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 	if semantics != nil && semantics.Container != nil {
 		baseEnvironment = semantics.Container.Env
 	}
-	environment := mergedEnvironment(secretValues, run.Environment, job.Environment, baseEnvironment, step.Environment, map[string]string{
+	jobEnvironment, err := resolveRuntimeEnvironment(job.Environment, outputContext.expressionValues(), false)
+	if err != nil {
+		return nil, err
+	}
+	hostOutputPath, runtimeOutputPath, err := prepareGitHubOutputFile(workspacePath, step.ID, runtime != nil && runtime.HasJobContainer())
+	if err != nil {
+		return nil, err
+	}
+	environment := mergedEnvironment(secretValues, run.Environment, jobEnvironment, baseEnvironment, step.Environment, map[string]string{
 		"CI":               "true",
 		"GCI_RUN_ID":       run.ID,
 		"GCI_JOB_ID":       job.ID,
 		"GCI_PROJECT_DIR":  projectDirectory,
 		"GITHUB_WORKSPACE": projectDirectory,
 		"CI_PROJECT_DIR":   projectDirectory,
+		"GITHUB_OUTPUT":    runtimeOutputPath,
 	})
 	if runtime != nil {
 		environment = runtime.resolveEnvironment(environment)
@@ -1053,23 +1088,28 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 	if runtime != nil && runtime.HasJobContainer() {
 		containerDirectory, err := runtime.ContainerWorkingDirectory(directory)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return m.executeContainerCommand(stepCtx, step.ID, runtime, containerDirectory, shell, shellArgs, environment, secretValues)
+		commandErr := m.executeContainerCommand(stepCtx, step.ID, runtime, containerDirectory, shell, shellArgs, environment, secretValues)
+		outputs, outputErr := parseGitHubOutput(hostOutputPath)
+		if commandErr == nil {
+			commandErr = outputErr
+		}
+		return outputs, commandErr
 	}
 	command := exec.CommandContext(stepCtx, shell, shellArgs...)
 	command.Dir = directory
 	command.Env = environment
 	stdout, err := command.StdoutPipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	stderr, err := command.StderrPipe()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := command.Start(); err != nil {
-		return err
+		return nil, err
 	}
 	var wait sync.WaitGroup
 	errorsFound := make(chan error, 2)
@@ -1093,7 +1133,11 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 			commandErr = captureErr
 		}
 	}
-	return commandErr
+	outputs, outputErr := parseGitHubOutput(hostOutputPath)
+	if commandErr == nil {
+		commandErr = outputErr
+	}
+	return outputs, commandErr
 }
 
 func (m *Manager) executeContainerCommand(ctx context.Context, stepID string, runtime *dockerJobSession, directory, shell string, shellArgs, environment []string, secretValues map[string]string) error {
@@ -1286,6 +1330,7 @@ type frozenJobSemantics struct {
 	Services      map[string]*types.Service            `json:"services"`
 	Artifacts     *types.ArtifactConfig                `json:"artifacts"`
 	Cache         *types.CacheConfig                   `json:"cache"`
+	Outputs       map[string]string                    `json:"outputs"`
 }
 
 type workflowConcurrencySnapshot struct {
@@ -1300,7 +1345,7 @@ type jobExecutionDecision struct {
 	AllowFailure bool
 }
 
-func evaluateJobExecution(run store.Run, job store.Job, dependencies []string, statuses map[string]store.Status, allowed map[string]bool) jobExecutionDecision {
+func evaluateJobExecution(run store.Run, job store.Job, dependencies []string, statuses map[string]store.Status, allowed map[string]bool, outputContext *runtimeOutputContext) jobExecutionDecision {
 	decision := jobExecutionDecision{AllowFailure: job.AllowFailure}
 	semantics, present, err := decodeJobSemantics(job.Environment)
 	if err != nil {
@@ -1319,7 +1364,7 @@ func evaluateJobExecution(run store.Run, job store.Job, dependencies []string, s
 		}
 		return decision
 	}
-	conditionContext := buildConditionContext(run, job, &semantics, dependencies, statuses, nil, successful, failed)
+	conditionContext := buildConditionContext(run, job, &semantics, dependencies, statuses, nil, successful, failed, outputContext)
 	conditionMatches, reason := evaluateConditionContract(semantics.Condition, conditionContext)
 	if !conditionMatches {
 		decision.Reason = reason
@@ -1454,7 +1499,7 @@ func dependencyState(dependencies []string, statuses map[string]store.Status, al
 	return ready, successful, failed
 }
 
-func buildConditionContext(run store.Run, job store.Job, semantics *frozenJobSemantics, dependencies []string, statuses map[string]store.Status, stepStatuses map[string]store.Status, success, failure bool) executionsemantics.ConditionContext {
+func buildConditionContext(run store.Run, job store.Job, semantics *frozenJobSemantics, dependencies []string, statuses map[string]store.Status, stepStatuses map[string]store.Status, success, failure bool, outputContext *runtimeOutputContext) executionsemantics.ConditionContext {
 	values := make(map[string]interface{})
 	ref := pointerValue(run.Ref)
 	refName := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "refs/tags/")
@@ -1494,6 +1539,9 @@ func buildConditionContext(run store.Run, job store.Job, semantics *frozenJobSem
 	for key, status := range stepStatuses {
 		values["steps."+key+".outcome"] = providerStatus(status)
 		values["steps."+key+".conclusion"] = providerStatus(status)
+	}
+	if outputContext != nil {
+		outputContext.addConditionValues(values, dependencies)
 	}
 	return executionsemantics.ConditionContext{
 		Values: values, Success: success, Failure: failure, Cancelled: false,
@@ -1639,7 +1687,7 @@ func (m *Manager) acquireRunConcurrency(ctx context.Context, run store.Run) (*st
 	return m.waitForExecutionConcurrency(ctx, store.ExecutionConcurrencyWorkflow, concurrencyLeaseGroup(run.ProjectID, snapshot.Group), run.ID, run.ID, snapshot.CancelInProgress)
 }
 
-func (m *Manager) acquireJobConcurrency(ctx context.Context, run store.Run, job store.Job) (*store.ExecutionConcurrencyLease, error) {
+func (m *Manager) acquireJobConcurrency(ctx context.Context, run store.Run, job store.Job, outputContext *runtimeOutputContext) (*store.ExecutionConcurrencyLease, error) {
 	semantics, present, err := decodeJobSemantics(job.Environment)
 	if err != nil {
 		return nil, fmt.Errorf("execution: decode job concurrency: %w", err)
@@ -1647,7 +1695,8 @@ func (m *Manager) acquireJobConcurrency(ctx context.Context, run store.Run, job 
 	if !present || semantics.Concurrency == nil || strings.TrimSpace(semantics.Concurrency.Group) == "" {
 		return nil, nil
 	}
-	conditionContext := buildConditionContext(run, job, &semantics, nil, nil, nil, true, false)
+	dependencies := decodeStringList(job.DependencyKeys)
+	conditionContext := buildConditionContext(run, job, &semantics, dependencies, nil, nil, true, false, outputContext)
 	group, err := resolveConcurrencyGroup(semantics.Concurrency.Group, conditionContext.Values)
 	if err != nil {
 		return nil, fmt.Errorf("execution: job concurrency: %w", err)
