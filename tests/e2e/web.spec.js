@@ -105,7 +105,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await testJob.getByRole("button", { name: "REPLAY STEP" }).first().click();
   await expect(testJob.getByRole("button", { name: "CONFIRM REPLAY STEP" }).first()).toBeVisible();
   await testJob.getByRole("button", { name: "CONFIRM REPLAY STEP" }).first().click();
-  await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+$/);
+  await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+\?notice=REPLAY(?:\+|%20)QUEUED$/);
   await expect(page.getByRole("status").filter({ hasText: "REPLAY QUEUED" })).toBeVisible();
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
   await expect(page.getByLabel("Run provenance")).toContainText("STEP REPLAY");
