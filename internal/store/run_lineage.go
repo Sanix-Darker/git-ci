@@ -19,11 +19,16 @@ const (
 )
 
 type RunLineage struct {
-	RunID, SourceRunID, Actor, IdempotencyKey string
-	Kind                                      RunLineageKind
-	SourceJobID, SourceStepID                 *string
-	SourceDeploymentID, TargetDeploymentID    *string
-	CreatedAt                                 time.Time
+	RunID              string         `json:"runId"`
+	Kind               RunLineageKind `json:"kind"`
+	SourceRunID        string         `json:"sourceRunId"`
+	SourceJobID        *string        `json:"sourceJobId,omitempty"`
+	SourceStepID       *string        `json:"sourceStepId,omitempty"`
+	SourceDeploymentID *string        `json:"sourceDeploymentId,omitempty"`
+	TargetDeploymentID *string        `json:"targetDeploymentId,omitempty"`
+	Actor              string         `json:"actor"`
+	IdempotencyKey     string         `json:"idempotencyKey"`
+	CreatedAt          time.Time      `json:"createdAt"`
 }
 
 type EnqueueRunLineage struct {
@@ -68,19 +73,35 @@ func (err *ErrRollbackEligibility) Error() string {
 }
 
 type ReplayEligibility struct {
-	Kind         RunLineageKind `json:"kind"`
-	SourceRunID  string         `json:"sourceRunId"`
-	SourceJobID  string         `json:"sourceJobId"`
-	SourceStepID string         `json:"sourceStepId,omitempty"`
-	Eligible     bool           `json:"eligible"`
-	Code         string         `json:"code"`
-	Message      string         `json:"message"`
+	Kind                 RunLineageKind `json:"kind"`
+	SourceRunID          string         `json:"sourceRunId"`
+	SourceJobID          string         `json:"sourceJobId"`
+	SourceStepID         string         `json:"sourceStepId,omitempty"`
+	Eligible             bool           `json:"eligible"`
+	Code                 string         `json:"code"`
+	Message              string         `json:"message"`
+	CommitSHA            string         `json:"commitSha,omitempty"`
+	DependencyCount      int            `json:"dependencyCount"`
+	RequiresConfirmation bool           `json:"requiresConfirmation"`
+	CleanWorkspace       bool           `json:"cleanWorkspace"`
+	DeploymentGate       bool           `json:"deploymentGate"`
 }
 
 type EnqueueReplayParams struct {
-	Kind                      RunLineageKind
-	SourceJobID, SourceStepID string
-	Actor, IdempotencyKey     string
+	Kind                                   RunLineageKind
+	SourceRunID, SourceJobID, SourceStepID string
+	Actor, IdempotencyKey                  string
+	ConfirmSuccessful                      bool
+}
+
+type ReplayJobOptions struct {
+	Job   ReplayEligibility   `json:"job"`
+	Steps []ReplayEligibility `json:"steps"`
+}
+
+type RunReplayOptions struct {
+	RunID string             `json:"runId"`
+	Jobs  []ReplayJobOptions `json:"jobs"`
 }
 
 type ErrReplayEligibility struct{ Code, Message string }
@@ -223,17 +244,41 @@ type replaySource struct {
 }
 
 func (s *Store) EvaluateJobReplay(ctx context.Context, sourceJobID string) (ReplayEligibility, error) {
-	result, _, err := s.evaluateReplay(ctx, RunLineageJobReplay, sourceJobID, "")
+	result, _, err := s.evaluateReplay(ctx, RunLineageJobReplay, "", sourceJobID, "")
 	return result, err
 }
 
 func (s *Store) EvaluateStepReplay(ctx context.Context, sourceStepID string) (ReplayEligibility, error) {
-	result, _, err := s.evaluateReplay(ctx, RunLineageStepReplay, "", sourceStepID)
+	result, _, err := s.evaluateReplay(ctx, RunLineageStepReplay, "", "", sourceStepID)
 	return result, err
 }
 
+func (s *Store) EvaluateRunReplays(ctx context.Context, sourceRunID string) (RunReplayOptions, error) {
+	graph, err := s.GetRunGraph(ctx, sourceRunID)
+	if err != nil {
+		return RunReplayOptions{}, err
+	}
+	result := RunReplayOptions{RunID: graph.Run.ID, Jobs: make([]ReplayJobOptions, 0, len(graph.Jobs))}
+	for _, item := range graph.Jobs {
+		job, err := s.EvaluateJobReplay(ctx, item.Job.ID)
+		if err != nil {
+			return RunReplayOptions{}, err
+		}
+		option := ReplayJobOptions{Job: job, Steps: make([]ReplayEligibility, 0, len(item.Steps))}
+		for _, step := range item.Steps {
+			eligibility, err := s.EvaluateStepReplay(ctx, step.ID)
+			if err != nil {
+				return RunReplayOptions{}, err
+			}
+			option.Steps = append(option.Steps, eligibility)
+		}
+		result.Jobs = append(result.Jobs, option)
+	}
+	return result, nil
+}
+
 func (s *Store) GetReplaySourceRun(ctx context.Context, params EnqueueReplayParams) (Run, error) {
-	source, err := s.loadReplaySource(ctx, params.Kind, params.SourceJobID, params.SourceStepID)
+	source, err := s.loadReplaySource(ctx, params.Kind, params.SourceRunID, params.SourceJobID, params.SourceStepID)
 	if err != nil {
 		return Run{}, err
 	}
@@ -272,12 +317,15 @@ func (s *Store) EnqueueRunReplay(ctx context.Context, params EnqueueReplayParams
 		}
 	}
 
-	eligibility, source, err := s.evaluateReplay(ctx, params.Kind, params.SourceJobID, params.SourceStepID)
+	eligibility, source, err := s.evaluateReplay(ctx, params.Kind, params.SourceRunID, params.SourceJobID, params.SourceStepID)
 	if err != nil {
 		return Run{}, err
 	}
 	if !eligibility.Eligible {
 		return Run{}, &ErrReplayEligibility{Code: eligibility.Code, Message: eligibility.Message}
+	}
+	if eligibility.RequiresConfirmation && !params.ConfirmSuccessful {
+		return Run{}, replayError("confirmation_required", "successful source replay requires explicit confirmation")
 	}
 	jobs, err := s.cloneReplayJobs(ctx, source)
 	if err != nil {
@@ -311,14 +359,15 @@ func (s *Store) EnqueueRunReplay(ctx context.Context, params EnqueueReplayParams
 	return Run{}, err
 }
 
-func (s *Store) evaluateReplay(ctx context.Context, kind RunLineageKind, sourceJobID, sourceStepID string) (ReplayEligibility, replaySource, error) {
-	source, err := s.loadReplaySource(ctx, kind, sourceJobID, sourceStepID)
+func (s *Store) evaluateReplay(ctx context.Context, kind RunLineageKind, sourceRunID, sourceJobID, sourceStepID string) (ReplayEligibility, replaySource, error) {
+	source, err := s.loadReplaySource(ctx, kind, sourceRunID, sourceJobID, sourceStepID)
 	if err != nil {
 		return ReplayEligibility{}, replaySource{}, err
 	}
 	result := ReplayEligibility{
 		Kind: kind, SourceRunID: source.graph.Run.ID, SourceJobID: source.job.Job.ID,
-		Code: "eligible", Message: "replay can be enqueued",
+		Code: "eligible", Message: "replay can be enqueued", CommitSHA: pointerText(source.graph.Run.CommitSHA),
+		CleanWorkspace: true,
 	}
 	if source.step != nil {
 		result.SourceStepID = source.step.ID
@@ -345,10 +394,26 @@ func (s *Store) evaluateReplay(ctx context.Context, kind RunLineageKind, sourceJ
 			result.Eligible = true
 		}
 	}
+	if result.Eligible {
+		if source.step != nil {
+			result.RequiresConfirmation = source.step.Status == StatusSucceeded
+		} else {
+			result.RequiresConfirmation = source.job.Job.Status == StatusSucceeded
+			result.DependencyCount = replayDependencyCount(source)
+		}
+		if _, targetErr := s.GetDeploymentTargetForJob(ctx, source.job.Job.ID); targetErr == nil {
+			result.DeploymentGate = true
+		} else {
+			var notFound *ErrNotFound
+			if !errors.As(targetErr, &notFound) {
+				return ReplayEligibility{}, replaySource{}, targetErr
+			}
+		}
+	}
 	return result, source, nil
 }
 
-func (s *Store) loadReplaySource(ctx context.Context, kind RunLineageKind, sourceJobID, sourceStepID string) (replaySource, error) {
+func (s *Store) loadReplaySource(ctx context.Context, kind RunLineageKind, sourceRunID, sourceJobID, sourceStepID string) (replaySource, error) {
 	var runID, actualJobID string
 	switch kind {
 	case RunLineageJobReplay:
@@ -373,6 +438,9 @@ func (s *Store) loadReplaySource(ctx context.Context, kind RunLineageKind, sourc
 		}
 	default:
 		return replaySource{}, invalidInput("replay kind", "must be job_replay or step_replay")
+	}
+	if expected := strings.TrimSpace(sourceRunID); expected != "" && expected != runID {
+		return replaySource{}, replayError("source_ownership_mismatch", "source job or step does not belong to the requested run")
 	}
 	graph, err := s.GetRunGraph(ctx, runID)
 	if err != nil {
@@ -503,6 +571,37 @@ func cloneReplayStep(step Step) EnqueueStep {
 
 func replayTerminalStatus(status Status) bool {
 	return status == StatusSucceeded || status == StatusFailed || status == StatusCancelled || status == StatusSkipped
+}
+
+func replayDependencyCount(source replaySource) int {
+	byKey := make(map[string]JobGraph, len(source.graph.Jobs))
+	for _, item := range source.graph.Jobs {
+		byKey[pointerText(item.Job.Key)] = item
+	}
+	seen := map[string]bool{}
+	var visit func(string)
+	visit = func(key string) {
+		if seen[key] {
+			return
+		}
+		seen[key] = true
+		item, ok := byKey[key]
+		if !ok {
+			return
+		}
+		var dependencies []string
+		if json.Unmarshal(item.Job.DependencyKeys, &dependencies) != nil {
+			return
+		}
+		for _, dependency := range dependencies {
+			visit(dependency)
+		}
+	}
+	visit(pointerText(source.job.Job.Key))
+	if len(seen) == 0 {
+		return 0
+	}
+	return len(seen) - 1
 }
 
 func replayError(code, message string) error {
@@ -671,6 +770,14 @@ func (s *Store) GetRunLineageByIdempotency(ctx context.Context, actor, key strin
 	return lineage, err
 }
 
+func (s *Store) GetRunLineage(ctx context.Context, runID string) (RunLineage, error) {
+	lineage, err := scanRunLineage(s.db.QueryRowContext(ctx, `SELECT `+runLineageColumns+` FROM run_lineage WHERE run_id = ?`, strings.TrimSpace(runID)))
+	if errors.Is(err, sql.ErrNoRows) {
+		return RunLineage{}, &ErrNotFound{Resource: "run lineage", Key: runID}
+	}
+	return lineage, err
+}
+
 func (s *Store) existingRollbackRun(ctx context.Context, lineage RunLineage, params EnqueueRollbackParams) (Run, error) {
 	if lineage.Kind != RunLineageRollback || pointerText(lineage.SourceDeploymentID) != params.SourceDeploymentID || pointerText(lineage.TargetDeploymentID) != params.TargetDeploymentID {
 		return Run{}, &ErrConflict{Resource: "idempotency key", Field: "payload", Value: params.IdempotencyKey}
@@ -685,6 +792,9 @@ func (s *Store) existingReplayRun(ctx context.Context, lineage RunLineage, param
 		matches = matches && pointerText(lineage.SourceJobID) == params.SourceJobID && lineage.SourceStepID == nil
 	} else {
 		matches = matches && pointerText(lineage.SourceStepID) == params.SourceStepID
+	}
+	if params.SourceRunID != "" {
+		matches = matches && lineage.SourceRunID == params.SourceRunID
 	}
 	if !matches {
 		return Run{}, &ErrConflict{Resource: "idempotency key", Field: "payload", Value: params.IdempotencyKey}

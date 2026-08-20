@@ -46,6 +46,16 @@ jobs:
       - name: Deploy production
         run: printf 'deployed %s\n' "$DEPLOY_TOKEN"
 YAML
+cat >"$project_root/alpha-service/.github/workflows/failure.yml" <<'YAML'
+name: Failure CI
+on: workflow_dispatch
+jobs:
+  fail:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Expected failure
+        run: printf 'expected failure\n'; exit 9
+YAML
 cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
 stages: [test]
 worker-test:

@@ -15,6 +15,7 @@ test("@responsive public page presents the CLI and self-hosted service", async (
 });
 
 test("operator uses HTMX login, navigation, project registration, persistence, and logout", async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: /YOUR CI/ })).toBeVisible();
 
@@ -65,7 +66,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.locator("article.workflow-card", { hasText: "Alpha CI" })).toBeVisible();
   await page.getByRole("button", { name: "SYNC BETA-WORKER" }).click();
   await expect(page.locator("article.workflow-card", { hasText: ".gitlab-ci.yml" })).toBeVisible();
-  await expect(page.getByText("GITHUB", { exact: true })).toBeVisible();
+  await expect(page.getByText("GITHUB", { exact: true })).toHaveCount(2);
   await expect(page.getByText("GITLAB", { exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: "Secrets" }).click();
@@ -97,22 +98,41 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(testLogs).toContainText("tests passed");
   await secretLogs.scrollIntoViewIfNeeded();
   await expect(secretLogs).toContainText("***");
+  await expect(secretLogs).not.toContainText("e2e-super-secret");
   const sourceRunURL = page.url();
   const testJob = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Test", exact: true }) });
-  await expect(testJob.getByRole("button", { name: "PLAY STEP" }).first()).toBeEnabled();
-  await testJob.getByRole("button", { name: "PLAY STEP" }).first().click();
+  await testJob.getByRole("button", { name: "REPLAY STEP" }).first().click();
+  await expect(testJob.getByRole("button", { name: "CONFIRM REPLAY STEP" }).first()).toBeVisible();
+  await testJob.getByRole("button", { name: "CONFIRM REPLAY STEP" }).first().click();
   await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+$/);
+  await expect(page.getByRole("status").filter({ hasText: "REPLAY QUEUED" })).toBeVisible();
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
+  await expect(page.getByLabel("Run provenance")).toContainText("STEP REPLAY");
+  await expect(page.getByLabel("Run provenance")).toContainText("SOURCE RUN");
   await expect(page.locator("article.job-detail")).toHaveCount(1);
   await expect(page.locator(".step-detail")).toHaveCount(1);
   await page.goto(sourceRunURL);
   const replayJob = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Test", exact: true }) });
-  await expect(replayJob.getByRole("button", { name: "PLAY JOB" })).toBeEnabled();
-  await replayJob.getByRole("button", { name: "PLAY JOB" }).click();
+  await replayJob.getByRole("button", { name: "REPLAY JOB" }).click();
+  await replayJob.getByRole("button", { name: "CONFIRM REPLAY JOB" }).click();
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
   await expect(page.locator("article.job-detail")).toHaveCount(2);
-  await expect(secretLogs).not.toContainText("e2e-super-secret");
+  await expect(page.getByLabel("Run provenance")).toContainText("JOB REPLAY");
 
+  await page.getByRole("link", { name: "Workflows" }).click();
+  const failureWorkflow = page.locator("article.workflow-card", { hasText: "Failure CI" });
+  await failureWorkflow.getByRole("button", { name: /RUN NOW/ }).click();
+  await expect(page.locator(".run-detail-state")).toContainText("FAILED", { timeout: 15000 });
+  const failedRunURL = page.url();
+  const failedJob = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Fail", exact: true }) });
+  await failedJob.getByRole("button", { name: "REPLAY STEP" }).click();
+  await expect(page.locator(".run-detail-state")).toContainText("FAILED", { timeout: 15000 });
+  await expect(page.getByLabel("Run provenance")).toContainText("STEP REPLAY");
+  await page.goto(failedRunURL);
+  const failedJobAgain = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Fail", exact: true }) });
+  await failedJobAgain.getByRole("button", { name: "REPLAY JOB" }).click();
+  await expect(page.locator(".run-detail-state")).toContainText("FAILED", { timeout: 15000 });
+  await expect(page.getByLabel("Run provenance")).toContainText("JOB REPLAY");
   await page.getByRole("link", { name: /Runs/ }).click();
   await expect(page.getByRole("group", { name: "Time range" })).toBeVisible();
   await page.getByRole("button", { name: "ALL", exact: true }).click();
@@ -159,6 +179,20 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await deployLogs.scrollIntoViewIfNeeded();
   await expect(deployLogs).toContainText("deployed ***");
   await expect(deployLogs).not.toContainText("environment-e2e-secret");
+
+  const deploymentJob = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Deploy", exact: true }) });
+  await deploymentJob.getByRole("button", { name: "REPLAY JOB" }).click();
+  await expect(deploymentJob.locator(".replay-confirm[open] .replay-confirm-panel").getByText(/DEPLOYMENT APPROVAL REQUIRED/)).toBeVisible();
+  await deploymentJob.getByRole("button", { name: "CONFIRM REPLAY JOB" }).click();
+  await expect(page.locator(".run-detail-state")).toContainText("WAITING", { timeout: 15000 });
+  await page.getByRole("link", { name: "Deployments" }).click();
+  const replayApproval = page.locator("article.approval-card").filter({ has: page.getByRole("heading", { name: "Deploy", exact: true }) });
+  await replayApproval.getByLabel("DECISION REASON").fill("e2e replay gate");
+  await replayApproval.getByRole("button", { name: "APPROVE" }).click();
+  const replayDeployment = page.locator(".deployment-table .data-row").first();
+  await expect(replayDeployment).toContainText("SUCCEEDED", { timeout: 15000 });
+  await replayDeployment.click();
+  await expect(page.getByLabel("Run provenance")).toContainText("JOB REPLAY");
 
   await page.getByRole("link", { name: "Deployments" }).click();
   const rollbackRecord = page.locator(".deployment-record").first();
@@ -232,4 +266,14 @@ test("@responsive operator surfaces preserve padding, mobile records, and reduce
   expect(layout.overflow).toBeLessThanOrEqual(0);
   expect(layout.gradient).toBe("none");
   expect(["0s", "0.001s", "1ms"]).toContain(layout.animationDuration);
+  await page.locator('.main-nav a[href="/app/runs"]').click();
+  const firstRun = page.locator(".run-table .data-row").first();
+  await firstRun.click();
+  const playSize = await page.locator(".play-control button, .replay-confirm > summary").first().evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { width: parseFloat(style.width), height: parseFloat(style.height), transition: style.transitionDuration };
+  });
+  expect(playSize.width).toBeGreaterThanOrEqual(44);
+  expect(playSize.height).toBeGreaterThanOrEqual(44);
+  expect(["0s", "0.001s", "1ms"]).toContain(playSize.transition);
 });

@@ -108,6 +108,7 @@ func (a *API) renderRun(writer http.ResponseWriter, request *http.Request, runID
 		Page: "runs", Title: definition.title, Kicker: definition.kicker,
 		Description: definition.description, Actor: principal.Subject,
 		CSRFToken: session.CSRFToken, Version: a.version, Error: message,
+		Notice: strings.TrimSpace(request.URL.Query().Get("notice")),
 	}
 	projects, err := a.store.ListProjects(request.Context())
 	if err != nil {
@@ -197,12 +198,26 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 		Run:      runView(graph.Run, projectNames[graph.Run.ProjectID], workflowNames),
 		Terminal: terminalStatus(graph.Run.Status),
 	}
+	lineage, lineageErr := a.store.GetRunLineage(ctx, runID)
+	if lineageErr == nil {
+		detail.Lineage = &webui.RunLineageView{
+			Kind:        strings.ToUpper(strings.ReplaceAll(string(lineage.Kind), "_", " ")),
+			SourceRunID: lineage.SourceRunID, SourceJobID: stringValue(lineage.SourceJobID),
+			SourceStepID: stringValue(lineage.SourceStepID), Actor: lineage.Actor,
+			CreatedAt: lineage.CreatedAt.UTC().Format("2006-01-02 15:04:05Z"),
+		}
+	} else {
+		var notFound *store.ErrNotFound
+		if !errors.As(lineageErr, &notFound) {
+			return webui.RunDetailView{}, lineageErr
+		}
+	}
 	for _, item := range graph.Jobs {
 		jobEligibility, err := a.store.EvaluateJobReplay(ctx, item.Job.ID)
 		if err != nil {
 			return webui.RunDetailView{}, err
 		}
-		jobReplay, err := replayControl(store.RunLineageJobReplay, item.Job.ID, runID, csrfToken, jobEligibility.Eligible, jobEligibility.Message)
+		jobReplay, err := replayControl(store.RunLineageJobReplay, item.Job.ID, runID, csrfToken, jobEligibility)
 		if err != nil {
 			return webui.RunDetailView{}, err
 		}
@@ -217,7 +232,7 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 			if err != nil {
 				return webui.RunDetailView{}, err
 			}
-			stepReplay, err := replayControl(store.RunLineageStepReplay, step.ID, runID, csrfToken, stepEligibility.Eligible, stepEligibility.Message)
+			stepReplay, err := replayControl(store.RunLineageStepReplay, step.ID, runID, csrfToken, stepEligibility)
 			if err != nil {
 				return webui.RunDetailView{}, err
 			}
@@ -234,14 +249,28 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 	return detail, nil
 }
 
-func replayControl(kind store.RunLineageKind, sourceID, runID, csrfToken string, enabled bool, hint string) (webui.ReplayControlView, error) {
-	control := webui.ReplayControlView{CSRFToken: csrfToken, SourceRunID: runID, Enabled: enabled, Hint: hint}
-	if kind == store.RunLineageJobReplay {
-		control.Action, control.Label = "/app/jobs/"+sourceID+"/replay", "PLAY JOB"
-	} else {
-		control.Action, control.Label = "/app/steps/"+sourceID+"/replay", "PLAY STEP"
+func replayControl(kind store.RunLineageKind, sourceID, runID, csrfToken string, eligibility store.ReplayEligibility) (webui.ReplayControlView, error) {
+	control := webui.ReplayControlView{
+		CSRFToken: csrfToken, SourceRunID: runID, SourceJobID: eligibility.SourceJobID,
+		Enabled: eligibility.Eligible, Hint: eligibility.Message, CommitSHA: eligibility.CommitSHA,
+		RequiresConfirmation: eligibility.RequiresConfirmation,
 	}
-	if !enabled {
+	if kind == store.RunLineageJobReplay {
+		control.Action, control.Label, control.Mode = "/app/jobs/"+sourceID+"/replay", "REPLAY JOB", "CLEAN COMMIT WORKSPACE"
+		control.Consequence = fmt.Sprintf("%d PREREQUISITES REPLAYED", eligibility.DependencyCount)
+	} else {
+		control.Action, control.Label, control.Mode = "/app/steps/"+sourceID+"/replay", "REPLAY STEP", "CLEAN WORKSPACE / ONE STEP"
+		control.Consequence = "ONLY THIS SHELL STEP RUNS"
+	}
+	if eligibility.DeploymentGate {
+		control.Consequence += " / DEPLOYMENT APPROVAL REQUIRED"
+	} else {
+		control.Consequence += " / NO DEPLOYMENT GATE"
+	}
+	if eligibility.Eligible {
+		control.Hint = control.Mode + " / " + control.Consequence
+	}
+	if !eligibility.Eligible {
 		return control, nil
 	}
 	key, err := newReplayIdempotencyKey(kind)
