@@ -37,6 +37,9 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     environment: production
+    x-gci:
+      rollback: printf 'rolled back %s\n' "$GCI_ROLLBACK_TARGET_SHA"
+      verify: printf 'rollback verified\n'
     env:
       DEPLOY_TOKEN: "${{ secrets.DEPLOY_TOKEN }}"
     steps:

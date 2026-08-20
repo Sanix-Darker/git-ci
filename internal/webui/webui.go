@@ -123,8 +123,11 @@ type ScheduleView struct {
 }
 type DeploymentView struct {
 	ID, RunID, JobID, JobName, ProjectName, Environment, DeploymentTier, Status, Dot, UpdatedAt string
-	Terminal                                                                                    bool
+	CSRFToken, RollbackKey, RollbackHint                                                        string
+	Terminal, CanRollback                                                                       bool
+	RollbackTargets                                                                             []RollbackTargetView
 }
+type RollbackTargetView struct{ ID, Ref, CommitSHA, CreatedAt string }
 type EnvironmentView struct {
 	ID, ProjectID, ProjectName, Name, DeploymentTier, AllowedRefs, ConcurrencyMode, UpdatedAt string
 	Protected                                                                                 bool

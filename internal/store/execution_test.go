@@ -107,8 +107,8 @@ func TestExecutionMigrationPreservesInitialData(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count applied migrations: %v", err)
 	}
-	if migrations != 6 {
-		t.Errorf("migration count = %d, want 6", migrations)
+	if migrations != 7 {
+		t.Errorf("migration count = %d, want 7", migrations)
 	}
 }
 

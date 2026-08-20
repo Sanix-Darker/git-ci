@@ -146,6 +146,23 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(deployLogs).toContainText("deployed ***");
   await expect(deployLogs).not.toContainText("environment-e2e-secret");
 
+  await page.getByRole("link", { name: "Deployments" }).click();
+  const rollbackRecord = page.locator(".deployment-record").first();
+  await expect(rollbackRecord.getByRole("button", { name: /ROLL BACK/ })).toBeVisible();
+  await rollbackRecord.getByRole("button", { name: /ROLL BACK/ }).click();
+  await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+$/);
+  await expect(page.locator(".run-detail-state")).toContainText("WAITING", { timeout: 15000 });
+  await page.getByRole("link", { name: "Deployments" }).click();
+  const rollbackApproval = page.locator("article.approval-card").filter({ has: page.getByRole("heading", { name: "Deploy", exact: true }) });
+  await rollbackApproval.getByLabel("DECISION REASON").fill("e2e rollback window");
+  await rollbackApproval.getByRole("button", { name: "APPROVE" }).click();
+  const rollbackDeployment = page.locator(".deployment-table .data-row").first();
+  await expect(rollbackDeployment).toContainText("SUCCEEDED", { timeout: 15000 });
+  await rollbackDeployment.click();
+  const rollbackLogs = page.getByLabel("Logs for Rollback production");
+  await rollbackLogs.scrollIntoViewIfNeeded();
+  await expect(rollbackLogs).toContainText("rolled back");
+
   await page.getByRole("link", { name: "Schedules" }).click();
   await expect(page).toHaveURL(/\/app\/schedules$/);
   await page.getByLabel("WORKFLOW").selectOption({ label: "alpha-service / Alpha CI" });
