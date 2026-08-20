@@ -58,6 +58,18 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(runtimeGraph).toContainText("SERVICE redis = redis:7-alpine");
   await expect(runtimeGraph).toContainText("01 NODES / 00 EDGES");
 
+  const reusable = page.locator("details.workflow-detail").filter({ hasText: "Reusable Delivery" });
+  await reusable.locator("summary").click();
+  const reusableGraph = reusable.getByLabel("Pipeline dependency graph");
+  await expect(reusableGraph).toContainText("04 NODES / 03 EDGES");
+  await expect(reusableGraph).toContainText("Shared / Compile");
+  await expect(reusableGraph).toContainText("REUSE ./.github/workflows/shared.yml");
+  await expect(reusableGraph.locator(".run-node").filter({ hasText: "Publish" })).toContainText("AFTER SHARED/AUDIT");
+  await reusable.getByRole("button", { name: /RUN WORKFLOW/ }).click();
+  await expect(page).toHaveURL(/\/app\/runs\//);
+  await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
+  await page.goto("/app/workflows");
+
   const manual = page.locator("details.workflow-detail").filter({ hasText: "Failure CI" });
   await manual.locator("summary").click();
   await expect(pipeline).not.toHaveAttribute("open", "");
