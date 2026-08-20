@@ -3,6 +3,20 @@ const path = require("node:path");
 const { test, expect } = require("@playwright/test");
 
 const tokenPath = path.join(process.cwd(), "build/e2e-web/state/admin.token");
+const browserErrors = new WeakMap();
+
+test.beforeEach(async ({ page }) => {
+  const errors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(`console: ${message.text()}`);
+  });
+  page.on("pageerror", (error) => errors.push(`page: ${error.message}`));
+  browserErrors.set(page, errors);
+});
+
+test.afterEach(async ({ page }) => {
+  expect(browserErrors.get(page)).toEqual([]);
+});
 
 test("@responsive public page presents the CLI and self-hosted service", async ({ page }) => {
   await page.goto("/");
