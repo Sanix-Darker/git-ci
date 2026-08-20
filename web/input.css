@@ -136,6 +136,8 @@
 .workspace-header > p { max-width: 48ch; margin: 0; color: #727272; }
 .notice { display: flex; align-items: center; gap: .7rem; margin-bottom: 1rem; border: 1px solid #383838; padding: .85rem 1rem; font-size: .67rem; }
 .notice-error { border-color: #ff453a; color: #ff453a; }
+.notice-ok { border-color: #30d158; color: #b8b8b8; }
+.notice code { overflow-wrap: anywhere; font: inherit; }
 .metric-row { display: grid; grid-template-columns: repeat(3, 1fr); }
 .metric-row article { min-height: 170px; border: 1px solid #383838; padding: 1.25rem; }
 .metric-row article + article { border-left: 0; }
@@ -244,6 +246,32 @@
 .log-console > div > b { border-right: 1px solid #272727; border-left: 1px solid #272727; }
 .log-console pre { margin: 0; padding: .35rem .7rem; font: inherit; white-space: pre-wrap; word-break: break-word; }
 .log-console > p { margin: 0; padding: 1rem; color: #727272; font-size: .56rem; font-weight: 900; }
+.configuration-grid { display: grid; grid-template-columns: minmax(300px, .72fr) minmax(0, 1.28fr); gap: 1rem; }
+.config-form { display: flex; flex-direction: column; align-self: start; border: 1px solid #383838; padding: 1.25rem; }
+.config-form header { margin-bottom: 1.5rem; border-bottom: 1px solid #383838; padding-bottom: 1rem; }
+.config-form h2 { margin: .4rem 0 0; font-family: var(--font-display); font-size: 1.7rem; }
+.config-form label { display: grid; gap: .45rem; margin-bottom: .85rem; color: #727272; font-size: .56rem; font-weight: 900; letter-spacing: .08em; }
+.config-form input, .config-form select { width: 100%; height: 45px; border: 1px solid #383838; padding: 0 .75rem; background: #080808; color: #fff; font: inherit; font-size: .65rem; }
+.config-form input:focus, .config-form select:focus { border-color: #fff; outline: 0; }
+.config-form button { display: flex; min-height: 44px; align-items: center; justify-content: space-between; margin-top: .5rem; border: 1px solid #fff; padding: 0 .8rem; background: #fff; color: #080808; cursor: pointer; font-size: .59rem; font-weight: 900; transition: background-color 120ms steps(2, end), color 120ms steps(2, end); }
+.config-form button:hover { background: #080808; color: #fff; }
+.form-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.compact-list article { display: flex; min-height: 68px; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #272727; padding: .75rem 1.25rem; }
+.compact-list article > div { display: flex; min-width: 0; align-items: center; gap: .7rem; }
+.compact-list article span { display: grid; min-width: 0; }
+.compact-list strong, .compact-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compact-list small { margin-top: .25rem; color: #727272; font-size: .53rem; }
+.compact-list time, .compact-list code { color: #727272; font: inherit; font-size: .52rem; }
+.compact-list form { display: inline-flex; }
+.compact-list button { border: 1px solid #383838; padding: .4rem .55rem; background: #080808; color: #727272; cursor: pointer; font-size: .52rem; font-weight: 900; }
+.compact-list button:hover { border-color: #fff; color: #fff; }
+.schedule-list article > div:last-child { flex-wrap: wrap; justify-content: flex-end; }
+.deployment-table .data-head, .deployment-table .data-row { grid-template-columns: .8fr 1.2fr 1fr .7fr 1.15fr 24px; }
+.service-ledger { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 1rem; border: 1px solid #383838; }
+.service-ledger article { display: grid; gap: .5rem; padding: 1rem; }
+.service-ledger article + article { border-left: 1px solid #383838; }
+.service-ledger span { color: #727272; font-size: .52rem; font-weight: 900; }
+.service-ledger strong { font-size: .62rem; }
 .htmx-swapping { opacity: .35; transition: opacity 100ms linear; }
 
 @media (max-width: 950px) {
@@ -255,6 +283,7 @@
   .equation-grid article + article, .metric-row article + article { border-top: 0; border-left: 1px solid #383838; }
   .surface-grid, .project-layout { grid-template-columns: 1fr; }
   .workflow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .configuration-grid { grid-template-columns: 1fr; }
   .pipeline-graph { grid-template-columns: 1fr; gap: .75rem; }
   .connector { width: 1px; height: 20px; justify-self: center; }
 }
@@ -289,6 +318,9 @@
   .run-facts div:nth-child(3) { border-left: 0; border-top: 1px solid #383838; }
   .run-facts div:nth-child(4) { border-top: 1px solid #383838; }
   .job-detail > header { align-items: flex-start; flex-direction: column; }
+  .form-pair, .service-ledger { grid-template-columns: 1fr; }
+  .service-ledger article + article { border-top: 1px solid #383838; border-left: 0; }
+  .compact-list article { align-items: flex-start; flex-direction: column; }
   .site-footer { grid-template-columns: 1fr; }
   .site-footer > * { min-height: 48px; }
   .site-footer > * + * { border-top: 1px solid #383838; border-left: 0; }

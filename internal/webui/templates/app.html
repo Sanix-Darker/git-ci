@@ -33,14 +33,86 @@
       <p>{{.Description}}</p>
     </header>
     {{if .Error}}<div class="notice notice-error" role="alert"><i class="dot dot-red"></i>{{.Error}}</div>{{end}}
+    {{if .Notice}}<div class="notice notice-ok" role="status"><i class="dot dot-green"></i><code>{{.Notice}}</code></div>{{end}}
     {{if eq .Page "overview"}}{{template "overview_panel" .}}{{end}}
     {{if eq .Page "projects"}}{{template "projects_panel" .}}{{end}}
     {{if eq .Page "workflows"}}{{template "workflows_panel" .}}{{end}}
     {{if eq .Page "runs"}}{{template "runs_panel" .}}{{end}}
     {{if eq .Page "jobs"}}{{template "jobs_panel" .}}{{end}}
-    {{if or (eq .Page "secrets") (eq .Page "schedules") (eq .Page "deployments") (eq .Page "settings")}}{{template "future_panel" .}}{{end}}
+    {{if eq .Page "secrets"}}{{template "secrets_panel" .}}{{end}}
+    {{if eq .Page "schedules"}}{{template "schedules_panel" .}}{{end}}
+    {{if eq .Page "deployments"}}{{template "deployments_panel" .}}{{end}}
+    {{if eq .Page "settings"}}{{template "settings_panel" .}}{{end}}
   </main>
 </div>
+{{end}}
+
+{{define "secrets_panel"}}
+<section class="configuration-grid">
+  <form class="config-form" method="post" action="/app/secrets" hx-post="/app/secrets" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+    <header><p class="kicker">ENCRYPTED AT REST</p><h2>STORE SECRET</h2></header>
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <label>PROJECT<select name="projectId" required>{{range .Projects}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+    <label>NAME<input name="name" required pattern="[A-Z_][A-Z0-9_]*" placeholder="DEPLOY_TOKEN" autocomplete="off"></label>
+    <label>VALUE<input name="value" type="password" required placeholder="Stored once, never revealed" autocomplete="new-password"></label>
+    <button type="submit">ENCRYPT + STORE <span>-></span></button>
+  </form>
+  <section class="surface-card flush-card">
+    <div class="card-heading padded-heading"><div><p class="kicker">SQLITE METADATA</p><h2>PROJECT SECRETS</h2></div><span>{{pad2 (len .Secrets)}}</span></div>
+    <div class="compact-list">
+      {{range .Secrets}}<article><div><i class="dot dot-green"></i><span><strong>{{.Name}}</strong><small>{{upper .ProjectName}} / AES-256-GCM</small></span></div><div><time>{{.UpdatedAt}}</time><form method="post" action="/app/secrets/{{.ID}}/delete" hx-post="/app/secrets/{{.ID}}/delete" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">DELETE</button></form></div></article>{{else}}<div class="empty-state"><i></i><p>NO SECRET METADATA STORED</p></div>{{end}}
+    </div>
+  </section>
+</section>
+{{end}}
+
+{{define "schedules_panel"}}
+<section class="configuration-grid">
+  <form class="config-form" method="post" action="/app/schedules" hx-post="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+    <header><p class="kicker">FIVE-FIELD CRON</p><h2>ARM SCHEDULE</h2></header>
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <label>WORKFLOW<select name="workflowId" required>{{range .Workflows}}<option value="{{.ID}}">{{.ProjectName}} / {{.Name}}</option>{{end}}</select></label>
+    <div class="form-pair"><label>CRON<input name="cron" required value="0 * * * *" placeholder="0 * * * *"></label><label>TIMEZONE<input name="timezone" required value="UTC" placeholder="Europe/Paris"></label></div>
+    <label>REF<input name="ref" placeholder="main"></label>
+    <button type="submit">CREATE + ENABLE <span>-></span></button>
+  </form>
+  <section class="surface-card flush-card">
+    <div class="card-heading padded-heading"><div><p class="kicker">DURABLE CLAIMS</p><h2>ACTIVE CRON</h2></div><span>{{pad2 (len .Schedules)}}</span></div>
+    <div class="compact-list schedule-list">
+      {{range .Schedules}}<article><div><i class="dot {{if .Enabled}}dot-green{{end}}"></i><span><strong>{{.WorkflowName}}</strong><small>{{.ProjectName}} / {{.Cron}} / {{.Timezone}}</small></span></div><div><time>{{.NextRunAt}}</time><form method="post" action="/app/schedules/{{.ID}}/toggle" hx-post="/app/schedules/{{.ID}}/toggle" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">{{if .Enabled}}PAUSE{{else}}ENABLE{{end}}</button></form><form method="post" action="/app/schedules/{{.ID}}/delete" hx-post="/app/schedules/{{.ID}}/delete" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">DELETE</button></form></div></article>{{else}}<div class="empty-state"><i></i><p>NO WORKFLOW SCHEDULES ARMED</p></div>{{end}}
+    </div>
+  </section>
+</section>
+{{end}}
+
+{{define "deployments_panel"}}
+<section class="surface-card flush-card">
+  <div class="card-heading padded-heading"><div><p class="kicker">ENVIRONMENT HISTORY</p><h2>DEPLOYMENTS</h2></div><span>{{pad2 (len .Deployments)}}</span></div>
+  <div class="data-table deployment-table">
+    <div class="data-head"><span>STATE</span><span>ENVIRONMENT</span><span>PROJECT</span><span>RUN</span><span>UPDATED</span><span></span></div>
+    {{range .Deployments}}<a class="data-row" href="/app/runs/{{.RunID}}"><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.Environment}}</strong><span>{{.ProjectName}}</span><code>{{short .RunID}}</code><time>{{.UpdatedAt}}</time><b>-></b></a>{{else}}<div class="empty-state"><i></i><p>NO DEPLOYMENT RECORDS. CREATE THEM THROUGH API V1.</p></div>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{define "settings_panel"}}
+<section class="configuration-grid">
+  <form class="config-form" method="post" action="/app/settings/webhooks" hx-post="/app/settings/webhooks" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+    <header><p class="kicker">EVENT TRIGGERS</p><h2>NEW WEBHOOK</h2></header>
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <label>WORKFLOW<select name="workflowId" required>{{range .Workflows}}<option value="{{.ID}}">{{.ProjectName}} / {{.Name}}</option>{{end}}</select></label>
+    <div class="form-pair"><label>NAME<input name="name" required placeholder="github-push"></label><label>PROVIDER<select name="provider"><option value="github">GITHUB</option><option value="gitlab">GITLAB</option><option value="generic">GENERIC</option></select></label></div>
+    <label>FALLBACK REF<input name="ref" placeholder="main"></label>
+    <button type="submit">CREATE ENDPOINT <span>-></span></button>
+  </form>
+  <section class="surface-card flush-card">
+    <div class="card-heading padded-heading"><div><p class="kicker">TOKEN HASHES</p><h2>WEBHOOKS</h2></div><span>{{pad2 (len .Webhooks)}}</span></div>
+    <div class="compact-list">
+      {{range .Webhooks}}<article><div><i class="dot {{if .Enabled}}dot-green{{end}}"></i><span><strong>{{.Name}}</strong><small>{{.ProjectName}} / {{.Provider}}</small></span></div><div><code>{{.URL}}</code></div></article>{{else}}<div class="empty-state"><i></i><p>NO WEBHOOK ENDPOINTS</p></div>{{end}}
+    </div>
+  </section>
+</section>
+<section class="service-ledger"><article><span>DATABASE</span><strong>SQLITE / WAL</strong></article><article><span>PUBLIC SITE</span><strong>EMBEDDED</strong></article><article><span>RUNNER</span><strong>LOCAL / SERIAL</strong></article><article><span>THEME</span><strong>DARK / FIXED</strong></article></section>
 {{end}}
 
 {{define "sidebar"}}

@@ -15,8 +15,12 @@ import (
 	"github.com/sanix-darker/git-ci/internal/auth"
 	"github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/projects"
+	"github.com/sanix-darker/git-ci/internal/scheduler"
+	"github.com/sanix-darker/git-ci/internal/secrets"
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/webhooks"
 	"github.com/sanix-darker/git-ci/internal/webui"
+	"github.com/sanix-darker/git-ci/site"
 )
 
 const DefaultMaxBodyBytes int64 = 1 << 20
@@ -29,6 +33,9 @@ type Config struct {
 	Version      string
 	MaxBodyBytes int64
 	Execution    *execution.Manager
+	Secrets      *secrets.Manager
+	Scheduler    *scheduler.Manager
+	Webhooks     *webhooks.Manager
 }
 
 type API struct {
@@ -40,6 +47,9 @@ type API struct {
 	maxBodyBytes int64
 	web          *webui.Renderer
 	execution    *execution.Manager
+	secrets      *secrets.Manager
+	scheduler    *scheduler.Manager
+	webhooks     *webhooks.Manager
 }
 
 type principalContextKey struct{}
@@ -56,6 +66,9 @@ func New(config Config) (http.Handler, error) {
 	}
 	if config.Execution == nil {
 		return nil, errors.New("httpapi: execution manager is required")
+	}
+	if config.Secrets == nil || config.Scheduler == nil || config.Webhooks == nil {
+		return nil, errors.New("httpapi: secrets, scheduler, and webhook managers are required")
 	}
 	if config.MaxBodyBytes <= 0 {
 		config.MaxBodyBytes = DefaultMaxBodyBytes
@@ -81,6 +94,9 @@ func New(config Config) (http.Handler, error) {
 		version:      config.Version,
 		maxBodyBytes: config.MaxBodyBytes,
 		execution:    config.Execution,
+		secrets:      config.Secrets,
+		scheduler:    config.Scheduler,
+		webhooks:     config.Webhooks,
 	}
 	renderer, err := webui.New()
 	if err != nil {
@@ -106,6 +122,12 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /app/runs/{run}", a.requireWebAuth(http.HandlerFunc(a.handleRunPageWeb)))
 	mux.Handle("GET /app/runs/{run}/panel", a.requireWebAuth(http.HandlerFunc(a.handleRunPanelWeb)))
 	mux.Handle("POST /app/runs/{run}/cancel", a.requireWebAuth(http.HandlerFunc(a.handleCancelRunWeb)))
+	mux.Handle("POST /app/secrets", a.requireWebAuth(http.HandlerFunc(a.handleUpsertSecretWeb)))
+	mux.Handle("POST /app/secrets/{secret}/delete", a.requireWebAuth(http.HandlerFunc(a.handleDeleteSecretWeb)))
+	mux.Handle("POST /app/schedules", a.requireWebAuth(http.HandlerFunc(a.handleCreateScheduleWeb)))
+	mux.Handle("POST /app/schedules/{schedule}/toggle", a.requireWebAuth(http.HandlerFunc(a.handleToggleScheduleWeb)))
+	mux.Handle("POST /app/schedules/{schedule}/delete", a.requireWebAuth(http.HandlerFunc(a.handleDeleteScheduleWeb)))
+	mux.Handle("POST /app/settings/webhooks", a.requireWebAuth(http.HandlerFunc(a.handleCreateWebhookWeb)))
 	mux.HandleFunc("POST /api/v1/session/login", a.handleLogin)
 	mux.Handle("GET /api/v1", a.requireAuth(http.HandlerFunc(a.handleAPIRoot)))
 	mux.Handle("GET /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleSession)))
@@ -122,13 +144,26 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /api/v1/runs/{run}", a.requireAuth(http.HandlerFunc(a.handleRun)))
 	mux.Handle("POST /api/v1/runs/{run}/cancel", a.requireAuth(http.HandlerFunc(a.handleCancelRun)))
 	mux.Handle("GET /api/v1/runs/{run}/logs", a.requireAuth(http.HandlerFunc(a.handleRunLogs)))
+	mux.Handle("GET /api/v1/projects/{project}/secrets", a.requireAuth(http.HandlerFunc(a.handleProjectSecrets)))
+	mux.Handle("POST /api/v1/projects/{project}/secrets", a.requireAuth(http.HandlerFunc(a.handleProjectSecrets)))
+	mux.Handle("DELETE /api/v1/secrets/{secret}", a.requireAuth(http.HandlerFunc(a.handleSecret)))
+	mux.Handle("GET /api/v1/projects/{project}/schedules", a.requireAuth(http.HandlerFunc(a.handleProjectSchedules)))
+	mux.Handle("POST /api/v1/projects/{project}/schedules", a.requireAuth(http.HandlerFunc(a.handleProjectSchedules)))
+	mux.Handle("PATCH /api/v1/schedules/{schedule}", a.requireAuth(http.HandlerFunc(a.handleSchedule)))
+	mux.Handle("DELETE /api/v1/schedules/{schedule}", a.requireAuth(http.HandlerFunc(a.handleSchedule)))
+	mux.Handle("GET /api/v1/projects/{project}/webhooks", a.requireAuth(http.HandlerFunc(a.handleProjectWebhooks)))
+	mux.Handle("POST /api/v1/projects/{project}/webhooks", a.requireAuth(http.HandlerFunc(a.handleProjectWebhooks)))
+	mux.Handle("GET /api/v1/projects/{project}/deployments", a.requireAuth(http.HandlerFunc(a.handleProjectDeployments)))
+	mux.Handle("POST /api/v1/projects/{project}/deployments", a.requireAuth(http.HandlerFunc(a.handleProjectDeployments)))
+	mux.Handle("PATCH /api/v1/deployments/{deployment}", a.requireAuth(http.HandlerFunc(a.handleDeployment)))
+	mux.HandleFunc("POST /hooks/{endpoint}", a.handleWebhookDelivery)
 	mux.HandleFunc("/api/", a.handleAPINotFound)
 	mux.HandleFunc("/api", a.handleAPINotFound)
 
 	if a.staticDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(a.staticDir)))
 	} else {
-		mux.HandleFunc("/", http.NotFound)
+		mux.Handle("/", site.Handler())
 	}
 
 	return a.securityHeaders(mux)

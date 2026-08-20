@@ -52,6 +52,18 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.getByText("GITHUB", { exact: true })).toBeVisible();
   await expect(page.getByText("GITLAB", { exact: true })).toBeVisible();
 
+  await page.getByRole("link", { name: "Secrets" }).click();
+  await expect(page).toHaveURL(/\/app\/secrets$/);
+  await page.getByLabel("PROJECT").selectOption({ label: "alpha-service" });
+  await page.getByLabel("NAME").fill("DEPLOY_TOKEN");
+  await page.getByLabel("VALUE").fill("e2e-super-secret");
+  await page.getByRole("button", { name: /ENCRYPT \+ STORE/ }).click();
+  await expect(page.getByRole("status")).toContainText("AES-256-GCM");
+  await expect(page.locator(".compact-list")).toContainText("DEPLOY_TOKEN");
+  await expect(page.locator("body")).not.toContainText("e2e-super-secret");
+
+  await page.getByRole("link", { name: "Workflows" }).click();
+
   const alphaWorkflow = page.locator("article.workflow-card", { hasText: "Alpha CI" });
   await alphaWorkflow.getByRole("button", { name: /RUN NOW/ }).click();
   await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+$/);
@@ -61,11 +73,30 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
   await expect(page.getByLabel("Logs for Prepare")).toContainText("prepared");
   await expect(page.getByLabel("Logs for Test")).toContainText("tests passed");
+  await expect(page.getByLabel("Logs for Secret mask")).toContainText("***");
+  await expect(page.getByLabel("Logs for Secret mask")).not.toContainText("e2e-super-secret");
 
   await page.getByRole("link", { name: /Jobs/ }).click();
   await expect(page).toHaveURL(/\/app\/jobs$/);
   await expect(page.locator(".job-table")).toContainText("Prepare");
   await expect(page.locator(".job-table")).toContainText("Test");
+
+  await page.getByRole("link", { name: "Schedules" }).click();
+  await expect(page).toHaveURL(/\/app\/schedules$/);
+  await page.getByLabel("WORKFLOW").selectOption({ label: "alpha-service / Alpha CI" });
+  await page.getByLabel("CRON").fill("*/5 * * * *");
+  await page.getByRole("button", { name: /CREATE \+ ENABLE/ }).click();
+  await expect(page.getByRole("status")).toContainText("SCHEDULE ARMED");
+  await expect(page.locator(".schedule-list")).toContainText("Alpha CI");
+  await page.locator(".schedule-list").getByRole("button", { name: "PAUSE" }).click();
+  await expect(page.getByRole("status")).toContainText("SCHEDULE UPDATED");
+
+  await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByLabel("WORKFLOW").selectOption({ label: "alpha-service / Alpha CI" });
+  await page.getByLabel("NAME").fill("github-push");
+  await page.getByRole("button", { name: /CREATE ENDPOINT/ }).click();
+  await expect(page.getByRole("status")).toContainText("WEBHOOK TOKEN");
+  await expect(page.locator(".compact-list")).toContainText("github-push");
 
   await page.goto("/app/projects");
   await expect(page.locator(".project-rows")).toContainText("alpha-service");

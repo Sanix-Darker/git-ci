@@ -17,7 +17,10 @@ import (
 	"github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/httpapi"
 	"github.com/sanix-darker/git-ci/internal/projects"
+	"github.com/sanix-darker/git-ci/internal/scheduler"
+	"github.com/sanix-darker/git-ci/internal/secrets"
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/webhooks"
 )
 
 type Config struct {
@@ -27,6 +30,7 @@ type Config struct {
 	ProjectRoots    []string
 	AdminTokenFile  string
 	SessionKeyFile  string
+	SecretKeyFile   string
 	SessionTTL      time.Duration
 	MaxBodyBytes    int64
 	Version         string
@@ -37,6 +41,7 @@ type Service struct {
 	config         Config
 	store          *store.Store
 	execution      *execution.Manager
+	scheduler      *scheduler.Manager
 	handler        http.Handler
 	bootstrapToken string
 	closeOnce      sync.Once
@@ -71,10 +76,25 @@ func New(ctx context.Context, config Config) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("service: persistence: %w", err)
 	}
-	executionManager, err := execution.NewManager(database)
+	secretManager, err := secrets.NewManager(database, config.SecretKeyFile)
+	if err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("service: secret manager: %w", err)
+	}
+	executionManager, err := execution.NewManager(database, execution.WithSecretResolver(secretManager))
 	if err != nil {
 		_ = database.Close()
 		return nil, fmt.Errorf("service: execution manager: %w", err)
+	}
+	scheduleManager, err := scheduler.NewManager(database, executionManager)
+	if err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("service: scheduler: %w", err)
+	}
+	webhookManager, err := webhooks.NewManager(database, executionManager)
+	if err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("service: webhook manager: %w", err)
 	}
 	handler, err := httpapi.New(httpapi.Config{
 		Auth:         manager,
@@ -84,6 +104,9 @@ func New(ctx context.Context, config Config) (*Service, error) {
 		Version:      config.Version,
 		MaxBodyBytes: config.MaxBodyBytes,
 		Execution:    executionManager,
+		Secrets:      secretManager,
+		Scheduler:    scheduleManager,
+		Webhooks:     webhookManager,
 	})
 	if err != nil {
 		_ = database.Close()
@@ -93,6 +116,7 @@ func New(ctx context.Context, config Config) (*Service, error) {
 		config:         config,
 		store:          database,
 		execution:      executionManager,
+		scheduler:      scheduleManager,
 		handler:        handler,
 		bootstrapToken: bootstrapToken,
 	}, nil
@@ -123,7 +147,7 @@ func (s *Service) Run(ctx context.Context) error {
 		MaxHeaderBytes:    1 << 20,
 	}
 	serveErrors := make(chan error, 1)
-	workerErrors := make(chan error, 1)
+	workerErrors := make(chan error, 2)
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	defer stopWorker()
 	go func() {
@@ -131,6 +155,9 @@ func (s *Service) Run(ctx context.Context) error {
 	}()
 	go func() {
 		workerErrors <- s.execution.Run(workerCtx)
+	}()
+	go func() {
+		workerErrors <- s.scheduler.Run(workerCtx)
 	}()
 
 	select {
@@ -199,6 +226,9 @@ func normalizeConfig(config Config) (Config, error) {
 	}
 	if config.SessionKeyFile == "" {
 		config.SessionKeyFile = filepath.Join(config.StateDir, "session.key")
+	}
+	if config.SecretKeyFile == "" {
+		config.SecretKeyFile = filepath.Join(config.StateDir, "secret.key")
 	}
 	if len(config.ProjectRoots) == 0 {
 		return Config{}, errors.New("service: at least one project root is required")

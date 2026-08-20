@@ -28,12 +28,17 @@ type PageData struct {
 	CSRFToken   string
 	Version     string
 	Error       string
+	Notice      string
 	Projects    []store.Project
 	Candidates  []projects.Project
 	Workflows   []WorkflowView
 	Runs        []RunView
 	Jobs        []JobView
 	SelectedRun *RunDetailView
+	Secrets     []SecretView
+	Schedules   []ScheduleView
+	Deployments []DeploymentView
+	Webhooks    []WebhookView
 }
 
 type WorkflowView struct {
@@ -72,6 +77,17 @@ type LogView struct {
 	Sequence int
 	Stream   string
 	Message  string
+}
+
+type SecretView struct{ ID, ProjectName, Name, UpdatedAt string }
+type ScheduleView struct {
+	ID, ProjectName, WorkflowName, Cron, Ref, Timezone, NextRunAt string
+	Enabled                                                       bool
+}
+type DeploymentView struct{ ID, RunID, ProjectName, Environment, Status, Dot, UpdatedAt string }
+type WebhookView struct {
+	ID, ProjectName, Name, Provider, URL string
+	Enabled                              bool
 }
 
 type Renderer struct {

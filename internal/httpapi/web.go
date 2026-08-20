@@ -185,6 +185,10 @@ func (a *API) handleCreateProjectWeb(writer http.ResponseWriter, request *http.R
 }
 
 func (a *API) renderAppSection(writer http.ResponseWriter, request *http.Request, section, message string, status int) {
+	a.renderAppSectionState(writer, request, section, message, "", status)
+}
+
+func (a *API) renderAppSectionState(writer http.ResponseWriter, request *http.Request, section, message, notice string, status int) {
 	principal := request.Context().Value(principalContextKey{}).(auth.Principal)
 	session, err := a.auth.CurrentSession(request)
 	if err != nil {
@@ -213,9 +217,14 @@ func (a *API) renderAppSection(writer http.ResponseWriter, request *http.Request
 		Projects:    items,
 		Candidates:  candidates,
 		Error:       message,
+		Notice:      notice,
 	}
 	if err := a.populateExecutionPage(request.Context(), &data, ""); err != nil {
 		http.Error(writer, "failed to load execution state", http.StatusInternalServerError)
+		return
+	}
+	if err := a.populateConfigurationPage(request.Context(), &data); err != nil {
+		http.Error(writer, "failed to load configuration state", http.StatusInternalServerError)
 		return
 	}
 	if isHTMX(request) && status >= 400 {

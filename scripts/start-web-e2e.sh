@@ -29,6 +29,10 @@ jobs:
     steps:
       - name: Test
         run: printf 'tests passed\n'
+      - name: Secret mask
+        env:
+          TOKEN: "${{ secrets.DEPLOY_TOKEN }}"
+        run: printf '%s\n' "$TOKEN"
 YAML
 cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
 stages: [test]
@@ -41,7 +45,6 @@ YAML
 cd "$repo_root"
 go build -o "$binary" ./cmd
 exec "$binary" --workdir "$project_root" serve \
-  --listen "127.0.0.1:$port" \
-  --state-dir "$state_dir" \
-  --static-dir "$repo_root/site" \
-  --projects-root "$project_root"
+	--listen "127.0.0.1:$port" \
+	--state-dir "$state_dir" \
+	--projects-root "$project_root"

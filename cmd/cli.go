@@ -306,8 +306,7 @@ func commands() []*cli.Command {
 				},
 				&cli.StringFlag{
 					Name:    "static-dir",
-					Usage:   "Public static site directory",
-					Value:   "site",
+					Usage:   "Optional public site override (the landing page is embedded by default)",
 					EnvVars: []string{"GIT_CI_STATIC_DIR"},
 				},
 				&cli.StringSliceFlag{
