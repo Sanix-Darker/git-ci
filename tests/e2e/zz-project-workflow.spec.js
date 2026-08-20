@@ -51,6 +51,13 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(matrixGraph).toContainText("IF matrix.os != 'blocked'");
   await expect(matrix).toContainText("LOCK preview-${{ github.ref }} / CANCEL OLD");
 
+  const runtime = page.locator("details.workflow-detail").filter({ hasText: "Runtime Topology" });
+  await runtime.locator("summary").click();
+  const runtimeGraph = runtime.getByLabel("Pipeline dependency graph");
+  await expect(runtimeGraph).toContainText("CONTAINER alpine:3.20");
+  await expect(runtimeGraph).toContainText("SERVICE redis = redis:7-alpine");
+  await expect(runtimeGraph).toContainText("01 NODES / 00 EDGES");
+
   const manual = page.locator("details.workflow-detail").filter({ hasText: "Failure CI" });
   await manual.locator("summary").click();
   await expect(pipeline).not.toHaveAttribute("open", "");

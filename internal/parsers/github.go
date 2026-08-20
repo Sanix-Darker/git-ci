@@ -248,6 +248,11 @@ func (p *GithubParser) convertJob(jobID string, ghJob *GithubJob, globalDefaults
 
 	// Determine default shell and working directory
 	defaultShell := "bash"
+	if job.Container != nil {
+		// GitHub runs container jobs with sh unless the workflow explicitly
+		// selects another shell.
+		defaultShell = "sh"
+	}
 	defaultWorkDir := ""
 
 	if globalDefaults != nil && globalDefaults.Run != nil {
@@ -503,6 +508,13 @@ func (p *GithubParser) parseContainer(container interface{}) (*types.Container, 
 				if str, ok := val.(string); ok {
 					c.Env[k] = str
 				}
+			}
+		}
+
+		if credentials, ok := v["credentials"].(map[string]interface{}); ok {
+			c.Credentials = make(map[string]string, len(credentials))
+			for key, value := range credentials {
+				c.Credentials[key] = fmt.Sprintf("%v", value)
 			}
 		}
 

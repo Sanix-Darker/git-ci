@@ -861,6 +861,22 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 		jobCtx, jobCancel = context.WithTimeout(ctx, time.Duration(item.Job.TimeoutMinutes)*time.Minute)
 	}
 	defer jobCancel()
+	var runtime *dockerJobSession
+	if semantics != nil && (semantics.Container != nil || len(semantics.Services) > 0) {
+		var runtimeErr error
+		runtime, runtimeErr = newDockerJobSession(jobCtx, dockerJobSessionConfig{
+			RunID: run.ID, JobID: item.Job.ID, Workspace: workspacePath,
+			Container: semantics.Container, Services: semantics.Services, Secrets: secretValues,
+		})
+		if runtimeErr != nil {
+			return m.failJobSetup(ctx, item, runtimeErr)
+		}
+		defer func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			_ = runtime.Close(cleanupCtx)
+		}()
+	}
 	jobFailed := false
 	stepStatuses := make(map[string]store.Status, len(item.Steps))
 	for index, step := range item.Steps {
@@ -900,7 +916,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 		if _, err := m.store.TransitionStep(ctx, step.ID, store.StatusRunning); err != nil {
 			return "", fmt.Errorf("execution: start step: %w", err)
 		}
-		err = m.executeStep(jobCtx, run, item.Job, step, workspacePath, secretValues)
+		err = m.executeStepInRuntime(jobCtx, run, item.Job, step, workspacePath, secretValues, runtime, semantics)
 		if err == nil {
 			if _, transitionErr := m.store.TransitionStep(ctx, step.ID, store.StatusSucceeded); transitionErr != nil {
 				return "", transitionErr
@@ -961,6 +977,10 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 }
 
 func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job, step store.Step, workspacePath string, secretValues map[string]string) error {
+	return m.executeStepInRuntime(ctx, run, job, step, workspacePath, secretValues, nil, nil)
+}
+
+func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job store.Job, step store.Step, workspacePath string, secretValues map[string]string, runtime *dockerJobSession, semantics *frozenJobSemantics) error {
 	if step.Action != nil {
 		handled, err := m.executeBuiltinAction(ctx, run, job, step, workspacePath)
 		if handled {
@@ -988,15 +1008,39 @@ func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job,
 	defer close(cancelPollingDone)
 
 	commandText := expandSecrets(*step.Command, secretValues)
+	if runtime != nil {
+		commandText = runtime.resolveServiceExpressions(commandText)
+	}
 	shell, shellArgs := shellCommand(pointerValue(step.Shell), commandText)
+	projectDirectory := workspacePath
+	if runtime != nil && runtime.HasJobContainer() {
+		projectDirectory = "/workspace"
+	}
+	baseEnvironment := map[string]string(nil)
+	if semantics != nil && semantics.Container != nil {
+		baseEnvironment = semantics.Container.Env
+	}
+	environment := mergedEnvironment(secretValues, run.Environment, job.Environment, baseEnvironment, step.Environment, map[string]string{
+		"CI":               "true",
+		"GCI_RUN_ID":       run.ID,
+		"GCI_JOB_ID":       job.ID,
+		"GCI_PROJECT_DIR":  projectDirectory,
+		"GITHUB_WORKSPACE": projectDirectory,
+		"CI_PROJECT_DIR":   projectDirectory,
+	})
+	if runtime != nil {
+		environment = runtime.resolveEnvironment(environment)
+	}
+	if runtime != nil && runtime.HasJobContainer() {
+		containerDirectory, err := runtime.ContainerWorkingDirectory(directory)
+		if err != nil {
+			return err
+		}
+		return m.executeContainerCommand(stepCtx, step.ID, runtime, containerDirectory, shell, shellArgs, environment, secretValues)
+	}
 	command := exec.CommandContext(stepCtx, shell, shellArgs...)
 	command.Dir = directory
-	command.Env = mergedEnvironment(secretValues, run.Environment, job.Environment, step.Environment, map[string]string{
-		"CI":              "true",
-		"GCI_RUN_ID":      run.ID,
-		"GCI_JOB_ID":      job.ID,
-		"GCI_PROJECT_DIR": workspacePath,
-	})
+	command.Env = environment
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return err
@@ -1031,6 +1075,57 @@ func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job,
 		}
 	}
 	return commandErr
+}
+
+func (m *Manager) executeContainerCommand(ctx context.Context, stepID string, runtime *dockerJobSession, directory, shell string, shellArgs, environment []string, secretValues map[string]string) error {
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+	result := make(chan error, 1)
+	go func() {
+		err := runtime.Exec(ctx, dockerExecRequest{WorkingDirectory: directory, Environment: environment, Command: append([]string{shell}, shellArgs...)}, stdoutWriter, stderrWriter)
+		_ = stdoutWriter.Close()
+		_ = stderrWriter.Close()
+		result <- err
+	}()
+	var wait sync.WaitGroup
+	errorsFound := make(chan error, 2)
+	for stream, reader := range map[store.LogStream]io.Reader{store.LogStreamStdout: stdoutReader, store.LogStreamStderr: stderrReader} {
+		wait.Add(1)
+		go func(stream store.LogStream, reader io.Reader) {
+			defer wait.Done()
+			if err := m.captureLines(ctx, stepID, stream, reader, secretValues); err != nil {
+				errorsFound <- err
+			}
+		}(stream, reader)
+	}
+	wait.Wait()
+	commandErr := <-result
+	close(errorsFound)
+	for captureErr := range errorsFound {
+		if commandErr == nil {
+			commandErr = captureErr
+		}
+	}
+	return commandErr
+}
+
+func (m *Manager) failJobSetup(ctx context.Context, item store.JobGraph, setupErr error) (store.Status, error) {
+	if len(item.Steps) > 0 {
+		first := item.Steps[0]
+		if err := m.appendSystem(ctx, first.ID, "job runtime setup failed: "+setupErr.Error()); err != nil {
+			return "", err
+		}
+		if _, err := m.store.TransitionStep(ctx, first.ID, store.StatusFailed); err != nil {
+			return "", err
+		}
+		if err := m.skipSteps(ctx, item.Steps[1:]); err != nil {
+			return "", err
+		}
+	}
+	if _, err := m.store.TransitionJob(ctx, item.Job.ID, store.StatusFailed); err != nil {
+		return "", err
+	}
+	return store.StatusFailed, nil
 }
 
 func (m *Manager) captureLines(ctx context.Context, stepID string, stream store.LogStream, reader io.Reader, secretValues map[string]string) error {
@@ -1167,6 +1262,8 @@ type frozenJobSemantics struct {
 	Interruptible bool                                 `json:"interruptible"`
 	FailFast      bool                                 `json:"failFast"`
 	MaxParallel   int                                  `json:"maxParallel"`
+	Container     *types.Container                     `json:"container"`
+	Services      map[string]*types.Service            `json:"services"`
 	Artifacts     *types.ArtifactConfig                `json:"artifacts"`
 	Cache         *types.CacheConfig                   `json:"cache"`
 }
