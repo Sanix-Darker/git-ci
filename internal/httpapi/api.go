@@ -298,12 +298,18 @@ func (a *API) handleLogout(writer http.ResponseWriter, request *http.Request) {
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-func (a *API) handleProjectCandidates(writer http.ResponseWriter, _ *http.Request) {
+func (a *API) handleProjectCandidates(writer http.ResponseWriter, request *http.Request) {
 	candidates, err := a.projects.Discover()
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "discovery_failed", "failed to discover projects")
 		return
 	}
+	items, err := a.store.ListProjects(request.Context())
+	if err != nil {
+		writeError(writer, http.StatusInternalServerError, "list_failed", "failed to list projects")
+		return
+	}
+	candidates = unregisteredProjectCandidates(items, candidates)
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"items": candidates,
 		"count": len(candidates),

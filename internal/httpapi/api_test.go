@@ -153,6 +153,16 @@ func TestDiscoveryAndRouteSeparation(t *testing.T) {
 	if candidates.Code != http.StatusOK || !strings.Contains(candidates.Body.String(), fixture.projectPath) {
 		t.Fatalf("candidates status = %d, body=%s", candidates.Code, candidates.Body.String())
 	}
+	created := fixture.request(t, http.MethodPost, "/api/v1/projects", map[string]any{
+		"slug": "registered-candidate", "path": fixture.projectPath,
+	}, fixture.token, nil, "", nil)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body=%s", created.Code, created.Body.String())
+	}
+	candidates = fixture.request(t, http.MethodGet, "/api/v1/project-candidates", nil, fixture.token, nil, "", nil)
+	if candidates.Code != http.StatusOK || strings.Contains(candidates.Body.String(), fixture.projectPath) {
+		t.Fatalf("registered candidate status = %d, body=%s", candidates.Code, candidates.Body.String())
+	}
 
 	home := fixture.request(t, http.MethodGet, "/", nil, "", nil, "", nil)
 	if home.Code != http.StatusOK || !strings.Contains(home.Body.String(), "public-home") {
