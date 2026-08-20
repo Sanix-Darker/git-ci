@@ -14,7 +14,10 @@ import (
 	"github.com/sanix-darker/git-ci/internal/auth"
 	"github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/projects"
+	"github.com/sanix-darker/git-ci/internal/scheduler"
+	"github.com/sanix-darker/git-ci/internal/secrets"
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/webhooks"
 )
 
 type apiFixture struct {
@@ -195,13 +198,27 @@ func newAPIFixture(t *testing.T, maxBodyBytes int64) *apiFixture {
 	if err != nil {
 		t.Fatalf("new auth manager: %v", err)
 	}
-	executionManager, err := execution.NewManager(database)
+	secretManager, err := secrets.NewManager(database, filepath.Join(base, "secret.key"))
+	if err != nil {
+		t.Fatalf("new secret manager: %v", err)
+	}
+	executionManager, err := execution.NewManager(database, execution.WithSecretResolver(secretManager))
 	if err != nil {
 		t.Fatalf("new execution manager: %v", err)
+	}
+	scheduleManager, err := scheduler.NewManager(database, executionManager)
+	if err != nil {
+		t.Fatalf("new scheduler manager: %v", err)
+	}
+	webhookManager, err := webhooks.NewManager(database, executionManager)
+	if err != nil {
+		t.Fatalf("new webhook manager: %v", err)
 	}
 	handler, err := New(Config{
 		Auth: manager, Store: database, Projects: registry, StaticDir: staticDir,
 		Version: "test", MaxBodyBytes: maxBodyBytes, Execution: executionManager,
+		Secrets: secretManager, Scheduler: scheduleManager,
+		Webhooks: webhookManager,
 	})
 	if err != nil {
 		t.Fatalf("new API: %v", err)

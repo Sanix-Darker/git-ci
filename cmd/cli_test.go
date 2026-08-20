@@ -154,6 +154,10 @@ func TestServeCommandUsesSafeDefaults(t *testing.T) {
 	if !ok || stateDir.Value != ".gci-service" {
 		t.Fatalf("state-dir default = %#v", flags["state-dir"])
 	}
+	staticDir, ok := flags["static-dir"].(*cli.StringFlag)
+	if !ok || staticDir.Value != "" {
+		t.Fatalf("static-dir default = %#v, want embedded site", flags["static-dir"])
+	}
 	sessionTTL, ok := flags["session-ttl"].(*cli.DurationFlag)
 	if !ok || sessionTTL.Value != 8*time.Hour {
 		t.Fatalf("session-ttl default = %#v", flags["session-ttl"])

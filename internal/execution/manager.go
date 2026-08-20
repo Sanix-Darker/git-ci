@@ -26,21 +26,38 @@ const defaultPollInterval = 750 * time.Millisecond
 // HTTP requests.
 type Manager struct {
 	store        *store.Store
+	secrets      SecretResolver
 	workerID     string
 	pollInterval time.Duration
 	wake         chan struct{}
 }
 
-func NewManager(database *store.Store) (*Manager, error) {
+type SecretResolver interface {
+	ResolveProject(context.Context, string) (map[string]string, error)
+}
+
+type Option func(*Manager)
+
+func WithSecretResolver(resolver SecretResolver) Option {
+	return func(manager *Manager) { manager.secrets = resolver }
+}
+
+func NewManager(database *store.Store, options ...Option) (*Manager, error) {
 	if database == nil {
 		return nil, errors.New("execution: store is required")
 	}
-	return &Manager{
+	manager := &Manager{
 		store:        database,
 		workerID:     fmt.Sprintf("local-%d", os.Getpid()),
 		pollInterval: defaultPollInterval,
 		wake:         make(chan struct{}, 1),
-	}, nil
+	}
+	for _, option := range options {
+		if option != nil {
+			option(manager)
+		}
+	}
+	return manager, nil
 }
 
 // SyncProject discovers provider files beneath one registered project and
@@ -85,6 +102,10 @@ func (m *Manager) SyncProject(ctx context.Context, projectID string) ([]store.Wo
 // EnqueueWorkflow creates a complete immutable run graph from the currently
 // active stored workflow definition.
 func (m *Manager) EnqueueWorkflow(ctx context.Context, workflowID, ref, commitSHA string) (store.Run, error) {
+	return m.EnqueueTriggered(ctx, workflowID, ref, commitSHA, "manual")
+}
+
+func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitSHA, trigger string) (store.Run, error) {
 	workflow, err := m.store.GetWorkflow(ctx, workflowID)
 	if err != nil {
 		return store.Run{}, err
@@ -149,7 +170,7 @@ func (m *Manager) EnqueueWorkflow(ctx context.Context, workflowID, ref, commitSH
 	run, err := m.store.EnqueueRun(ctx, store.EnqueueRunParams{
 		ProjectID:   project.ID,
 		WorkflowID:  workflow.ID,
-		TriggerType: "manual",
+		TriggerType: strings.TrimSpace(trigger),
 		Ref:         strings.TrimSpace(ref),
 		CommitSHA:   strings.TrimSpace(commitSHA),
 		SourcePath:  *project.CanonicalPath,
@@ -233,6 +254,19 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
 	}
 	statuses := make(map[string]store.Status, len(graph.Jobs))
 	allowedFailure := make(map[string]bool, len(graph.Jobs))
+	secretValues := map[string]string{}
+	if m.secrets != nil {
+		secretValues, err = m.secrets.ResolveProject(ctx, run.ProjectID)
+		if err != nil {
+			for _, item := range graph.Jobs {
+				if skipErr := m.skipJob(ctx, item); skipErr != nil {
+					return skipErr
+				}
+			}
+			_, transitionErr := m.store.TransitionRun(ctx, run.ID, store.StatusFailed)
+			return transitionErr
+		}
+	}
 	for _, item := range graph.Jobs {
 		key := pointerValue(item.Job.Key)
 		dependencies := decodeStringList(item.Job.DependencyKeys)
@@ -255,7 +289,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
 			_, err = m.store.TransitionRun(ctx, run.ID, store.StatusCancelled)
 			return err
 		}
-		status, err := m.executeJob(ctx, graph.Run, item)
+		status, err := m.executeJob(ctx, graph.Run, item, secretValues)
 		if err != nil {
 			return err
 		}
@@ -283,7 +317,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
 	return nil
 }
 
-func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph) (store.Status, error) {
+func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph, secretValues map[string]string) (store.Status, error) {
 	if _, err := m.store.TransitionJob(ctx, item.Job.ID, store.StatusRunning); err != nil {
 		return "", fmt.Errorf("execution: start job: %w", err)
 	}
@@ -314,7 +348,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 		if _, err := m.store.TransitionStep(ctx, step.ID, store.StatusRunning); err != nil {
 			return "", fmt.Errorf("execution: start step: %w", err)
 		}
-		err = m.executeStep(jobCtx, run, item.Job, step)
+		err = m.executeStep(jobCtx, run, item.Job, step, secretValues)
 		if err == nil {
 			if _, transitionErr := m.store.TransitionStep(ctx, step.ID, store.StatusSucceeded); transitionErr != nil {
 				return "", transitionErr
@@ -360,7 +394,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	return status, nil
 }
 
-func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job, step store.Step) error {
+func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job, step store.Step, secretValues map[string]string) error {
 	if step.Action != nil {
 		if strings.HasPrefix(*step.Action, "actions/checkout@") {
 			return m.appendSystem(ctx, step.ID, "using registered checkout "+run.SourcePath)
@@ -386,10 +420,11 @@ func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job,
 	go m.pollCancellation(stepCtx, run.ID, cancel, cancelPollingDone)
 	defer close(cancelPollingDone)
 
-	shell, shellArgs := shellCommand(pointerValue(step.Shell), *step.Command)
+	commandText := expandSecrets(*step.Command, secretValues)
+	shell, shellArgs := shellCommand(pointerValue(step.Shell), commandText)
 	command := exec.CommandContext(stepCtx, shell, shellArgs...)
 	command.Dir = directory
-	command.Env = mergedEnvironment(run.Environment, job.Environment, step.Environment, map[string]string{
+	command.Env = mergedEnvironment(secretValues, run.Environment, job.Environment, step.Environment, map[string]string{
 		"CI":              "true",
 		"GCI_RUN_ID":      run.ID,
 		"GCI_JOB_ID":      job.ID,
@@ -415,13 +450,13 @@ func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job,
 		wait.Add(1)
 		go func(stream store.LogStream, reader io.Reader) {
 			defer wait.Done()
-			if err := m.captureLines(stepCtx, step.ID, stream, reader); err != nil {
+			if err := m.captureLines(stepCtx, step.ID, stream, reader, secretValues); err != nil {
 				errorsFound <- err
 			}
 		}(stream, reader)
 	}
-	commandErr := command.Wait()
 	wait.Wait()
+	commandErr := command.Wait()
 	close(errorsFound)
 	for captureErr := range errorsFound {
 		if commandErr == nil {
@@ -431,11 +466,11 @@ func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job,
 	return commandErr
 }
 
-func (m *Manager) captureLines(ctx context.Context, stepID string, stream store.LogStream, reader io.Reader) error {
+func (m *Manager) captureLines(ctx context.Context, stepID string, stream store.LogStream, reader io.Reader, secretValues map[string]string) error {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		if _, err := m.store.AppendLogLine(ctx, store.AppendLogLineParams{StepID: stepID, Stream: stream, Message: scanner.Text()}); err != nil {
+		if _, err := m.store.AppendLogLine(ctx, store.AppendLogLineParams{StepID: stepID, Stream: stream, Message: redactSecrets(scanner.Text(), secretValues)}); err != nil {
 			return err
 		}
 	}
@@ -567,7 +602,7 @@ func shellCommand(shell, command string) (string, []string) {
 	}
 }
 
-func mergedEnvironment(values ...any) []string {
+func mergedEnvironment(secretValues map[string]string, values ...any) []string {
 	environment := make(map[string]string)
 	for _, item := range os.Environ() {
 		key, value, found := strings.Cut(item, "=")
@@ -590,6 +625,9 @@ func mergedEnvironment(values ...any) []string {
 			}
 		}
 	}
+	for key, value := range environment {
+		environment[key] = expandSecrets(value, secretValues)
+	}
 	keys := make([]string, 0, len(environment))
 	for key := range environment {
 		keys = append(keys, key)
@@ -600,4 +638,26 @@ func mergedEnvironment(values ...any) []string {
 		result = append(result, key+"="+environment[key])
 	}
 	return result
+}
+
+func expandSecrets(value string, secretValues map[string]string) string {
+	for name, secret := range secretValues {
+		value = strings.ReplaceAll(value, "${{ secrets."+name+" }}", secret)
+		value = strings.ReplaceAll(value, "${{secrets."+name+"}}", secret)
+	}
+	return value
+}
+
+func redactSecrets(value string, secretValues map[string]string) string {
+	secrets := make([]string, 0, len(secretValues))
+	for _, secret := range secretValues {
+		if secret != "" {
+			secrets = append(secrets, secret)
+		}
+	}
+	sort.Slice(secrets, func(i, j int) bool { return len(secrets[i]) > len(secrets[j]) })
+	for _, secret := range secrets {
+		value = strings.ReplaceAll(value, secret, "***")
+	}
+	return value
 }
