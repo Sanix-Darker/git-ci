@@ -372,10 +372,22 @@
 .rollback-control button:hover { transform: translateX(3px); }
 .rollback-unavailable { margin: 0; border-top: 1px solid #202020; padding: .5rem 1.25rem; color: #565656; font-size: .5rem; font-weight: 900; }
 .play-control { display: inline-grid; flex: 0 0 auto; }
-.play-control button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #b8b8b8; border-radius: 0; padding: 0; background: #080808; color: #fff; cursor: pointer; font: 900 .72rem/1 var(--font-mono); transition: color 100ms steps(2, end), background 100ms steps(2, end), transform 100ms steps(2, end); }
-.play-control button:hover { background: #fff; color: #080808; transform: translateX(3px); }
-.play-control button:focus-visible { outline: 2px solid #2d72ff; outline-offset: 2px; }
+.play-control button, .replay-confirm > summary { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #b8b8b8; border-radius: 0; padding: 0; background: #080808; color: #fff; cursor: pointer; font: 900 .72rem/1 var(--font-mono); list-style: none; transition: color 100ms steps(2, end), background 100ms steps(2, end), transform 100ms steps(2, end); }
+.replay-confirm > summary::-webkit-details-marker { display: none; }
+.play-control button:hover, .replay-confirm > summary:hover { background: #fff; color: #080808; transform: translateX(3px); }
+.play-control button:focus-visible, .replay-confirm > summary:focus-visible { outline: 2px solid #2d72ff; outline-offset: 2px; }
 .play-control.is-disabled button { border-color: #272727; color: #484848; cursor: not-allowed; }
+.replay-atom { position: relative; display: inline-flex; align-items: center; gap: .45rem; }
+.replay-atom > em { max-width: 92px; color: #565656; font-size: .42rem; font-style: normal; font-weight: 900; line-height: 1.25; }
+.replay-confirm { position: relative; }
+.replay-confirm-panel { position: absolute; z-index: 15; top: calc(100% + 8px); right: 0; display: grid; width: 290px; gap: .65rem; border: 1px solid #b8b8b8; padding: .85rem; background: #080808; box-shadow: 6px 6px 0 #202020; color: #d8d8d8; }
+.replay-confirm-panel p { margin: 0; color: #727272; font-size: .5rem; font-weight: 900; line-height: 1.5; }
+.replay-confirm-submit button { width: 100%; min-height: 36px; border: 1px solid #d8d8d8; border-radius: 0; background: #d8d8d8; color: #080808; cursor: pointer; font-size: .54rem; font-weight: 900; }
+.run-provenance { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 1rem; border-bottom: 1px solid #383838; padding: .85rem 1.5rem; background: #0d0d0d; }
+.run-provenance p { margin: 0 0 .2rem; }
+.run-provenance strong { font-family: var(--font-display); font-size: 1rem; }
+.run-provenance a { color: #fff; font-size: .56rem; font-weight: 900; text-decoration: none; }
+.run-provenance code, .run-provenance small { color: #727272; font: 900 .5rem/1 var(--font-mono); }
 .run-node header > span, .step-actions, .job-meta { display: flex; align-items: center; gap: .55rem; }
 .run-node header { justify-content: space-between; }
 .job-meta { justify-content: flex-end; }
@@ -388,8 +400,12 @@
   .approval-card dl div + div { border-top: 1px solid #2b2b2b; border-left: 0; }
   .deployment-table .data-row { width: 900px; }
   .rollback-control { grid-template-columns: 1fr; width: 900px; }
+  .play-control button, .replay-confirm > summary { width: 44px; height: 44px; }
+  .replay-atom > em { display: none; }
+  .replay-confirm-panel { position: fixed; top: auto; right: 1rem; bottom: 1rem; left: 1rem; width: auto; }
+  .run-provenance { grid-template-columns: 1fr; align-items: start; padding: 1rem; }
 }
-@media (prefers-reduced-motion: reduce) { .approval-card, .approval-card:hover, .rollback-control button, .rollback-control button:hover, .play-control button, .play-control button:hover { transition: none !important; transform: none !important; } }
+@media (prefers-reduced-motion: reduce) { .approval-card, .approval-card:hover, .rollback-control button, .rollback-control button:hover, .play-control button, .play-control button:hover, .replay-confirm > summary, .replay-confirm > summary:hover { transition: none !important; transform: none !important; } }
 
 /* Operator motion, telemetry, and loading atoms */
 .workspace { position: relative; }

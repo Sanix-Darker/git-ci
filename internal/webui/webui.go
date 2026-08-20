@@ -68,7 +68,12 @@ type RunDetailView struct {
 	Run       RunView
 	Jobs      []RunJobView
 	GraphRows []RunGraphRowView
+	Lineage   *RunLineageView
 	Terminal  bool
+}
+
+type RunLineageView struct {
+	Kind, SourceRunID, SourceJobID, SourceStepID, Actor, CreatedAt string
 }
 
 type RunJobView struct {
@@ -86,8 +91,9 @@ type RunStepView struct {
 }
 
 type ReplayControlView struct {
-	Action, CSRFToken, IdempotencyKey, SourceRunID, Label, Hint string
-	Enabled                                                     bool
+	Action, CSRFToken, IdempotencyKey, SourceRunID, SourceJobID string
+	Label, Hint, Mode, Consequence, CommitSHA                   string
+	Enabled, RequiresConfirmation                               bool
 }
 
 type LogView struct {

@@ -23,7 +23,7 @@ func TestManagerReplaysJobClosureAndSingleStepInCleanPinnedRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	testJob := jobGraph(t, sourceGraph, "test")
-	jobReplay, err := manager.EnqueueRunReplay(ctx, store.EnqueueReplayParams{Kind: store.RunLineageJobReplay, SourceJobID: testJob.Job.ID, Actor: "operator", IdempotencyKey: "manager-job"})
+	jobReplay, err := manager.EnqueueRunReplay(ctx, store.EnqueueReplayParams{Kind: store.RunLineageJobReplay, SourceRunID: source.ID, SourceJobID: testJob.Job.ID, Actor: "operator", IdempotencyKey: "manager-job", ConfirmSuccessful: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestManagerReplaysJobClosureAndSingleStepInCleanPinnedRuns(t *testing.T) {
 		t.Fatalf("job replay = %#v", jobGraphReplay)
 	}
 
-	stepReplay, err := manager.EnqueueRunReplay(ctx, store.EnqueueReplayParams{Kind: store.RunLineageStepReplay, SourceStepID: testJob.Steps[0].ID, Actor: "operator", IdempotencyKey: "manager-step"})
+	stepReplay, err := manager.EnqueueRunReplay(ctx, store.EnqueueReplayParams{Kind: store.RunLineageStepReplay, SourceRunID: source.ID, SourceJobID: testJob.Job.ID, SourceStepID: testJob.Steps[0].ID, Actor: "operator", IdempotencyKey: "manager-step", ConfirmSuccessful: true})
 	if err != nil {
 		t.Fatal(err)
 	}

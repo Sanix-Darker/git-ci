@@ -127,10 +127,21 @@
 {{end}}
 
 {{define "play_control"}}
-{{if .Enabled}}<form class="play-control" method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
-  <input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="idempotencyKey" value="{{.IdempotencyKey}}"><input type="hidden" name="sourceRunId" value="{{.SourceRunID}}">
-  <button type="submit" aria-label="{{.Label}}" title="{{upper .Hint}}"><span>&gt;</span></button>
-</form>{{else}}<span class="play-control is-disabled"><button type="button" aria-label="{{.Label}}" title="{{upper .Hint}}" disabled><span>&gt;</span></button></span>{{end}}
+{{if .Enabled}}<span class="replay-atom">
+  {{if .RequiresConfirmation}}<details class="replay-confirm">
+    <summary role="button" aria-label="{{.Label}}" title="{{upper .Hint}}"><span>&gt;</span></summary>
+    <div class="replay-confirm-panel"><strong>{{.Label}}?</strong><p>{{.Mode}} / COMMIT {{short .CommitSHA}} / {{.Consequence}}</p>
+      <form class="replay-submit replay-confirm-submit" method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+        <input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="idempotencyKey" value="{{.IdempotencyKey}}"><input type="hidden" name="sourceRunId" value="{{.SourceRunID}}"><input type="hidden" name="sourceJobId" value="{{.SourceJobID}}"><input type="hidden" name="confirmSuccessful" value="true">
+        <button type="submit" aria-label="CONFIRM {{.Label}}">CONFIRM <span>&gt;</span></button>
+      </form>
+    </div>
+  </details>{{else}}<form class="play-control replay-submit" method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="idempotencyKey" value="{{.IdempotencyKey}}"><input type="hidden" name="sourceRunId" value="{{.SourceRunID}}"><input type="hidden" name="sourceJobId" value="{{.SourceJobID}}">
+    <button type="submit" aria-label="{{.Label}}" title="{{upper .Hint}}"><span>&gt;</span></button>
+  </form>{{end}}
+  <em>{{.Mode}}</em>
+</span>{{else}}<span class="play-control is-disabled"><button type="button" aria-label="{{.Label}}" title="{{upper .Hint}}" disabled><span>&gt;</span></button></span>{{end}}
 {{end}}
 
 {{define "deployments_panel"}}
@@ -388,6 +399,7 @@
     <div class="run-detail-state"><span><i class="dot {{.Run.Dot}}"></i>{{.Run.Status}}</span>{{if .Run.CanCancel}}<form method="post" action="/app/runs/{{.Run.ID}}/cancel" hx-post="/app/runs/{{.Run.ID}}/cancel" hx-target="#run-detail" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">CANCEL</button></form>{{end}}</div>
   </header>
   <dl class="run-facts"><div><dt>PROJECT</dt><dd>{{.Run.ProjectName}}</dd></div><div><dt>REF</dt><dd>{{.Run.Ref}}</dd></div><div><dt>COMMIT</dt><dd>{{if .Run.CommitSHA}}{{short .Run.CommitSHA}}{{else}}LOCAL{{end}}</dd></div><div><dt>CREATED</dt><dd>{{.Run.CreatedAt}}</dd></div></dl>
+  {{with .Lineage}}<aside class="run-provenance" aria-label="Run provenance"><div><p class="kicker">PROVENANCE</p><strong>{{.Kind}}</strong></div><a href="/app/runs/{{.SourceRunID}}">SOURCE RUN / {{short .SourceRunID}}</a><code>{{if .SourceStepID}}STEP {{short .SourceStepID}}{{else if .SourceJobID}}JOB {{short .SourceJobID}}{{end}}</code><small>{{.Actor}} / {{.CreatedAt}}</small></aside>{{end}}
   <div class="pipeline-graph" aria-label="Pipeline dependency graph">
     {{range .GraphRows}}<section class="pipeline-stage"><header><span>STAGE {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>{{.Status}}</span>{{template "play_control" .Replay}}</header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}</div></section>{{end}}
   </div>
