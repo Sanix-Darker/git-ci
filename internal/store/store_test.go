@@ -16,15 +16,16 @@ func TestOpenFreshDatabaseMigratesAndConfiguresSQLite(t *testing.T) {
 	ctx := context.Background()
 
 	requiredTables := map[string]bool{
-		"schema_migrations": false,
-		"projects":          false,
-		"audit_events":      false,
-		"runs":              false,
-		"jobs":              false,
-		"steps":             false,
-		"deliveries":        false,
-		"schedules":         false,
-		"secrets":           false,
+		"schema_migrations":  false,
+		"projects":           false,
+		"audit_events":       false,
+		"runs":               false,
+		"jobs":               false,
+		"steps":              false,
+		"deliveries":         false,
+		"schedules":          false,
+		"secrets":            false,
+		"deployment_targets": false,
 	}
 	rows, err := store.db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table'`)
 	if err != nil {
@@ -81,8 +82,8 @@ func TestOpenFreshDatabaseMigratesAndConfiguresSQLite(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 3 {
-		t.Errorf("migration count = %d, want 3", migrations)
+	if migrations != 4 {
+		t.Errorf("migration count = %d, want 4", migrations)
 	}
 }
 

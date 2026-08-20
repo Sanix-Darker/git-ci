@@ -54,6 +54,7 @@ type JobDefinition struct {
 	Name            string            `json:"name"`
 	Environment     map[string]string `json:"environment"`
 	EnvironmentName string            `json:"environmentName,omitempty"`
+	DeploymentTier  string            `json:"deploymentTier,omitempty"`
 	Needs           []string          `json:"needs"`
 	Requires        []string          `json:"requires"`
 	Stage           string            `json:"stage,omitempty"`
@@ -547,6 +548,7 @@ func normalizeJob(key string, job *types.Job) JobDefinition {
 		Name:            job.Name,
 		Environment:     copyStringMap(job.Environment),
 		EnvironmentName: job.EnvironmentName,
+		DeploymentTier:  job.DeploymentTier,
 		Needs:           sortedUnique(job.Needs),
 		Requires:        sortedUnique(job.Requires),
 		Stage:           job.Stage,

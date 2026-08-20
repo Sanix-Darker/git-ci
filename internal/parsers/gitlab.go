@@ -604,7 +604,7 @@ func (p *GitlabParser) convertJob(
 
 	// Parse environment
 	if glJob.Environment != nil {
-		job.EnvironmentName = p.parseEnvironment(glJob.Environment)
+		job.EnvironmentName, job.DeploymentTier = p.parseEnvironment(glJob.Environment)
 	}
 
 	// Convert scripts to steps
@@ -940,16 +940,18 @@ func (p *GitlabParser) parseCache(cache interface{}) *types.CacheConfig {
 	return nil
 }
 
-func (p *GitlabParser) parseEnvironment(env interface{}) string {
+func (p *GitlabParser) parseEnvironment(env interface{}) (string, string) {
 	switch v := env.(type) {
 	case string:
-		return v
+		return v, ""
 	case map[string]interface{}:
-		if name, ok := v["name"].(string); ok {
-			return name
+		name, _ := v["name"].(string)
+		tier, _ := v["deployment_tier"].(string)
+		if name != "" {
+			return name, tier
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func (p *GitlabParser) parseTrigger(trigger interface{}) *types.TriggerConfig {

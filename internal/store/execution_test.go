@@ -107,8 +107,8 @@ func TestExecutionMigrationPreservesInitialData(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count applied migrations: %v", err)
 	}
-	if migrations != 3 {
-		t.Errorf("migration count = %d, want 3", migrations)
+	if migrations != 4 {
+		t.Errorf("migration count = %d, want 4", migrations)
 	}
 }
 
@@ -214,9 +214,10 @@ func TestEnqueueRunStoresImmutableGraphAndDependencies(t *testing.T) {
 				},
 			},
 			{
-				Key:            "deploy",
-				Name:           "Deploy",
-				DependencyKeys: json.RawMessage(`["build"]`),
+				Key:             "deploy",
+				Name:            "Deploy",
+				EnvironmentName: "production",
+				DependencyKeys:  json.RawMessage(`["build"]`),
 				Steps: []EnqueueStep{
 					{Key: "ship", Name: "Ship", Command: "./deploy"},
 				},
@@ -242,6 +243,26 @@ func TestEnqueueRunStoresImmutableGraphAndDependencies(t *testing.T) {
 	}
 	if !sameJSON(graph.Jobs[0].Steps[1].Environment, json.RawMessage(`{"CGO_ENABLED":"0"}`)) {
 		t.Fatalf("step environment = %s", graph.Jobs[0].Steps[1].Environment)
+	}
+	targets, err := store.ListDeploymentTargets(ctx, run.ID)
+	if err != nil {
+		t.Fatalf("list deployment targets: %v", err)
+	}
+	if len(targets) != 1 || targets[0].JobKey != "deploy" || targets[0].Environment != "production" || targets[0].DeploymentTier != DeploymentTierOther {
+		t.Fatalf("deployment targets = %#v", targets)
+	}
+	target, err := store.GetDeploymentTargetForJob(ctx, targets[0].JobID)
+	if err != nil || target != targets[0] {
+		t.Fatalf("get deployment target = %#v, %v", target, err)
+	}
+	if _, err := store.db.ExecContext(ctx, `UPDATE deployment_targets SET environment = ? WHERE job_id = ?`, "staging", target.JobID); err == nil {
+		t.Fatal("deployment target snapshot update unexpectedly succeeded")
+	}
+	if _, err := store.db.ExecContext(ctx, `
+		INSERT INTO deployment_targets (job_id, run_id, job_key, environment, deployment_tier, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, graph.Jobs[0].Job.ID, run.ID, "deploy", "production", DeploymentTierProduction, nowUTC().UnixMilli()); err == nil {
+		t.Fatal("deployment target with mismatched job key unexpectedly succeeded")
 	}
 	if _, err := store.UpsertWorkflow(ctx, UpsertWorkflowParams{
 		ProjectID:  project.ID,

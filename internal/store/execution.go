@@ -202,14 +202,16 @@ type EnqueueRunParams struct {
 // job keys, and Environment is a JSON object. The slice order assigns the
 // durable job position.
 type EnqueueJob struct {
-	Key            string
-	Name           string
-	Runner         string
-	Environment    json.RawMessage
-	DependencyKeys json.RawMessage
-	AllowFailure   bool
-	TimeoutMinutes int
-	Steps          []EnqueueStep
+	Key             string
+	Name            string
+	Runner          string
+	EnvironmentName string
+	DeploymentTier  string
+	Environment     json.RawMessage
+	DependencyKeys  json.RawMessage
+	AllowFailure    bool
+	TimeoutMinutes  int
+	Steps           []EnqueueStep
 }
 
 // EnqueueStep is an immutable step snapshot. Environment is a JSON object.
@@ -592,6 +594,9 @@ func (s *Store) EnqueueRun(ctx context.Context, params EnqueueRunParams) (Run, e
 			now.UnixMilli(),
 		); err != nil {
 			return Run{}, fmt.Errorf("store: insert job snapshot: %w", err)
+		}
+		if err := insertDeploymentTarget(ctx, tx, runID, jobID, job, now); err != nil {
+			return Run{}, err
 		}
 
 		for stepIndex, step := range job.Steps {
@@ -1375,6 +1380,9 @@ func normalizeEnqueueRunParams(params EnqueueRunParams) (EnqueueRunParams, error
 			return EnqueueRunParams{}, err
 		}
 		if job.Runner, err = normalizeOptionalText("run job runner", job.Runner); err != nil {
+			return EnqueueRunParams{}, err
+		}
+		if err := normalizeEnqueueJobDeployment(job); err != nil {
 			return EnqueueRunParams{}, err
 		}
 		if job.Environment, err = normalizeJSONObject("run job environment", job.Environment, false); err != nil {

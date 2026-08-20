@@ -143,7 +143,9 @@ func TestDiscoverNormalizesGitLabWorkflow(t *testing.T) {
 		"    - deploy-runner",
 		"  allow_failure: true",
 		"  timeout: 15 minutes",
-		"  environment: production",
+		"  environment:",
+		"    name: production",
+		"    deployment_tier: production",
 		"  variables:",
 		"    DEPLOY_TARGET: production",
 		"  script:",
@@ -184,6 +186,9 @@ func TestDiscoverNormalizesGitLabWorkflow(t *testing.T) {
 	}
 	if deploy.EnvironmentName != "production" {
 		t.Errorf("deploy EnvironmentName = %q, want production", deploy.EnvironmentName)
+	}
+	if deploy.DeploymentTier != "production" {
+		t.Errorf("deploy DeploymentTier = %q, want production", deploy.DeploymentTier)
 	}
 	if deploy.Environment["DEPLOY_TARGET"] != "production" {
 		t.Errorf("deploy environment = %#v, want DEPLOY_TARGET", deploy.Environment)
