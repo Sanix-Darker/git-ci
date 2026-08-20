@@ -107,8 +107,69 @@ git ci run --docker --memory 2g --cpus 2
 
 ## WEB VIEW DEPLOYMENT
 
-Static site assets are in [`site/`](./site), and deployment examples are in
-[`deploy/`](./deploy) for a stable web deployment setup.
+Static assets and API-driven dashboard are in [`site/`](./site), and deployment examples are in
+[`deploy/`](./deploy) for running `gci serve` on a VPS.
+
+### API surface (dashboard-friendly)
+
+- `GET /api/health` and `GET /api/v1/health` — service health
+- `GET /api/system` and `GET /api/v1/system` — runtime and process metrics
+- `GET /api/discover` and `GET /api/v1/discover` — discover supported CI files in a directory
+- `GET /api/pipelines` and `GET /api/v1/pipelines` — pipeline JSON from current workspace
+- `GET /api/jobs` and `GET /api/v1/jobs` — flattened job metadata from pipeline
+- `POST /api/runs` and `POST /api/v1/runs` — start a run
+- `GET /api/runs` and `GET /api/v1/runs` — list runs (latest runs by start time, logs are not included; use `?limit=` to trim)
+  - optional filters: `status`, `file`, `job`
+- `GET /api/webhooks` and `GET /api/v1/webhooks` — recent webhook events received by the service
+- `POST /api/webhook/github` and `POST /api/v1/webhook/github` — trigger run from GitHub event payload
+- `POST /api/webhook/gitlab` and `POST /api/v1/webhook/gitlab` — trigger run from GitLab event payload
+- `GET /api/runs/{id}` and `GET /api/v1/runs/{id}` — fetch run status
+- `GET /api/runs/{id}/logs` and `GET /api/v1/runs/{id}/logs` — paged log slices with `offset`
+- `GET /api/stack` and `GET /api/v1/stack` — runtime stack snapshot and memory metadata
+- `POST /api/runs/{id}/retry` and `POST /api/v1/runs/{id}/retry` — rerun a previous request
+- `POST /api/runs/{id}/cancel` and `POST /api/v1/runs/{id}/cancel` — cancel an in-flight run
+- `GET /api/features` and `GET /api/v1/features` — list feature contracts for GitHub Actions-style capabilities
+- `GET /api/features/{feature}` and `GET /api/v1/features/{feature}` — per-feature contract details (`workflows`, `secrets`, `cron-runs`, `github-actions`)
+- `POST /api/workflows` and `POST /api/v1/workflows` — dispatch workflow runs
+- `GET /api/workflows` and `GET /api/v1/workflows` — discover workflow catalog
+- `GET/POST /api/secrets` and `GET/POST /api/v1/secrets` — secret primitives (in-memory)
+- `GET/POST/DELETE /api/cron-runs` and `GET/POST/DELETE /api/v1/cron-runs` — cron run primitives (in-memory)
+- `POST /api/cron-runs/{id}/run` and `POST /api/v1/cron-runs/{id}/run` — manually trigger a cron definition
+
+`/api` is kept for backward compatibility; `/api/v1` is the versioned contract used by the dashboard.
+
+### Service storage (serve mode)
+
+The current `/serve` implementation keeps pipeline run metadata in memory only (fast and simplest). That means state is intentionally ephemeral, but still cheap and reliable enough for local VPS use.
+
+If you need persistence later, the least complex upgrades are:
+1. append-only JSONL or YAML files for run history
+2. SQLite (`.db`) for retention, filtering, and cheap durability
+
+Git is generally not a good fit as an application DB here. It is slower for frequent writes, has poor write-concurrency semantics, and stores audit/history metadata you usually do not need for this service.
+
+### VPS recovery runbook
+
+If `gci.sanixdk.xyz` is down:
+
+1. SSH to the host and confirm the service is present and running:
+   - `systemctl is-active git-ci-site`
+   - `journalctl -u git-ci-site -n 80`
+2. Validate local API health:
+   - `curl -fsS http://127.0.0.1:8087/health`
+   - `curl -fsS http://127.0.0.1:8087/api/v1/health`
+3. Validate reverse proxy route (`/` and `/api/v1/*`) reaches local service:
+   - `curl -fsS http://127.0.0.1:8087/api/v1/system`
+4. Reload/restart service if checks fail:
+   - `systemctl restart git-ci-site`
+   - `curl -fsS http://127.0.0.1:8087/api/v1/health`
+5. For Cloudflare `525`:
+   - Confirm HTTPS handshakes for the exact hostname:
+     - `curl -ksI https://gci.sanixdk.xyz/health`
+     - `openssl s_client -connect <origin-ip>:443 -servername gci.sanixdk.xyz </dev/null`
+   - If handshake fails, verify `deploy/Caddyfile.sanixdk-host` is imported and **before** any `sanixdk.xyz` catch-all.
+   - In most deployments, changing the gci block from `tls internal` to `tls` on shared hosts fixes certificate compatibility.
+   - After edits: `caddy validate --config /etc/caddy/Caddyfile && caddy reload --config /etc/caddy/Caddyfile`.
 
 ## CLI REFERENCE
 

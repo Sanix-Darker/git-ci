@@ -1,11 +1,12 @@
-# git-ci.sanixdk.xyz landing page
+# git-ci.sanixdk.xyz dashboard files
 
-Static site contents for `git-ci.sanixdk.xyz` style hosting.
+Dashboard assets for the `gci` VPS service.
 
 Files:
 
-- `index.html` — minimal project page with install commands and links
-- `styles.css` — sparse black-and-white layout used by the landing page
+- `index.html` — dashboard shell, jobs list and run actions
+- `styles.css` — dashboard styling
+- `app.js` — API client for pipelines, jobs, runs, logs, retry, cancel, and metrics
 
 Local preview:
 
@@ -16,12 +17,23 @@ python3 -m http.server 4173
 
 Open `http://127.0.0.1:4173`.
 
-## Deployment
+## Deployment notes
 
-The project now has a deployment scaffold in [`deploy/`](../deploy).
+This directory is also embedded by `deploy/Dockerfile` and served by `gci serve`.
 
-Health check endpoint:
+Health checks and endpoints:
 
+```bash
+GET /api/v1/health -> {"status":"ok"}
+GET /api/v1/discover?workdir=.
+GET /api/v1/runs
+GET /api/v1/runs/{id}/logs?offset=0
+GET /api/v1/webhooks
+GET /api/v1/stack
+POST /api/v1/webhook/github
+POST /api/v1/webhook/gitlab
+POST /api/v1/runs
 ```
-GET /health -> HTTP 202
-```
+
+Webhook history is also visible in the dashboard panel and is useful for replacing GitHub/GitLab
+webhook triggers with a single VPS endpoint.

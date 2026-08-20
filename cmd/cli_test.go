@@ -103,6 +103,83 @@ func TestSetupEnvironment_PopulatesDefaultCIValues(t *testing.T) {
 	}
 }
 
+func TestServeCommand_DefaultValues(t *testing.T) {
+	cmds := commands()
+	var serveCmd *cli.Command
+	for _, command := range cmds {
+		if command.Name == "serve" {
+			serveCmd = command
+			break
+		}
+	}
+	if serveCmd == nil {
+		t.Fatalf("serve command not found")
+	}
+
+	var listenFlag *cli.StringFlag
+	var staticDirFlag *cli.StringFlag
+	var apiPrefixFlag *cli.StringFlag
+	var maxRunsFlag *cli.IntFlag
+	var maxRunLogsFlag *cli.IntFlag
+
+	for _, flag := range serveCmd.Flags {
+		switch f := flag.(type) {
+		case *cli.StringFlag:
+			switch f.GetName() {
+			case "listen":
+				listenFlag = f
+			case "static-dir":
+				staticDirFlag = f
+			case "api-prefix":
+				apiPrefixFlag = f
+			}
+		case *cli.IntFlag:
+			switch f.GetName() {
+			case "listen":
+				listenFlag = f
+			case "static-dir":
+				staticDirFlag = f
+			case "api-prefix":
+				apiPrefixFlag = f
+			}
+			}
+			case *cli.IntFlag:
+			switch f.Name {
+			case "max-runs":
+				maxRunsFlag = f
+			case "max-run-logs":
+				maxRunLogsFlag = f
+			}
+		}
+	}
+
+	if listenFlag == nil || listenFlag.Value != ":8087" {
+		t.Fatalf("unexpected --listen default: %#v", map[string]any{
+			"found": func() bool {
+				return listenFlag != nil
+			}(),
+			"value": func() string {
+				if listenFlag == nil {
+					return ""
+				}
+				return listenFlag.Value
+			}(),
+		})
+	}
+	if staticDirFlag == nil || staticDirFlag.Value != "site" {
+		t.Fatalf("unexpected --static-dir default: %#v", staticDirFlag)
+	}
+	if apiPrefixFlag == nil || apiPrefixFlag.Value != "/api" {
+		t.Fatalf("unexpected --api-prefix default: %#v", apiPrefixFlag)
+	}
+	if maxRunsFlag == nil || maxRunsFlag.Value != 200 {
+		t.Fatalf("unexpected --max-runs default: %#v", maxRunsFlag)
+	}
+	if maxRunLogsFlag == nil || maxRunLogsFlag.Value != 1000 {
+		t.Fatalf("unexpected --max-run-logs default: %#v", maxRunLogsFlag)
+	}
+}
+
 func TestSetupEnvironment_PreservesExistingCIValues(t *testing.T) {
 	originalCI := os.Getenv("CI")
 	originalGitCI := os.Getenv("GIT_CI")

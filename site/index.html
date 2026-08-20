@@ -3,47 +3,429 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Run git-ci pipelines from one VPS-hosted dashboard." />
     <meta name="color-scheme" content="dark" />
-    <meta name="description" content="Run CI workflows locally with git-ci." />
-    <title>git-ci</title>
-    <link rel="stylesheet" href="styles.css?v=2" />
+    <title>git-ci dashboard</title>
+    <link rel="stylesheet" href="styles.css?v=18" />
   </head>
   <body>
-    <main>
-      <header>
-        <p class="mark">git-ci</p>
-        <h1>Run CI before you push.</h1>
-        <p class="intro">A local runner for GitHub Actions and GitLab CI.</p>
-        <nav aria-label="Project links">
-          <a href="https://github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">source</a>
-          <a href="https://pkg.go.dev/github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">docs</a>
+    <main class="layout shell">
+      <header class="hero tile hero--core">
+        <div class="hero__top flex items-center gap-2 justify-between">
+          <p class="brand">git-ci</p>
+          <p class="kicker">single-vps brutalist control plane</p>
+        </div>
+
+        <div class="hero__meta">
+          <h1>Single-vps replacement for hosted CI/CD runners.</h1>
+          <p class="subtitle hero__summary">
+            Trigger jobs, inspect live terminal output, and control workflow lifecycles from one
+            minimal dashboard.
+          </p>
+        </div>
+        <div class="hero__status-strip">
+          <p><strong>API surface:</strong> /api/v1</p>
+          <p><strong>Scope:</strong> pipelines · jobs · webhooks · secrets · cron-runs</p>
+          <p><strong>Mode:</strong> self-hosted</p>
+        </div>
+
+        <div class="status-row status-row--panel" id="serviceStatus">
+          <span class="dot" aria-hidden="true">●</span>
+          <span class="text" id="serviceStatusText">Checking API…</span>
+        </div>
+
+        <div class="links" aria-label="Project links">
+          <a href="https://github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">Repository</a>
+          <a href="/api/v1/health" target="_blank" rel="noreferrer">Raw API health</a>
+          <a href="/api/v1/system" target="_blank" rel="noreferrer">System snapshot</a>
+          <a href="/api/v1/jobs" target="_blank" rel="noreferrer">Jobs endpoint</a>
+          <a href="/api/v1/workflows" target="_blank" rel="noreferrer">Workflows endpoint</a>
+        </div>
+
+        <nav class="jump-links" aria-label="Quick section jumps">
+          <a class="jump-link" href="#pipelinePanel">Pipeline explorer</a>
+          <a class="jump-link" href="#discoverPanel">Discover workflows</a>
+          <a class="jump-link" href="#webhookPanel">Webhook actions</a>
+          <a class="jump-link" href="#jobsPanel">Detected jobs</a>
+          <a class="jump-link" href="#runPanel">Run pipeline</a>
+          <a class="jump-link" href="#githubActionsPanel">Actions catalog</a>
+          <a class="jump-link" href="#actionControlPanel">Actions control plane</a>
+          <a class="jump-link" href="#runsPanel">Live runs</a>
+          <a class="jump-link" href="#terminalPanel">Terminal output</a>
+          <a class="jump-link" href="#systemPanel">System health</a>
         </nav>
       </header>
 
-      <section aria-labelledby="install-title">
-        <h2 id="install-title">Install</h2>
-        <pre><code>git clone https://github.com/sanix-darker/git-ci.git
-cd git-ci && make install</code></pre>
-        <p>Requires Go 1.24 or newer.</p>
+      <section class="metric-grid">
+        <article class="tile metric-card">
+          <p class="metric-label">Service</p>
+          <p class="metric-value" id="kpiServiceState">offline</p>
+          <p class="metric-note" id="kpiServiceMode">connecting</p>
+        </article>
+
+        <article class="tile metric-card">
+          <p class="metric-label">Runs</p>
+          <p class="metric-value" id="kpiRunTotal">0</p>
+          <p class="metric-note"><span id="kpiRunRunning">0</span> running now</p>
+        </article>
+
+        <article class="tile metric-card">
+          <p class="metric-label">Webhook events</p>
+          <p class="metric-value" id="kpiWebhookEvents">0</p>
+          <p class="metric-note">latest snapshot</p>
+        </article>
+
+        <article class="tile metric-card">
+          <p class="metric-label">Cron runs</p>
+          <p class="metric-value" id="kpiCronJobs">0</p>
+          <p class="metric-note">active schedules</p>
+        </article>
       </section>
 
-      <section aria-labelledby="use-title">
-        <h2 id="use-title">Use</h2>
-        <pre><code>gci ls
-gci validate --strict
-gci run --job test --docker</code></pre>
-        <p>List jobs. Validate a workflow. Run one locally.</p>
-      </section>
+      <section class="dashboard-grid">
+        <section class="panel tile panel--wide panel-shell">
+          <div class="panel-head">
+            <h2>Control rail</h2>
+            <p class="meta">Fast switches for high-frequency operations.</p>
+          </div>
+          <p class="resultTitle">Workspace controls</p>
+          <div class="actions actionsShell">
+            <button type="button" id="quickRefreshBtn">Refresh workspace</button>
+            <button type="button" id="quickLoadPipelineBtn">Load pipeline</button>
+            <button type="button" id="quickDiscoverBtn">Discover workflows</button>
+            <button type="button" id="quickJobsBtn">Reload jobs</button>
+            <button type="button" id="quickWebhookBtn">Refresh webhook events</button>
+          </div>
+        </section>
 
-      <section aria-labelledby="works-title">
-        <h2 id="works-title">Works with</h2>
-        <p>GitHub Actions · GitLab CI · Bash · Docker · Podman</p>
-      </section>
+        <section class="panel tile panel--compact" id="pipelinePanel">
+          <div class="panel-head">
+            <h2>Pipeline explorer</h2>
+            <p class="meta">Load workflow graph and metadata fast. Use discovery to keep file selection honest.</p>
+          </div>
 
-      <footer>
-        <a href="/health">health: 202</a>
-        <span>local CI runner</span>
-      </footer>
+          <form id="pipelineForm" class="field-grid">
+            <label for="workdir">Workdir</label>
+            <input id="workdir" name="workdir" value="." />
+
+            <label for="workflowFile">Workflow file</label>
+            <input id="workflowFile" name="workflowFile" value=".github/workflows/ci.yml" />
+
+            <label for="strictValidation">Strict mode</label>
+            <label class="inlineCheck"><input id="strictValidation" type="checkbox" /> Fail CI-style checks when linted</label>
+
+            <div class="actions">
+              <button id="pipelineSubmitBtn" type="submit">Load pipeline</button>
+              <button type="button" id="validateBtn">Validate</button>
+              <button type="button" id="reloadJobsBtn">Reload jobs</button>
+            </div>
+          </form>
+
+          <p class="resultTitle">Pipeline JSON</p>
+          <pre id="pipelineOutput">Press "Load pipeline" to fetch /api/v1/pipelines.</pre>
+
+          <p class="resultTitle">Validation</p>
+          <pre id="validateOutput">Not validated yet.</pre>
+        </section>
+
+        <section class="panel tile panel--compact" id="discoverPanel">
+          <div class="panel-head">
+            <h2>Workflow discovery</h2>
+            <p class="meta">Scans local directories for actionable workflow definitions.</p>
+          </div>
+
+          <label for="discoverDirectory">Directory (within workdir)</label>
+          <input id="discoverDirectory" value="." />
+
+          <div class="actions">
+            <button type="button" id="discoverBtn">Discover workflows</button>
+          </div>
+
+          <p class="resultTitle">Detected files</p>
+          <div id="discoverContainer" class="jobsList">No discovery run yet.</div>
+        </section>
+
+        <section class="panel tile panel--compact" id="webhookPanel">
+          <div class="panel-head">
+            <h2>Webhook actions</h2>
+            <p class="meta">Expose external triggers for both GitHub and GitLab payloads.</p>
+          </div>
+
+          <p class="meta">Use GitHub/GitLab webhooks to trigger runs without local orchestration.</p>
+
+          <div class="event-spec">
+            <p class="resultTitle">GitHub</p>
+            <p><code>POST /api/v1/webhook/github</code> with standard event payload.</p>
+            <p>Optional query: <code>workdir</code>, <code>file</code>, <code>job</code>, <code>stage</code>, <code>only</code>, <code>except</code>, <code>parallel</code>, <code>maxParallel</code>, <code>timeout</code>.</p>
+
+            <p class="resultTitle">GitLab</p>
+            <p><code>POST /api/v1/webhook/gitlab</code> with standard event payload.</p>
+            <p>Optional query: <code>workdir</code>, <code>file</code>, <code>job</code>, <code>stage</code>, <code>only</code>, <code>except</code>, <code>parallel</code>, <code>maxParallel</code>, <code>timeout</code>.</p>
+          </div>
+
+          <div class="actions">
+            <button type="button" id="refreshWebhookEvents">Refresh webhook events</button>
+            <a href="/api/v1/webhooks" target="_blank" rel="noreferrer">Open raw webhook log</a>
+          </div>
+
+          <p class="resultTitle">Recent webhook events</p>
+          <div id="webhookContainer" class="jobsList">No webhook events yet.</div>
+        </section>
+
+        <section class="panel tile panel--compact" id="jobsPanel">
+          <div class="panel-head">
+            <h2>Detected jobs</h2>
+            <p class="meta">Load direct job targets and run a single unit quickly.</p>
+          </div>
+          <p class="meta">Directly execute job names from this list.</p>
+          <div id="jobsContainer" class="jobsList">No jobs loaded yet.</div>
+        </section>
+
+        <section class="panel tile panel--wide" id="runPanel">
+          <div class="panel-head">
+            <h2>Run pipeline</h2>
+            <p class="meta">Build a run request with optional filters, resources, and execution flags.</p>
+          </div>
+
+          <form id="runForm" class="field-grid">
+            <fieldset class="group-block">
+              <legend>Run source</legend>
+              <label for="runWorkdir">Workdir</label>
+              <input id="runWorkdir" value="." />
+
+              <label for="runFile">Workflow file</label>
+              <input id="runFile" placeholder=".github/workflows/ci.yml" />
+
+              <label for="runRepository">Repository (optional)</label>
+              <input id="runRepository" placeholder="owner/repo or ./ for local" />
+
+              <label for="runRepositoryURL">Repository URL (optional)</label>
+              <input id="runRepositoryURL" placeholder="https://github.com/owner/repo.git" />
+            </fieldset>
+
+            <fieldset class="group-block">
+              <legend>Targeting</legend>
+              <label for="runRef">Ref / branch</label>
+              <input id="runRef" placeholder="main / refs/heads/main" />
+
+              <label for="runJob">Job (optional)</label>
+              <input id="runJob" placeholder="build, test, ..." />
+
+              <label for="runStage">Stage (optional)</label>
+              <input id="runStage" />
+
+              <label for="runOnly">Only (comma-separated)</label>
+              <input id="runOnly" placeholder="job-a, job-b" />
+
+              <label for="runExcept">Except (comma-separated)</label>
+              <input id="runExcept" placeholder="job-x, job-y" />
+            </fieldset>
+
+            <fieldset class="group-block">
+              <legend>Runtime</legend>
+              <label for="runTimeout">Timeout (minutes)</label>
+              <input id="runTimeout" type="number" min="1" value="30" />
+
+              <label for="runMaxParallel">Max parallel jobs</label>
+              <input id="runMaxParallel" type="number" min="1" value="4" />
+
+              <label for="runVolume">Volume</label>
+              <input id="runVolume" placeholder="host:path:rw" />
+
+              <label for="runEnvFile">Env file</label>
+              <input id="runEnvFile" placeholder=".env" />
+
+              <label for="runNetwork">Network mode</label>
+              <input id="runNetwork" value="bridge" />
+
+              <label for="runMemory">Memory</label>
+              <input id="runMemory" placeholder="1g" />
+
+              <label for="runCPUs">CPU limit</label>
+              <input id="runCPUs" placeholder="2.0" />
+            </fieldset>
+
+            <fieldset class="group-block">
+              <legend>Environment and flags</legend>
+              <label for="runEnv">Environment (KEY=VALUE per line)</label>
+              <textarea id="runEnv" rows="3" placeholder="A=1\nB=2"></textarea>
+            </fieldset>
+            <fieldset class="group-block">
+              <legend>Options</legend>
+              <label><input id="runParallel" type="checkbox" checked /> Parallel</label>
+              <label><input id="runContinueOnError" type="checkbox" /> Continue on error</label>
+              <label><input id="runDocker" type="checkbox" /> Docker runner</label>
+              <label><input id="runPodman" type="checkbox" /> Podman runner</label>
+              <label><input id="runDryRun" type="checkbox" /> Dry run</label>
+              <label><input id="runVerbose" type="checkbox" /> Verbose</label>
+              <label><input id="runNoCache" type="checkbox" /> No cache</label>
+              <label><input id="runQuiet" type="checkbox" /> Quiet</label>
+              <label><input id="runAutoFetch" type="checkbox" checked /> Auto fetch remote repository</label>
+            </fieldset>
+
+            <div class="actions">
+              <button id="runSubmitBtn" type="submit">Run pipeline</button>
+              <button type="button" id="runFromLastBtn">Rerun last</button>
+            </div>
+          </form>
+
+          <p class="resultTitle">Last run response</p>
+          <pre id="runStartOutput">No run started.</pre>
+        </section>
+
+        <section class="panel tile" id="githubActionsPanel">
+          <div class="panel-head">
+            <h2>GitHub Actions</h2>
+            <p class="meta">Contracts-only endpoint views for current capabilities and planned behavior.</p>
+          </div>
+          <p class="meta">Workflow, secrets, and cron endpoints are implemented with in-memory execution primitives.</p>
+
+          <div class="actions">
+            <button type="button" id="loadFeatureCatalog">Load feature contracts</button>
+            <button type="button" id="loadWorkflowsContract">Workflows contract</button>
+            <button type="button" id="loadSecretsContract">Secrets contract</button>
+            <button type="button" id="loadCronContract">Cron contract</button>
+          </div>
+
+          <p class="resultTitle">Planned contracts</p>
+          <pre id="featureContractOutput">Load a contract to show current action plan.</pre>
+        </section>
+
+        <section class="panel tile" id="actionControlPanel">
+          <div class="panel-head">
+            <h2>Actions control plane</h2>
+          </div>
+
+          <p class="meta">Drive workflows, secrets and cron schedules.</p>
+
+          <div class="actionsGrid">
+            <article class="actionsCard">
+              <h3>Dispatch workflow</h3>
+              <label for="workflowDispatchWorkdir">Workdir</label>
+              <input id="workflowDispatchWorkdir" value="." />
+              <label for="workflowDispatchFile">Workflow file</label>
+              <input id="workflowDispatchFile" value=".github/workflows/ci.yml" />
+              <label for="workflowDispatchRef">Ref</label>
+              <input id="workflowDispatchRef" placeholder="main / refs/heads/main" />
+              <label for="workflowDispatchRepository">Repository (optional)</label>
+              <input id="workflowDispatchRepository" placeholder="owner/repo" />
+              <label for="workflowDispatchRepositoryUrl">Repository URL (optional)</label>
+              <input id="workflowDispatchRepositoryUrl" placeholder="https://github.com/owner/repo.git" />
+              <label for="workflowDispatchSecretRefs">Secret refs (comma-separated)</label>
+              <input id="workflowDispatchSecretRefs" placeholder="project:API_TOKEN" />
+              <div class="actions"><button type="button" id="dispatchWorkflow">Start workflow</button></div>
+            </article>
+
+            <article class="actionsCard">
+              <h3>Secrets</h3>
+              <label for="secretName">Secret name</label>
+              <input id="secretName" placeholder="API_TOKEN" />
+              <label for="secretValue">Secret value</label>
+              <input id="secretValue" placeholder="top-secret" />
+              <label for="secretScope">Scope</label>
+              <input id="secretScope" value="global" />
+              <div class="actions">
+                <button type="button" id="storeSecret">Store secret</button>
+                <button type="button" id="refreshSecrets">Refresh secrets</button>
+                <button type="button" id="getSecretByName">Get by name</button>
+              </div>
+            </article>
+
+            <article class="actionsCard">
+              <h3>Workflow lookup</h3>
+              <label for="workflowIdLookup">Workflow ID (encoded)</label>
+              <input id="workflowIdLookup" placeholder="Li0uLi4..." />
+              <div class="actions"><button type="button" id="lookupWorkflow">Load workflow</button></div>
+              <p class="resultTitle">Workflow lookup output</p>
+              <pre id="workflowLookupOutput">No workflow selected.</pre>
+            </article>
+
+            <article class="actionsCard">
+              <h3>Cron jobs</h3>
+              <label for="cronName">Cron name</label>
+              <input id="cronName" placeholder="nightly" />
+              <label for="cronWorkflowFile">Workflow file</label>
+              <input id="cronWorkflowFile" placeholder=".github/workflows/ci.yml" />
+              <label for="cronInterval">Interval</label>
+              <input id="cronInterval" placeholder="15m" />
+              <label for="cronRepository">Repository (optional)</label>
+              <input id="cronRepository" placeholder="owner/repo" />
+              <label for="cronRef">Ref</label>
+              <input id="cronRef" placeholder="main" />
+              <label for="cronSecretRefs">Secret refs (comma-separated)</label>
+              <input id="cronSecretRefs" placeholder="project:API_TOKEN" />
+              <div class="actions">
+                <button type="button" id="createCronRun">Create cron</button>
+                <button type="button" id="refreshCron">Refresh cron runs</button>
+              </div>
+            </article>
+          </div>
+
+          <p class="resultTitle">Actions output</p>
+          <div class="actionsGrid">
+            <pre id="workflowActionOutput">No workflow action yet.</pre>
+            <pre id="secretActionOutput">No secret action yet.</pre>
+            <pre id="cronActionOutput">No cron action yet.</pre>
+          </div>
+
+          <p class="resultTitle">Known cron runs</p>
+          <div id="cronRunList" class="jobsList">No cron runs yet.</div>
+        </section>
+
+        <section class="panel tile panel--wide" id="runsPanel">
+          <div class="panel-head">
+            <div>
+              <h2>Actions</h2>
+              <p class="meta">Live actions and run state started through this dashboard.</p>
+            </div>
+            <div class="runsHeaderInline">
+              <select id="runStatusFilter" aria-label="Filter runs by status">
+                <option value="all">All</option>
+                <option value="running">Running</option>
+                <option value="succeeded">Succeeded</option>
+                <option value="failed">Failed</option>
+                <option value="pending">Pending</option>
+                <option value="canceled">Canceled</option>
+              </select>
+              <input id="runSearchInput" class="run-search" placeholder="Filter runs by id, file, repo, ref" />
+              <span id="runFilterCount" class="run-filter-count" aria-live="polite">No runs</span>
+              <button id="runSearchClear">Clear</button>
+              <button id="refreshRuns">Refresh</button>
+            </div>
+          </div>
+
+          <div id="runsContainer" class="runsList">No runs yet.</div>
+        </section>
+
+        <section class="panel tile panel--wide" id="terminalPanel">
+          <div class="panel-head">
+            <h2>Terminal output</h2>
+            <div class="runsHeaderInline">
+              <button id="refreshRunLogs">Refresh logs</button>
+              <button id="clearRunLogs">Clear buffer</button>
+              <button id="autoScrollLogs">Auto-scroll ON</button>
+              <button id="cancelRun" disabled>Cancel selected run</button>
+            </div>
+          </div>
+
+          <p id="selectedRunInfo">Select a run to view logs.</p>
+          <pre id="runMeta">Select a run to inspect command and metadata.</pre>
+          <pre id="runLogs">No logs yet.</pre>
+        </section>
+
+        <section class="panel tile panel--wide" id="systemPanel">
+          <div class="panel-head">
+            <h2>System health</h2>
+            <button type="button" id="refreshStackDump">Fetch stack dump</button>
+          </div>
+          <p class="resultTitle">Runtime</p>
+          <pre id="systemStatus">Loading system snapshot…</pre>
+          <p class="resultTitle">Stack</p>
+          <pre id="stackDump">Press refresh to capture runtime stack.</pre>
+        </section>
+      </section>
     </main>
+
+    <script src="app.js?v=18" defer></script>
   </body>
 </html>

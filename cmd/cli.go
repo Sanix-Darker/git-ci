@@ -19,6 +19,11 @@ var (
 	Branch    = "unknown"
 )
 
+const (
+	defaultServeMaxRuns       = 200
+	defaultServeMaxLogEntries = 1000
+)
+
 func main() {
 	app := &cli.App{
 		Name:     "git-ci",
@@ -284,6 +289,68 @@ func commands() []*cli.Command {
 					Name:  "format",
 					Usage: "Output format: tree, json, yaml (default: tree)",
 					Value: "tree",
+				},
+			},
+		},
+		{
+			Name:   "serve",
+			Usage:  "Run git-ci as a web API + dashboard service",
+			Action: handlers.CmdServe,
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:    "listen",
+					Aliases: []string{"l"},
+					Usage:   "Listen address (e.g. :8087)",
+					Value:   ":8087",
+				},
+				&cli.StringFlag{
+					Name:  "static-dir",
+					Usage: "Directory containing dashboard static assets",
+					Value: "site",
+				},
+				&cli.StringFlag{
+					Name:  "api-prefix",
+					Usage: "Prefix for HTTP API routes",
+					Value: "/api",
+				},
+				&cli.BoolFlag{
+					Name:  "api-only",
+					Usage: "Disable static dashboard and expose API only",
+				},
+				&cli.IntFlag{
+					Name:  "max-runs",
+					Usage: "Maximum finished runs to keep in memory",
+					Value: defaultServeMaxRuns,
+				},
+				&cli.IntFlag{
+					Name:  "max-run-logs",
+					Usage: "Maximum terminal lines retained for each run",
+					Value: defaultServeMaxLogEntries,
+				},
+				&cli.IntFlag{
+					Name:  "max-hook-events",
+					Usage: "Maximum webhook events retained in memory",
+					Value: 100,
+				},
+				&cli.StringFlag{
+					Name:    "github-webhook-secret",
+					Usage:   "Shared secret for GitHub webhook signature verification",
+					EnvVars: []string{"GIT_CI_GITHUB_WEBHOOK_SECRET"},
+				},
+				&cli.StringFlag{
+					Name:    "gitlab-webhook-secret",
+					Usage:   "Shared token for GitLab webhook verification",
+					EnvVars: []string{"GIT_CI_GITLAB_WEBHOOK_SECRET"},
+				},
+				&cli.StringFlag{
+					Name:    "github-webhook-workdir",
+					Usage:   "Default workdir for GitHub webhooks",
+					EnvVars: []string{"GIT_CI_GITHUB_WEBHOOK_WORKDIR"},
+				},
+				&cli.StringFlag{
+					Name:    "gitlab-webhook-workdir",
+					Usage:   "Default workdir for GitLab webhooks",
+					EnvVars: []string{"GIT_CI_GITLAB_WEBHOOK_WORKDIR"},
 				},
 			},
 		},

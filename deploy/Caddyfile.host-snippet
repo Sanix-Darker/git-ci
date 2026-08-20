@@ -1,22 +1,50 @@
 # Snippet for a shared host Caddyfile (e.g. same machine as s2c).
-# Replace `git-ci.example.com` with the real domain.
+# Replace `gci.example.com` with the service domain.
 # Keep this as a snippet and paste it inside the host's main /etc/caddy/Caddyfile.
 
-git-ci.example.com {
+http://gci.example.com {
+    redir https://gci.example.com{uri} permanent
+}
+
+https://gci.example.com {
     # Use the same policy as your shared setup:
-    # - For Cloudflare Full mode with self-signed origin certs (common on shared hosts), keep `tls internal`.
-    # - If this host already manages public ACME certs, remove `tls internal`.
+    # - If your origin issues its own cert chain, replace with `tls`.
+    # - If your origin uses Cloudflare Full (self-signed accepted), keep
+    #   `tls internal` to avoid ACME handshakes.
     tls internal
 
-    handle /health {
+    handle /health* {
         respond "ACCEPTED" 202
     }
 
-    # Route site traffic through the local service at 127.0.0.1:8080.
-    reverse_proxy 127.0.0.1:8080
+    # Route site traffic through the local service at 127.0.0.1:8087.
+    reverse_proxy 127.0.0.1:8087
 }
 
 # Optional: keep canonical host, if DNS points to both hostnames.
-www.git-ci.example.com {
-    redir https://git-ci.example.com{uri} permanent
+http://www.gci.example.com {
+    redir https://gci.example.com{uri} permanent
+}
+
+https://www.gci.example.com {
+    redir https://gci.example.com{uri} permanent
+}
+
+# Keep `git-ci.example.com` aligned with the same service host:
+http://git-ci.example.com {
+    redir https://gci.example.com{uri} permanent
+}
+
+https://git-ci.example.com {
+    # Keep this as tls internal unless you manage a public cert flow.
+    tls internal
+    reverse_proxy 127.0.0.1:8087
+}
+
+https://www.git-ci.example.com {
+    redir https://gci.example.com{uri} permanent
+}
+
+http://www.git-ci.example.com {
+    redir https://gci.example.com{uri} permanent
 }

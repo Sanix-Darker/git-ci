@@ -4,7 +4,7 @@
     email security@example.com
 }
 
-git-ci.example.com {
+gci.example.com {
     encode zstd gzip
 
     header {
@@ -16,9 +16,5 @@ git-ci.example.com {
         -Server
     }
 
-    handle /health {
-        respond "ACCEPTED" 202
-    }
-
-    reverse_proxy git-ci-site:8080
+    reverse_proxy git-ci-site:8087
 }

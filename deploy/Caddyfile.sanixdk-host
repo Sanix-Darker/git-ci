@@ -1,18 +1,65 @@
-#
-# Shared-host-ready snippet for git-ci.sanixdk.xyz.
+# Shared-host-ready snippet for gci.sanixdk.xyz and git-ci.sanixdk.xyz.
 # Copy this block into your host's /etc/caddy/Caddyfile and reload Caddy.
-#
-git-ci.sanixdk.xyz {
-    tls internal
+# Keep this snippet above any sanixdk.xyz/catch-all block so it is not shadowed.
 
-    handle /health {
+http://gci.sanixdk.xyz, http://git-ci.sanixdk.xyz {
+    redir https://gci.sanixdk.xyz{uri} permanent
+}
+
+https://gci.sanixdk.xyz {
+    # Use `tls internal` for Cloudflare origin setups that use a self-signed
+    # certificate model. Replace with `tls` only if your origin public cert
+    # flow is already stable for this host.
+    tls internal
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    handle /health* {
         respond "ACCEPTED" 202
     }
 
-    reverse_proxy 127.0.0.1:8080
+    handle {
+        reverse_proxy 127.0.0.1:8087
+    }
 }
 
-www.git-ci.sanixdk.xyz {
+https://git-ci.sanixdk.xyz {
+    # Use `tls internal` for Cloudflare origin setups that use a self-signed
+    # certificate model. Replace with `tls` only if your origin public cert
+    # flow is already stable for this host.
     tls internal
-    redir https://git-ci.sanixdk.xyz{uri} permanent
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    handle /health* {
+        respond "ACCEPTED" 202
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:8087
+    }
+}
+
+https://www.gci.sanixdk.xyz, https://www.git-ci.sanixdk.xyz {
+    redir https://gci.sanixdk.xyz{uri} permanent
+}
+
+http://www.gci.sanixdk.xyz, http://www.git-ci.sanixdk.xyz {
+    redir https://gci.sanixdk.xyz{uri} permanent
 }

@@ -1,5 +1,5 @@
 [Unit]
-Description=git-ci web landing page
+Description=git-ci web API and dashboard service
 After=network-online.target
 Wants=network-online.target
 
@@ -8,7 +8,7 @@ Type=simple
 User=git-ci
 Group=git-ci
 WorkingDirectory=/opt/git-ci
-ExecStart=/usr/bin/caddy file-server --listen 127.0.0.1:8080 --root /opt/git-ci/site
+ExecStart=/usr/local/bin/gci serve --listen 127.0.0.1:8087 --static-dir /opt/git-ci/site --api-prefix /api
 Restart=always
 RestartSec=3
 NoNewPrivileges=true

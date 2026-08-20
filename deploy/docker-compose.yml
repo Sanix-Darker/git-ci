@@ -6,7 +6,7 @@ services:
     image: ${GIT_CI_SITE_IMAGE:-git-ci-site:local}
     restart: unless-stopped
     expose:
-      - "8080"
+      - "8087"
 
   caddy:
     image: caddy:2-alpine
