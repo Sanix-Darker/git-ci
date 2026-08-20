@@ -22,6 +22,11 @@ func TestHandlerServesEmbeddedLandingPage(t *testing.T) {
 	if !strings.Contains(response.Body.String(), "RUN CI") {
 		t.Fatal("landing page body does not contain expected content")
 	}
+	for _, expected := range []string{"CI/CD", "GitHub Actions", "GitLab CI"} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("landing page body does not contain %q positioning", expected)
+		}
+	}
 }
 
 func TestHandlerServesStaticAssetsWithCachePolicy(t *testing.T) {
