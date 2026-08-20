@@ -49,4 +49,76 @@
     if (!form || !form.hasAttribute("hx-post") || reducedMotion.matches) return;
     if (typeof navigator.vibrate === "function") navigator.vibrate(8);
   }, { passive: true });
+  const removeToast = (toast) => {
+    toast.classList.add("toast-leaving");
+    window.setTimeout(() => toast.remove(), reducedMotion.matches ? 0 : 140);
+  };
+
+  const installToasts = (root = document) => {
+    const region = document.getElementById("toast-region");
+    if (!region) return;
+    root.querySelectorAll(".notice[data-toast]:not([data-toast-ready])").forEach((notice) => {
+      notice.dataset.toastReady = "true";
+      const key = `${notice.dataset.toastKind || "notice"}:${notice.textContent.trim()}`;
+      const duplicate = Array.from(region.children).find((item) => item.dataset.toastKey === key);
+      if (duplicate) {
+        pulse(duplicate);
+        notice.remove();
+        return;
+      }
+      notice.dataset.toastKey = key;
+      notice.classList.add("toast");
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "toast-close";
+      close.setAttribute("aria-label", "Dismiss notification");
+      close.textContent = "CLOSE";
+      close.addEventListener("click", () => removeToast(notice));
+      notice.append(close);
+      region.append(notice);
+      const lifetime = notice.dataset.toastKind === "error" ? 8000 : 4000;
+      window.setTimeout(() => {
+        if (notice.isConnected) removeToast(notice);
+      }, lifetime);
+    });
+  };
+
+  const installProjectSearch = (root = document) => {
+    root.querySelectorAll("[data-project-search-region]:not([data-search-ready])").forEach((region) => {
+      region.dataset.searchReady = "true";
+      const input = region.querySelector("[data-project-search]");
+      const list = region.parentElement.querySelector("[data-project-candidates]");
+      const count = region.querySelector("[data-project-visible-count]");
+      if (!input || !list || !count) return;
+      const candidates = Array.from(list.querySelectorAll("[data-project-candidate]"));
+      const empty = document.createElement("p");
+      empty.className = "empty-state project-search-empty";
+      empty.textContent = "NO MATCHING CHECKOUTS";
+      empty.hidden = true;
+      list.append(empty);
+      input.addEventListener("input", () => {
+        const query = input.value.trim().toLocaleLowerCase();
+        let visible = 0;
+        candidates.forEach((candidate) => {
+          const matches = !query || candidate.dataset.projectSearchValue.toLocaleLowerCase().includes(query);
+          candidate.hidden = !matches;
+          if (matches) visible += 1;
+        });
+        count.textContent = String(visible);
+        empty.hidden = visible !== 0;
+      });
+    });
+  };
+
+  const installEnhancements = (root = document) => {
+    installToasts(root);
+    installProjectSearch(root);
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => installEnhancements());
+  } else {
+    installEnhancements();
+  }
+  document.addEventListener("htmx:afterSwap", (event) => installEnhancements(event.target));
 })();
