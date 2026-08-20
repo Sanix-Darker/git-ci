@@ -190,6 +190,8 @@ func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitS
 			DependencyKeys:  dependencyJSON,
 			AllowFailure:    job.AllowFailure,
 			TimeoutMinutes:  job.TimeoutMinutes,
+			RollbackCommand: job.RollbackCommand,
+			VerifyCommand:   job.VerifyCommand,
 			Steps:           steps,
 		})
 	}
@@ -203,6 +205,40 @@ func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitS
 		Environment: workflow.Environment,
 		Jobs:        jobs,
 	})
+	if err != nil {
+		return store.Run{}, err
+	}
+	m.Notify()
+	return run, nil
+}
+
+func (m *Manager) EnqueueDeploymentRollback(ctx context.Context, params store.EnqueueRollbackParams) (store.Run, error) {
+	if strings.TrimSpace(params.Actor) != "" && strings.TrimSpace(params.IdempotencyKey) != "" {
+		if _, err := m.store.GetRunLineageByIdempotency(ctx, params.Actor, params.IdempotencyKey); err == nil {
+			return m.store.EnqueueDeploymentRollback(ctx, params)
+		} else {
+			var notFound *store.ErrNotFound
+			if !errors.As(err, &notFound) {
+				return store.Run{}, err
+			}
+		}
+	}
+	target, err := m.store.GetDeployment(ctx, params.TargetDeploymentID)
+	if err != nil {
+		return store.Run{}, err
+	}
+	graph, err := m.store.GetRunGraph(ctx, target.RunID)
+	if err != nil {
+		return store.Run{}, err
+	}
+	if graph.Run.CommitSHA == nil {
+		return store.Run{}, &store.ErrRollbackEligibility{Code: "target_commit_missing", Message: "rollback target has no pinned commit"}
+	}
+	resolved, err := resolveGitCommit(ctx, graph.Run.SourcePath, "", *graph.Run.CommitSHA)
+	if err != nil || resolved != *graph.Run.CommitSHA {
+		return store.Run{}, &store.ErrRollbackEligibility{Code: "target_commit_unavailable", Message: "rollback target commit is unavailable in the registered repository"}
+	}
+	run, err := m.store.EnqueueDeploymentRollback(ctx, params)
 	if err != nil {
 		return store.Run{}, err
 	}

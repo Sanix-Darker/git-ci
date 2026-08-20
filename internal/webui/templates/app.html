@@ -112,7 +112,18 @@
 {{end}}
 
 {{define "deployment_row"}}
-<a class="data-row" href="/app/runs/{{.RunID}}"><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.Environment}}</strong><code>{{.DeploymentTier}}</code><span>{{.ProjectName}}</span><span>{{.JobName}}</span><code>{{short .RunID}}</code><time>{{.UpdatedAt}}</time><b>-&gt;</b></a>
+<article class="deployment-record">
+  <a class="data-row" href="/app/runs/{{.RunID}}"><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.Environment}}</strong><code>{{.DeploymentTier}}</code><span>{{.ProjectName}}</span><span>{{.JobName}}</span><code>{{short .RunID}}</code><time>{{.UpdatedAt}}</time><b>-&gt;</b></a>
+  {{template "rollback_control" .}}
+</article>
+{{end}}
+
+{{define "rollback_control"}}
+{{if .CanRollback}}<form class="rollback-control" method="post" action="/app/deployments/{{.ID}}/rollback" hx-post="/app/deployments/{{.ID}}/rollback" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+  <input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="idempotencyKey" value="{{.RollbackKey}}">
+  <label>ROLLBACK TARGET FOR {{upper .Environment}}<select name="targetDeploymentId" required>{{range .RollbackTargets}}<option value="{{.ID}}">{{short .CommitSHA}} / {{if .Ref}}{{.Ref}}{{else}}DETACHED{{end}} / {{.CreatedAt}}</option>{{end}}</select></label>
+  <button type="submit">ROLL BACK <span>-&gt;</span></button>
+</form>{{else if .Terminal}}<p class="rollback-unavailable">{{upper .RollbackHint}}</p>{{end}}
 {{end}}
 
 {{define "deployments_panel"}}

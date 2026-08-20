@@ -215,7 +215,23 @@ func (a *API) populateConfigurationPage(ctx context.Context, data *webui.PageDat
 				}
 			}
 			terminal := terminalStatus(item.Status)
-			data.Deployments = append(data.Deployments, webui.DeploymentView{ID: item.ID, RunID: item.RunID, JobID: jobID, JobName: jobName, ProjectName: project.Name, Environment: item.Environment, DeploymentTier: strings.ToUpper(string(item.DeploymentTier)), Status: strings.ToUpper(string(item.Status)), Dot: statusDot(item.Status), UpdatedAt: item.UpdatedAt.UTC().Format("2006-01-02 15:04:05Z"), Terminal: terminal})
+			view := webui.DeploymentView{ID: item.ID, RunID: item.RunID, JobID: jobID, JobName: jobName, ProjectName: project.Name, Environment: item.Environment, DeploymentTier: strings.ToUpper(string(item.DeploymentTier)), Status: strings.ToUpper(string(item.Status)), Dot: statusDot(item.Status), UpdatedAt: item.UpdatedAt.UTC().Format("2006-01-02 15:04:05Z"), Terminal: terminal, CSRFToken: data.CSRFToken}
+			eligibility, err := a.store.EvaluateDeploymentRollback(ctx, item.ID)
+			if err != nil {
+				return err
+			}
+			view.RollbackHint = eligibility.Message
+			if eligibility.Eligible {
+				view.RollbackKey, err = newRollbackIdempotencyKey()
+				if err != nil {
+					return err
+				}
+				view.CanRollback = true
+				for _, target := range eligibility.Targets {
+					view.RollbackTargets = append(view.RollbackTargets, webui.RollbackTargetView{ID: target.DeploymentID, Ref: target.Ref, CommitSHA: target.CommitSHA, CreatedAt: target.CreatedAt.UTC().Format("2006-01-02 15:04:05Z")})
+				}
+			}
+			data.Deployments = append(data.Deployments, view)
 			if !terminal {
 				data.ActiveDeployments = true
 			}

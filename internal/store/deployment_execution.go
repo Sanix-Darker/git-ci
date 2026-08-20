@@ -69,11 +69,14 @@ func (s *Store) EnsureDeploymentForJob(ctx context.Context, jobID string) (Deplo
 		return Deployment{}, fmt.Errorf("store: ensure deployment environment: %w", err)
 	}
 	var projectID, runID, environment string
+	var sourceDeploymentID, targetDeploymentID sql.NullString
 	err = s.db.QueryRowContext(ctx, `
-		SELECT run.project_id, target.run_id, target.environment
+		SELECT run.project_id, target.run_id, target.environment,
+			lineage.source_deployment_id, lineage.target_deployment_id
 		FROM deployment_targets AS target JOIN runs AS run ON run.id = target.run_id
+		LEFT JOIN run_lineage AS lineage ON lineage.run_id = target.run_id AND lineage.kind = 'rollback'
 		WHERE target.job_id = ?
-	`, jobID).Scan(&projectID, &runID, &environment)
+	`, jobID).Scan(&projectID, &runID, &environment, &sourceDeploymentID, &targetDeploymentID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Deployment{}, &ErrNotFound{Resource: "deployment target", Key: jobID}
 	}
@@ -95,9 +98,9 @@ func (s *Store) EnsureDeploymentForJob(ctx context.Context, jobID string) (Deplo
 	}
 	defer tx.Rollback()
 	result, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO deployments (id, project_id, run_id, environment, status, created_at, updated_at, job_id, deployment_tier)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, deploymentID, projectID, runID, environment, StatusQueued, now.UnixMilli(), now.UnixMilli(), jobID, canonicalEnvironment.DeploymentTier)
+		INSERT OR IGNORE INTO deployments (id, project_id, run_id, environment, status, created_at, updated_at, job_id, deployment_tier, source_deployment_id, target_deployment_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, deploymentID, projectID, runID, environment, StatusQueued, now.UnixMilli(), now.UnixMilli(), jobID, canonicalEnvironment.DeploymentTier, sourceDeploymentID, targetDeploymentID)
 	if err != nil {
 		return Deployment{}, fmt.Errorf("store: ensure deployment: %w", err)
 	}

@@ -61,7 +61,14 @@ type JobDefinition struct {
 	RunnerHint      string            `json:"runnerHint,omitempty"`
 	AllowFailure    bool              `json:"allowFailure"`
 	TimeoutMinutes  int               `json:"timeoutMinutes,omitempty"`
+	RollbackCommand string            `json:"rollbackCommand,omitempty"`
+	VerifyCommand   string            `json:"verifyCommand,omitempty"`
 	Steps           []StepDefinition  `json:"steps"`
+}
+
+type deploymentExtension struct {
+	Rollback string `yaml:"rollback"`
+	Verify   string `yaml:"verify"`
 }
 
 // StepDefinition is a provider-neutral, persistence-ready execution step.
@@ -235,8 +242,12 @@ func discoverCanonicalProject(project store.Project, root string) ([]Definition,
 				err,
 			)
 		}
+		extensions, err := readDeploymentExtensions(file)
+		if err != nil {
+			return nil, fmt.Errorf("parse git-ci extensions in %q: %w", file.relative, err)
+		}
 
-		definition, err := normalizeDefinition(project, root, file, pipeline)
+		definition, err := normalizeDefinition(project, root, file, pipeline, extensions)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"normalize %s workflow %q for project %q: %w",
@@ -487,6 +498,7 @@ func normalizeDefinition(
 	root string,
 	file workflowFile,
 	pipeline *types.Pipeline,
+	extensions map[string]deploymentExtension,
 ) (Definition, error) {
 	if pipeline == nil {
 		return Definition{}, fmt.Errorf("parser returned no pipeline")
@@ -505,7 +517,10 @@ func normalizeDefinition(
 		if job == nil {
 			return Definition{}, fmt.Errorf("job %q is nil", key)
 		}
-		normalized := normalizeJob(key, job)
+		normalized, err := normalizeJob(key, job, extensions[key])
+		if err != nil {
+			return Definition{}, fmt.Errorf("job %q: %w", key, err)
+		}
 		jobs[key] = normalized
 		dependencies[key] = sortedUnique(append(
 			append([]string{}, normalized.Needs...),
@@ -542,7 +557,21 @@ func normalizeDefinition(
 	return definition, nil
 }
 
-func normalizeJob(key string, job *types.Job) JobDefinition {
+func normalizeJob(key string, job *types.Job, extension deploymentExtension) (JobDefinition, error) {
+	rollback, err := normalizeDeploymentExtensionCommand("rollback", extension.Rollback)
+	if err != nil {
+		return JobDefinition{}, err
+	}
+	verify, err := normalizeDeploymentExtensionCommand("verify", extension.Verify)
+	if err != nil {
+		return JobDefinition{}, err
+	}
+	if verify != "" && rollback == "" {
+		return JobDefinition{}, fmt.Errorf("x-gci verify requires rollback")
+	}
+	if rollback != "" && strings.TrimSpace(job.EnvironmentName) == "" {
+		return JobDefinition{}, fmt.Errorf("x-gci rollback requires a deployment environment")
+	}
 	return JobDefinition{
 		Key:             key,
 		Name:            job.Name,
@@ -555,8 +584,69 @@ func normalizeJob(key string, job *types.Job) JobDefinition {
 		RunnerHint:      runnerHint(job),
 		AllowFailure:    job.AllowFailure || job.ContinueOnErr,
 		TimeoutMinutes:  job.TimeoutMin,
+		RollbackCommand: rollback,
+		VerifyCommand:   verify,
 		Steps:           normalizeSteps(key, job.Steps),
+	}, nil
+}
+
+func readDeploymentExtensions(file workflowFile) (map[string]deploymentExtension, error) {
+	contents, err := os.ReadFile(file.absolute)
+	if err != nil {
+		return nil, err
 	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(contents, &document); err != nil {
+		return nil, err
+	}
+	if len(document.Content) == 0 {
+		return map[string]deploymentExtension{}, nil
+	}
+	root := document.Content[0]
+	jobs := root
+	if file.provider == ProviderGitHubActions {
+		jobs = yamlMappingValue(root, "jobs")
+	}
+	if jobs == nil || jobs.Kind != yaml.MappingNode {
+		return map[string]deploymentExtension{}, nil
+	}
+	result := make(map[string]deploymentExtension)
+	for index := 0; index+1 < len(jobs.Content); index += 2 {
+		jobKey, jobNode := jobs.Content[index], jobs.Content[index+1]
+		extensionNode := yamlMappingValue(jobNode, "x-gci")
+		if extensionNode == nil {
+			continue
+		}
+		var extension deploymentExtension
+		if err := extensionNode.Decode(&extension); err != nil {
+			return nil, fmt.Errorf("job %q x-gci must be an object: %w", jobKey.Value, err)
+		}
+		result[jobKey.Value] = extension
+	}
+	return result, nil
+}
+
+func yamlMappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for index := 0; index+1 < len(node.Content); index += 2 {
+		if node.Content[index].Value == key {
+			return node.Content[index+1]
+		}
+	}
+	return nil
+}
+
+func normalizeDeploymentExtensionCommand(name, command string) (string, error) {
+	command = strings.TrimSpace(command)
+	if strings.ContainsRune(command, 0) {
+		return "", fmt.Errorf("x-gci %s contains a null byte", name)
+	}
+	if len(command) > 1<<20 {
+		return "", fmt.Errorf("x-gci %s exceeds one MiB", name)
+	}
+	return command, nil
 }
 
 func normalizeSteps(jobKey string, steps []types.Step) []StepDefinition {

@@ -363,6 +363,14 @@
 .environment-cards dl div:nth-child(4) { border-top: 1px solid #2b2b2b; }
 .secret-scope-grid { margin-top: 0; }
 .deployment-table .data-head, .deployment-table .data-row { grid-template-columns: .8fr 1fr .65fr .9fr 1fr .7fr 1.15fr 24px; }
+.deployment-record { border-bottom: 1px solid #272727; }
+.deployment-record .data-row { border-bottom: 0; }
+.rollback-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem; align-items: end; border-top: 1px solid #272727; padding: .75rem 1.25rem; background: #0d0d0d; }
+.rollback-control label { display: grid; gap: .35rem; color: #727272; font-size: .52rem; font-weight: 900; letter-spacing: .06em; }
+.rollback-control select { min-width: 0; border: 1px solid #383838; border-radius: 0; padding: .62rem .7rem; background: #080808; color: #d8d8d8; font: inherit; }
+.rollback-control button { min-height: 38px; border: 1px solid #d8d8d8; border-radius: 0; padding: 0 .85rem; background: #d8d8d8; color: #080808; cursor: pointer; font-size: .56rem; font-weight: 900; transition: transform 100ms steps(2, end); }
+.rollback-control button:hover { transform: translateX(3px); }
+.rollback-unavailable { margin: 0; border-top: 1px solid #202020; padding: .5rem 1.25rem; color: #565656; font-size: .5rem; font-weight: 900; }
 
 @media (max-width: 900px) { .delivery-config-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) {
@@ -370,8 +378,9 @@
   .approval-card dl { grid-template-columns: 1fr; }
   .approval-card dl div + div { border-top: 1px solid #2b2b2b; border-left: 0; }
   .deployment-table .data-row { width: 900px; }
+  .rollback-control { grid-template-columns: 1fr; width: 900px; }
 }
-@media (prefers-reduced-motion: reduce) { .approval-card, .approval-card:hover { transition: none !important; transform: none !important; } }
+@media (prefers-reduced-motion: reduce) { .approval-card, .approval-card:hover, .rollback-control button, .rollback-control button:hover { transition: none !important; transform: none !important; } }
 
 /* Operator motion, telemetry, and loading atoms */
 .workspace { position: relative; }

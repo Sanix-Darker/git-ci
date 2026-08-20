@@ -58,6 +58,8 @@ const (
 		dependency_keys_json,
 		allow_failure,
 		timeout_minutes,
+		rollback_command,
+		verification_command,
 		started_at,
 		finished_at,
 		created_at,
@@ -197,6 +199,7 @@ type EnqueueRunParams struct {
 	SourcePath  string
 	Environment json.RawMessage
 	Jobs        []EnqueueJob
+	Lineage     *EnqueueRunLineage
 }
 
 // EnqueueJob is an immutable job snapshot. DependencyKeys is a JSON array of
@@ -212,6 +215,8 @@ type EnqueueJob struct {
 	DependencyKeys  json.RawMessage
 	AllowFailure    bool
 	TimeoutMinutes  int
+	RollbackCommand string
+	VerifyCommand   string
 	Steps           []EnqueueStep
 }
 
@@ -231,21 +236,23 @@ type EnqueueStep struct {
 
 // Job is a durable job snapshot and its mutable lifecycle fields.
 type Job struct {
-	ID             string          `json:"id"`
-	RunID          string          `json:"runId"`
-	Key            *string         `json:"key,omitempty"`
-	Name           string          `json:"name"`
-	Status         Status          `json:"status"`
-	Runner         *string         `json:"runner,omitempty"`
-	Position       int             `json:"position"`
-	Environment    json.RawMessage `json:"environment"`
-	DependencyKeys json.RawMessage `json:"dependencyKeys"`
-	AllowFailure   bool            `json:"allowFailure"`
-	TimeoutMinutes int             `json:"timeoutMinutes"`
-	StartedAt      *time.Time      `json:"startedAt,omitempty"`
-	FinishedAt     *time.Time      `json:"finishedAt,omitempty"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
+	ID              string          `json:"id"`
+	RunID           string          `json:"runId"`
+	Key             *string         `json:"key,omitempty"`
+	Name            string          `json:"name"`
+	Status          Status          `json:"status"`
+	Runner          *string         `json:"runner,omitempty"`
+	Position        int             `json:"position"`
+	Environment     json.RawMessage `json:"environment"`
+	DependencyKeys  json.RawMessage `json:"dependencyKeys"`
+	AllowFailure    bool            `json:"allowFailure"`
+	TimeoutMinutes  int             `json:"timeoutMinutes"`
+	RollbackCommand *string         `json:"-"`
+	VerifyCommand   *string         `json:"-"`
+	StartedAt       *time.Time      `json:"startedAt,omitempty"`
+	FinishedAt      *time.Time      `json:"finishedAt,omitempty"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
 }
 
 // Step is a durable step snapshot and its mutable lifecycle fields.
@@ -577,8 +584,8 @@ func (s *Store) EnqueueRun(ctx context.Context, params EnqueueRunParams) (Run, e
 			INSERT INTO jobs (
 				id, run_id, job_key, name, status, runner, position,
 			environment_json, dependency_keys_json, allow_failure,
-			timeout_minutes, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			timeout_minutes, rollback_command, verification_command, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			jobID,
 			run.ID,
@@ -591,6 +598,8 @@ func (s *Store) EnqueueRun(ctx context.Context, params EnqueueRunParams) (Run, e
 			string(job.DependencyKeys),
 			job.AllowFailure,
 			job.TimeoutMinutes,
+			nullableText(job.RollbackCommand),
+			nullableText(job.VerifyCommand),
 			now.UnixMilli(),
 			now.UnixMilli(),
 		); err != nil {
@@ -630,6 +639,11 @@ func (s *Store) EnqueueRun(ctx context.Context, params EnqueueRunParams) (Run, e
 			); err != nil {
 				return Run{}, fmt.Errorf("store: insert step snapshot: %w", err)
 			}
+		}
+	}
+	if params.Lineage != nil {
+		if err := insertRunLineage(ctx, tx, run.ID, *params.Lineage, now); err != nil {
+			return Run{}, err
 		}
 	}
 
@@ -1418,6 +1432,13 @@ func normalizeEnqueueRunParams(params EnqueueRunParams) (EnqueueRunParams, error
 	if len(params.Jobs) == 0 {
 		return EnqueueRunParams{}, invalidInput("run jobs", "must contain at least one job")
 	}
+	if params.Lineage != nil {
+		lineage, err := normalizeEnqueueRunLineage(*params.Lineage)
+		if err != nil {
+			return EnqueueRunParams{}, err
+		}
+		params.Lineage = &lineage
+	}
 
 	jobKeys := make(map[string]struct{}, len(params.Jobs))
 	for jobIndex := range params.Jobs {
@@ -1434,6 +1455,18 @@ func normalizeEnqueueRunParams(params EnqueueRunParams) (EnqueueRunParams, error
 		}
 		if job.Runner, err = normalizeOptionalText("run job runner", job.Runner); err != nil {
 			return EnqueueRunParams{}, err
+		}
+		if job.RollbackCommand, err = normalizeOptionalText("run job rollback command", job.RollbackCommand); err != nil {
+			return EnqueueRunParams{}, err
+		}
+		if job.VerifyCommand, err = normalizeOptionalText("run job verification command", job.VerifyCommand); err != nil {
+			return EnqueueRunParams{}, err
+		}
+		if job.VerifyCommand != "" && job.RollbackCommand == "" {
+			return EnqueueRunParams{}, invalidInput("run job verification command", "requires a rollback command")
+		}
+		if job.RollbackCommand != "" && job.EnvironmentName == "" {
+			return EnqueueRunParams{}, invalidInput("run job rollback command", "requires a deployment environment")
 		}
 		if err := normalizeEnqueueJobDeployment(job); err != nil {
 			return EnqueueRunParams{}, err
@@ -1809,17 +1842,19 @@ func scanRun(scanner executionScanner) (Run, error) {
 
 func scanJob(scanner executionScanner) (Job, error) {
 	var (
-		job            Job
-		key            sql.NullString
-		runner         sql.NullString
-		environment    string
-		dependencyKeys string
-		allowFailure   int64
-		timeoutMinutes int
-		startedAt      sql.NullInt64
-		finishedAt     sql.NullInt64
-		createdAt      int64
-		updatedAt      int64
+		job             Job
+		key             sql.NullString
+		runner          sql.NullString
+		environment     string
+		dependencyKeys  string
+		allowFailure    int64
+		timeoutMinutes  int
+		rollbackCommand sql.NullString
+		verifyCommand   sql.NullString
+		startedAt       sql.NullInt64
+		finishedAt      sql.NullInt64
+		createdAt       int64
+		updatedAt       int64
 	)
 	if err := scanner.Scan(
 		&job.ID,
@@ -1833,6 +1868,8 @@ func scanJob(scanner executionScanner) (Job, error) {
 		&dependencyKeys,
 		&allowFailure,
 		&timeoutMinutes,
+		&rollbackCommand,
+		&verifyCommand,
 		&startedAt,
 		&finishedAt,
 		&createdAt,
@@ -1846,6 +1883,8 @@ func scanJob(scanner executionScanner) (Job, error) {
 	job.DependencyKeys = cloneJSON(json.RawMessage(dependencyKeys))
 	job.AllowFailure = allowFailure != 0
 	job.TimeoutMinutes = timeoutMinutes
+	job.RollbackCommand = nullStringPointer(rollbackCommand)
+	job.VerifyCommand = nullStringPointer(verifyCommand)
 	job.StartedAt = nullTimePointer(startedAt)
 	job.FinishedAt = nullTimePointer(finishedAt)
 	job.CreatedAt = timeFromMillis(createdAt)

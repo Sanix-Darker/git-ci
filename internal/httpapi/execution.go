@@ -108,11 +108,14 @@ func (a *API) handleRunLogs(writer http.ResponseWriter, request *http.Request) {
 func (a *API) writeStoreError(writer http.ResponseWriter, err error, message string) {
 	var notFound *store.ErrNotFound
 	var conflict *store.ErrConflict
+	var rollback *store.ErrRollbackEligibility
 	switch {
 	case errors.As(err, &notFound):
 		writeError(writer, http.StatusNotFound, "not_found", message)
 	case errors.As(err, &conflict):
 		writeError(writer, http.StatusConflict, "conflict", message)
+	case errors.As(err, &rollback):
+		writeError(writer, http.StatusUnprocessableEntity, rollback.Code, rollback.Message)
 	default:
 		writeError(writer, http.StatusUnprocessableEntity, "execution_failed", message)
 	}
