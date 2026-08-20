@@ -75,18 +75,23 @@ build-all: deps
 	@mkdir -p $(DIST_DIR)
 
 	# Linux builds
-	@GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 $(MAIN_FILE)
-	@GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 $(MAIN_FILE)
+	@CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-amd64 $(MAIN_FILE)
+	@CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-arm64 $(MAIN_FILE)
 	# @GOOS=linux GOARCH=386 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-linux-386 $(MAIN_FILE)
 
 	# macOS builds
-	@GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 $(MAIN_FILE)
-	@GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-darwin-arm64 $(MAIN_FILE)
+	@CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 $(MAIN_FILE)
+	@CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-darwin-arm64 $(MAIN_FILE)
 
 	# Windows builds
 	# @GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-windows-amd64.exe $(MAIN_FILE)
 	# @GOOS=windows GOARCH=386 $(GO) build $(LDFLAGS) -o $(DIST_DIR)/$(BINARY_NAME)-windows-386.exe $(MAIN_FILE)
 
+	@$(GO) run ./tools/releasecheck \
+		linux/amd64=$(DIST_DIR)/$(BINARY_NAME)-linux-amd64 \
+		linux/arm64=$(DIST_DIR)/$(BINARY_NAME)-linux-arm64 \
+		darwin/amd64=$(DIST_DIR)/$(BINARY_NAME)-darwin-amd64 \
+		darwin/arm64=$(DIST_DIR)/$(BINARY_NAME)-darwin-arm64
 	@echo "Multi-platform build complete. Binaries in $(DIST_DIR)/"
 	@ls -lah $(DIST_DIR)/
 
