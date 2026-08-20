@@ -206,9 +206,12 @@ func (p *GithubParser) convertJob(jobID string, ghJob *GithubJob, globalDefaults
 		return nil, fmt.Errorf("invalid environment: %w", err)
 	}
 
+	runnerHint, runnerLabels, runnerGroup := p.parseRunsOn(ghJob.RunsOn)
 	job := &types.Job{
 		Name:            p.getJobName(jobID, ghJob),
-		RunsOn:          p.parseRunsOn(ghJob.RunsOn),
+		RunsOn:          runnerHint,
+		RunnerLabels:    runnerLabels,
+		RunnerGroup:     runnerGroup,
 		Environment:     ghJob.Env,
 		EnvironmentName: environmentName,
 		If:              ghJob.If,
@@ -425,27 +428,41 @@ func (p *GithubParser) parseTriggers(on interface{}) []string {
 	return triggers
 }
 
-func (p *GithubParser) parseRunsOn(runsOn interface{}) string {
+func (p *GithubParser) parseRunsOn(runsOn interface{}) (string, []string, string) {
+	labels := make([]string, 0)
+	group := ""
 	switch v := runsOn.(type) {
 	case string:
-		return v
+		labels = append(labels, v)
 	case []interface{}:
-		// For matrix builds, return the first runner
-		if len(v) > 0 {
-			if str, ok := v[0].(string); ok {
-				return str
+		for _, value := range v {
+			if label, ok := value.(string); ok && strings.TrimSpace(label) != "" {
+				labels = append(labels, label)
 			}
 		}
 	case map[string]interface{}:
-		// Handle complex runs-on with labels
-		if labels, ok := v["labels"].([]interface{}); ok && len(labels) > 0 {
-			if str, ok := labels[0].(string); ok {
-				return str
+		if value, ok := v["group"].(string); ok {
+			group = strings.TrimSpace(value)
+		}
+		switch values := v["labels"].(type) {
+		case string:
+			labels = append(labels, values)
+		case []interface{}:
+			for _, value := range values {
+				if label, ok := value.(string); ok && strings.TrimSpace(label) != "" {
+					labels = append(labels, label)
+				}
 			}
 		}
 	}
+	if len(labels) > 0 {
+		return strings.Join(labels, ", "), labels, group
+	}
+	if group != "" {
+		return group, labels, group
+	}
 	fmt.Fprintf(os.Stderr, "Warning: 'runs-on' not specified, defaulting to ubuntu-latest\n")
-	return "ubuntu-latest"
+	return "ubuntu-latest", []string{"ubuntu-latest"}, ""
 }
 
 func (p *GithubParser) parseNeeds(needs interface{}) []string {
@@ -661,6 +678,7 @@ func (p *GithubParser) parseReusableWorkflow(jobID string, ghJob *GithubJob) (*t
 	job := &types.Job{
 		Name:            p.getJobName(jobID, ghJob),
 		RunsOn:          "ubuntu-latest", // Default for reusable workflows
+		RunnerLabels:    []string{"ubuntu-latest"},
 		EnvironmentName: environmentName,
 		Needs:           p.parseNeeds(ghJob.Needs),
 		If:              ghJob.If,

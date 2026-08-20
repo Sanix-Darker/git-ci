@@ -17,6 +17,7 @@ import (
 	"github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/httpapi"
 	"github.com/sanix-darker/git-ci/internal/projects"
+	"github.com/sanix-darker/git-ci/internal/runnerinventory"
 	"github.com/sanix-darker/git-ci/internal/scheduler"
 	"github.com/sanix-darker/git-ci/internal/secrets"
 	"github.com/sanix-darker/git-ci/internal/store"
@@ -29,6 +30,9 @@ type Config struct {
 	StateDir        string
 	StaticDir       string
 	ProjectRoots    []string
+	RunnerLabels    []string
+	RunnerTags      []string
+	RunnerGroup     string
 	AdminTokenFile  string
 	SessionKeyFile  string
 	SecretKeyFile   string
@@ -87,6 +91,9 @@ func New(ctx context.Context, config Config) (*Service, error) {
 		execution.WithSecretResolver(secretManager),
 		execution.WithWorkspaceRoot(filepath.Join(config.StateDir, "workspaces")),
 		execution.WithDataRoot(filepath.Join(config.StateDir, "data")),
+		execution.WithRunnerInventory(runnerinventory.Local(runnerinventory.Config{
+			Labels: config.RunnerLabels, Tags: config.RunnerTags, Group: config.RunnerGroup,
+		})),
 	)
 	if err != nil {
 		_ = database.Close()

@@ -44,6 +44,7 @@ type PageData struct {
 	Approvals          []ApprovalView
 	ActiveDeployments  bool
 	Webhooks           []WebhookView
+	Runners            []RunnerView
 	RunFilter          RunFilterView
 	Telemetry          RunTelemetryView
 }
@@ -71,6 +72,8 @@ type WorkflowView struct {
 	Jobs                                                  []WorkflowJobView
 	GraphRows                                             []RunGraphRowView
 	Badges                                                []SemanticBadgeView
+	RunnerReady                                           bool
+	RunnerBlocked                                         int
 }
 
 type SemanticBadgeView struct {
@@ -95,6 +98,13 @@ type WorkflowJobView struct {
 	AllowFailure                                      bool
 	Steps                                             []WorkflowStepView
 	Badges                                            []SemanticBadgeView
+}
+
+type RunnerView struct {
+	ID, Name, Status, Dot, Mode, OS, Architecture, Group string
+	Labels, Tags                                         []string
+	DockerAvailable, RunUntagged                         bool
+	MaxParallel                                          int
 }
 
 type WorkflowStepView struct {

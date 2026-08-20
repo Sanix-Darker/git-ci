@@ -13,6 +13,7 @@ import (
 
 	"github.com/sanix-darker/git-ci/internal/executionsemantics"
 	"github.com/sanix-darker/git-ci/internal/parsers"
+	"github.com/sanix-darker/git-ci/internal/runnerinventory"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 	"github.com/sanix-darker/git-ci/pkg/types"
@@ -55,39 +56,42 @@ type Definition struct {
 // source job identifier; Needs and Requires therefore reference keys rather
 // than presentation names.
 type JobDefinition struct {
-	Key             string                               `json:"key"`
-	SourceKey       string                               `json:"sourceKey,omitempty"`
-	Name            string                               `json:"name"`
-	Environment     map[string]string                    `json:"environment"`
-	EnvironmentName string                               `json:"environmentName,omitempty"`
-	DeploymentTier  string                               `json:"deploymentTier,omitempty"`
-	Needs           []string                             `json:"needs"`
-	Requires        []string                             `json:"requires"`
-	Stage           string                               `json:"stage,omitempty"`
-	RunnerHint      string                               `json:"runnerHint,omitempty"`
-	AllowFailure    bool                                 `json:"allowFailure"`
-	TimeoutMinutes  int                                  `json:"timeoutMinutes,omitempty"`
-	RollbackCommand string                               `json:"rollbackCommand,omitempty"`
-	VerifyCommand   string                               `json:"verifyCommand,omitempty"`
-	Matrix          map[string]string                    `json:"matrix,omitempty"`
-	MatrixIndex     int                                  `json:"matrixIndex,omitempty"`
-	MatrixTotal     int                                  `json:"matrixTotal,omitempty"`
-	MatrixLabel     string                               `json:"matrixLabel,omitempty"`
-	Condition       executionsemantics.ConditionContract `json:"condition"`
-	Rules           []RuleDefinition                     `json:"rules,omitempty"`
-	Only            *OnlyExceptDefinition                `json:"only,omitempty"`
-	Except          *OnlyExceptDefinition                `json:"except,omitempty"`
-	When            string                               `json:"when,omitempty"`
-	Concurrency     *ConcurrencyDefinition               `json:"concurrency,omitempty"`
-	Interruptible   bool                                 `json:"interruptible,omitempty"`
-	FailFast        bool                                 `json:"failFast,omitempty"`
-	MaxParallel     int                                  `json:"maxParallel,omitempty"`
-	WorkflowCall    *types.WorkflowCall                  `json:"workflowCall,omitempty"`
-	Container       *types.Container                     `json:"container,omitempty"`
-	Services        map[string]*types.Service            `json:"services,omitempty"`
-	Artifacts       *types.ArtifactConfig                `json:"artifacts,omitempty"`
-	Cache           *types.CacheConfig                   `json:"cache,omitempty"`
-	Steps           []StepDefinition                     `json:"steps"`
+	Key                string                               `json:"key"`
+	SourceKey          string                               `json:"sourceKey,omitempty"`
+	Name               string                               `json:"name"`
+	Environment        map[string]string                    `json:"environment"`
+	EnvironmentName    string                               `json:"environmentName,omitempty"`
+	DeploymentTier     string                               `json:"deploymentTier,omitempty"`
+	Needs              []string                             `json:"needs"`
+	Requires           []string                             `json:"requires"`
+	Stage              string                               `json:"stage,omitempty"`
+	RunnerHint         string                               `json:"runnerHint,omitempty"`
+	RunnerRequirements []string                             `json:"runnerRequirements,omitempty"`
+	RunnerGroup        string                               `json:"runnerGroup,omitempty"`
+	RunnerMatch        runnerinventory.Match                `json:"runnerMatch"`
+	AllowFailure       bool                                 `json:"allowFailure"`
+	TimeoutMinutes     int                                  `json:"timeoutMinutes,omitempty"`
+	RollbackCommand    string                               `json:"rollbackCommand,omitempty"`
+	VerifyCommand      string                               `json:"verifyCommand,omitempty"`
+	Matrix             map[string]string                    `json:"matrix,omitempty"`
+	MatrixIndex        int                                  `json:"matrixIndex,omitempty"`
+	MatrixTotal        int                                  `json:"matrixTotal,omitempty"`
+	MatrixLabel        string                               `json:"matrixLabel,omitempty"`
+	Condition          executionsemantics.ConditionContract `json:"condition"`
+	Rules              []RuleDefinition                     `json:"rules,omitempty"`
+	Only               *OnlyExceptDefinition                `json:"only,omitempty"`
+	Except             *OnlyExceptDefinition                `json:"except,omitempty"`
+	When               string                               `json:"when,omitempty"`
+	Concurrency        *ConcurrencyDefinition               `json:"concurrency,omitempty"`
+	Interruptible      bool                                 `json:"interruptible,omitempty"`
+	FailFast           bool                                 `json:"failFast,omitempty"`
+	MaxParallel        int                                  `json:"maxParallel,omitempty"`
+	WorkflowCall       *types.WorkflowCall                  `json:"workflowCall,omitempty"`
+	Container          *types.Container                     `json:"container,omitempty"`
+	Services           map[string]*types.Service            `json:"services,omitempty"`
+	Artifacts          *types.ArtifactConfig                `json:"artifacts,omitempty"`
+	Cache              *types.CacheConfig                   `json:"cache,omitempty"`
+	Steps              []StepDefinition                     `json:"steps"`
 }
 
 type ConcurrencyDefinition struct {
@@ -586,6 +590,7 @@ func normalizeDefinition(
 				return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
 			}
 			normalized.SourceKey = sourceKey
+			normalized.RunnerRequirements, normalized.RunnerGroup = runnerRequirements(file.provider, job)
 			if err := applyMatrixVariant(&normalized, variant, string(file.provider)); err != nil {
 				return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
 			}
@@ -642,6 +647,7 @@ func normalizeDefinition(
 	for _, key := range order {
 		definition.Jobs = append(definition.Jobs, jobs[key])
 	}
+	applyDefinitionRunnerInventory(&definition, runnerinventory.Local(runnerinventory.Config{}))
 	return definition, nil
 }
 
@@ -711,7 +717,7 @@ func applyMatrixVariant(job *JobDefinition, variant executionsemantics.MatrixVar
 	for key, value := range environment {
 		job.Environment[key] = value
 	}
-	fields := []*string{&job.Name, &job.EnvironmentName, &job.DeploymentTier, &job.RunnerHint, &job.RollbackCommand, &job.VerifyCommand}
+	fields := []*string{&job.Name, &job.EnvironmentName, &job.DeploymentTier, &job.RunnerHint, &job.RunnerGroup, &job.RollbackCommand, &job.VerifyCommand}
 	for _, field := range fields {
 		resolved, err := executionsemantics.ResolveMatrixTemplate(*field, variant.Values)
 		if err != nil {
@@ -725,6 +731,13 @@ func applyMatrixVariant(job *JobDefinition, variant executionsemantics.MatrixVar
 			return err
 		}
 		job.Environment[key] = resolved
+	}
+	for index, requirement := range job.RunnerRequirements {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(requirement, variant.Values)
+		if err != nil {
+			return err
+		}
+		job.RunnerRequirements[index] = resolved
 	}
 	if job.Concurrency != nil {
 		job.Concurrency.Group, err = executionsemantics.ResolveMatrixTemplate(job.Concurrency.Group, variant.Values)
@@ -981,6 +994,24 @@ func runnerHint(job *types.Job) string {
 		return job.Agent.Label
 	default:
 		return ""
+	}
+}
+
+func runnerRequirements(provider Provider, job *types.Job) ([]string, string) {
+	if job == nil {
+		return nil, ""
+	}
+	switch provider {
+	case ProviderGitHubActions:
+		labels := copyStringSlice(job.RunnerLabels)
+		if len(labels) == 0 && strings.TrimSpace(job.RunsOn) != "" {
+			labels = []string{job.RunsOn}
+		}
+		return labels, job.RunnerGroup
+	case ProviderGitLabCI:
+		return copyStringSlice(job.Tags), ""
+	default:
+		return nil, ""
 	}
 }
 

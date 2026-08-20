@@ -154,6 +154,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleSession)))
 	mux.Handle("DELETE /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleLogout)))
 	mux.Handle("GET /api/v1/project-candidates", a.requireAuth(http.HandlerFunc(a.handleProjectCandidates)))
+	mux.Handle("GET /api/v1/runners", a.requireAuth(http.HandlerFunc(a.handleRunners)))
 	mux.Handle("GET /api/v1/projects", a.requireAuth(http.HandlerFunc(a.handleProjects)))
 	mux.Handle("POST /api/v1/projects", a.requireAuth(http.HandlerFunc(a.handleProjects)))
 	mux.Handle("GET /api/v1/projects/{project}", a.requireAuth(http.HandlerFunc(a.handleProject)))
@@ -249,7 +250,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
+		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
 	})
 }
 

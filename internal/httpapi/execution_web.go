@@ -255,31 +255,34 @@ type workflowDefinitionDocument struct {
 }
 
 type workflowDefinitionJobDocument struct {
-	Key           string                               `json:"key"`
-	SourceKey     string                               `json:"sourceKey"`
-	Name          string                               `json:"name"`
-	Stage         string                               `json:"stage"`
-	RunnerHint    string                               `json:"runnerHint"`
-	Needs         []string                             `json:"needs"`
-	Requires      []string                             `json:"requires"`
-	AllowFailure  bool                                 `json:"allowFailure"`
-	Matrix        map[string]string                    `json:"matrix"`
-	MatrixIndex   int                                  `json:"matrixIndex"`
-	MatrixTotal   int                                  `json:"matrixTotal"`
-	MatrixLabel   string                               `json:"matrixLabel"`
-	Condition     conditionDocument                    `json:"condition"`
-	Rules         []json.RawMessage                    `json:"rules"`
-	When          string                               `json:"when"`
-	Concurrency   *concurrencyDocument                 `json:"concurrency"`
-	Interruptible bool                                 `json:"interruptible"`
-	FailFast      bool                                 `json:"failFast"`
-	MaxParallel   int                                  `json:"maxParallel"`
-	WorkflowCall  *workflowCallDefinitionDocument      `json:"workflowCall"`
-	Container     *containerDefinitionDocument         `json:"container"`
-	Services      map[string]serviceDefinitionDocument `json:"services"`
-	Artifacts     *artifactDefinitionDocument          `json:"artifacts"`
-	Cache         *cacheDefinitionDocument             `json:"cache"`
-	Steps         []workflowDefinitionStepDocument     `json:"steps"`
+	Key                string                               `json:"key"`
+	SourceKey          string                               `json:"sourceKey"`
+	Name               string                               `json:"name"`
+	Stage              string                               `json:"stage"`
+	RunnerHint         string                               `json:"runnerHint"`
+	RunnerRequirements []string                             `json:"runnerRequirements"`
+	RunnerGroup        string                               `json:"runnerGroup"`
+	RunnerMatch        runnerMatchDocument                  `json:"runnerMatch"`
+	Needs              []string                             `json:"needs"`
+	Requires           []string                             `json:"requires"`
+	AllowFailure       bool                                 `json:"allowFailure"`
+	Matrix             map[string]string                    `json:"matrix"`
+	MatrixIndex        int                                  `json:"matrixIndex"`
+	MatrixTotal        int                                  `json:"matrixTotal"`
+	MatrixLabel        string                               `json:"matrixLabel"`
+	Condition          conditionDocument                    `json:"condition"`
+	Rules              []json.RawMessage                    `json:"rules"`
+	When               string                               `json:"when"`
+	Concurrency        *concurrencyDocument                 `json:"concurrency"`
+	Interruptible      bool                                 `json:"interruptible"`
+	FailFast           bool                                 `json:"failFast"`
+	MaxParallel        int                                  `json:"maxParallel"`
+	WorkflowCall       *workflowCallDefinitionDocument      `json:"workflowCall"`
+	Container          *containerDefinitionDocument         `json:"container"`
+	Services           map[string]serviceDefinitionDocument `json:"services"`
+	Artifacts          *artifactDefinitionDocument          `json:"artifacts"`
+	Cache              *cacheDefinitionDocument             `json:"cache"`
+	Steps              []workflowDefinitionStepDocument     `json:"steps"`
 }
 
 type workflowCallDefinitionDocument struct {
@@ -325,6 +328,17 @@ type conditionDocument struct {
 	Diagnostic string `json:"diagnostic"`
 }
 
+type runnerMatchDocument struct {
+	Evaluated bool     `json:"evaluated"`
+	Available bool     `json:"available"`
+	RunnerID  string   `json:"runnerId"`
+	Runner    string   `json:"runner"`
+	Required  []string `json:"required"`
+	Missing   []string `json:"missing"`
+	Group     string   `json:"group"`
+	Reason    string   `json:"reason"`
+}
+
 type concurrencyDocument struct {
 	Group            string `json:"group"`
 	CancelInProgress bool   `json:"cancelInProgress"`
@@ -337,6 +351,7 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 		return
 	}
 	view.Triggers = definition.Triggers
+	view.RunnerReady = true
 	view.Stages = definition.Stages
 	if definition.Concurrency != nil {
 		label := "LOCK " + definition.Concurrency.Group
@@ -398,6 +413,12 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 			Dependencies: strings.Join(dependencies, ", "), AllowFailure: job.AllowFailure,
 			Badges: jobSemanticBadges(job),
 		}
+		status, dot := "READY", "dot-green"
+		if job.RunnerMatch.Evaluated && !job.RunnerMatch.Available {
+			status, dot = "NO RUNNER", "dot-red"
+			view.RunnerReady = false
+			view.RunnerBlocked++
+		}
 		if workflowJob.Name == "" {
 			workflowJob.Name = key
 		}
@@ -410,7 +431,7 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 		view.EdgeCount += len(dependencies)
 		view.Jobs = append(view.Jobs, workflowJob)
 		runJobs = append(runJobs, webui.RunJobView{
-			Key: key, SourceKey: workflowJob.SourceKey, Name: workflowJob.Name, Status: "READY", Dot: "dot-green",
+			Key: key, SourceKey: workflowJob.SourceKey, Name: workflowJob.Name, Status: status, Dot: dot,
 			Runner: workflowJob.Runner, Dependencies: workflowJob.Dependencies,
 			DependencyKeys: dependencies, AllowFailure: workflowJob.AllowFailure, Badges: workflowJob.Badges,
 		})
@@ -516,6 +537,13 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 
 func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
 	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if job.RunnerMatch.Evaluated {
+		if job.RunnerMatch.Available {
+			badges = append(badges, webui.SemanticBadgeView{Label: "RUNNER " + strings.ToUpper(job.RunnerMatch.RunnerID), Tone: "runtime", Hint: job.RunnerMatch.Reason})
+		} else {
+			badges = append(badges, webui.SemanticBadgeView{Label: "MISSING " + strings.ToUpper(strings.Join(job.RunnerMatch.Missing, "+")), Tone: "danger", Hint: job.RunnerMatch.Reason})
+		}
+	}
 	if job.WorkflowCall != nil && job.WorkflowCall.Uses != "" {
 		badges = append(badges, webui.SemanticBadgeView{Label: "REUSE " + job.WorkflowCall.Uses, Tone: "runtime", Hint: "Expanded same-commit reusable workflow"})
 	}
