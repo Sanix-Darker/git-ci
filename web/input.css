@@ -371,6 +371,15 @@
 .rollback-control button { min-height: 38px; border: 1px solid #d8d8d8; border-radius: 0; padding: 0 .85rem; background: #d8d8d8; color: #080808; cursor: pointer; font-size: .56rem; font-weight: 900; transition: transform 100ms steps(2, end); }
 .rollback-control button:hover { transform: translateX(3px); }
 .rollback-unavailable { margin: 0; border-top: 1px solid #202020; padding: .5rem 1.25rem; color: #565656; font-size: .5rem; font-weight: 900; }
+.play-control { display: inline-grid; flex: 0 0 auto; }
+.play-control button { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid #b8b8b8; border-radius: 0; padding: 0; background: #080808; color: #fff; cursor: pointer; font: 900 .72rem/1 var(--font-mono); transition: color 100ms steps(2, end), background 100ms steps(2, end), transform 100ms steps(2, end); }
+.play-control button:hover { background: #fff; color: #080808; transform: translateX(3px); }
+.play-control button:focus-visible { outline: 2px solid #2d72ff; outline-offset: 2px; }
+.play-control.is-disabled button { border-color: #272727; color: #484848; cursor: not-allowed; }
+.run-node header > span, .step-actions, .job-meta { display: flex; align-items: center; gap: .55rem; }
+.run-node header { justify-content: space-between; }
+.job-meta { justify-content: flex-end; }
+.step-actions b { color: #727272; font-size: .54rem; }
 
 @media (max-width: 900px) { .delivery-config-grid { grid-template-columns: 1fr; } }
 @media (max-width: 720px) {
@@ -380,7 +389,7 @@
   .deployment-table .data-row { width: 900px; }
   .rollback-control { grid-template-columns: 1fr; width: 900px; }
 }
-@media (prefers-reduced-motion: reduce) { .approval-card, .approval-card:hover, .rollback-control button, .rollback-control button:hover { transition: none !important; transform: none !important; } }
+@media (prefers-reduced-motion: reduce) { .approval-card, .approval-card:hover, .rollback-control button, .rollback-control button:hover, .play-control button, .play-control button:hover { transition: none !important; transform: none !important; } }
 
 /* Operator motion, telemetry, and loading atoms */
 .workspace { position: relative; }

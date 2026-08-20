@@ -97,6 +97,20 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(testLogs).toContainText("tests passed");
   await secretLogs.scrollIntoViewIfNeeded();
   await expect(secretLogs).toContainText("***");
+  const sourceRunURL = page.url();
+  const testJob = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Test", exact: true }) });
+  await expect(testJob.getByRole("button", { name: "PLAY STEP" }).first()).toBeEnabled();
+  await testJob.getByRole("button", { name: "PLAY STEP" }).first().click();
+  await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+$/);
+  await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
+  await expect(page.locator("article.job-detail")).toHaveCount(1);
+  await expect(page.locator(".step-detail")).toHaveCount(1);
+  await page.goto(sourceRunURL);
+  const replayJob = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Test", exact: true }) });
+  await expect(replayJob.getByRole("button", { name: "PLAY JOB" })).toBeEnabled();
+  await replayJob.getByRole("button", { name: "PLAY JOB" }).click();
+  await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
+  await expect(page.locator("article.job-detail")).toHaveCount(2);
   await expect(secretLogs).not.toContainText("e2e-super-secret");
 
   await page.getByRole("link", { name: /Runs/ }).click();
