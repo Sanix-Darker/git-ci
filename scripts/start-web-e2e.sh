@@ -166,6 +166,38 @@ jobs:
     steps:
       - run: printf 'reuse published\n'
 YAML
+mkdir -p "$project_root/alpha-service/.github/actions/check"
+cat >"$project_root/alpha-service/.github/actions/check/action.yml" <<'YAML'
+name: Local Check
+inputs:
+  target:
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Prepare input
+      shell: bash
+      run: printf '%s' '${{ inputs.target }}' > composite-target.txt
+    - name: Verify input
+      shell: bash
+      env:
+        EXPECTED: ${{ inputs.target }}
+      run: test "$(cat composite-target.txt)" = "$EXPECTED"
+YAML
+cat >"$project_root/alpha-service/.github/workflows/composite.yml" <<'YAML'
+name: Composite Delivery
+on: workflow_dispatch
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Local check
+        uses: ./.github/actions/check
+        with:
+          target: service
+      - name: Finish
+        run: test -f composite-target.txt
+YAML
 cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
 stages: [test]
 default:
