@@ -94,7 +94,7 @@ func resolveGitCommit(ctx context.Context, sourcePath, ref, commitSHA string) (s
 }
 
 func gitCommandOutput(ctx context.Context, sourcePath string, arguments ...string) (string, error) {
-	commandArguments := append([]string{"-C", sourcePath}, arguments...)
+	commandArguments := append([]string{"-c", "safe.directory=" + sourcePath, "-C", sourcePath}, arguments...)
 	command := exec.CommandContext(ctx, "git", commandArguments...)
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -242,7 +242,7 @@ func (manager *workspaceManager) containerPath(runID string) (string, error) {
 func materializeGitArchive(ctx context.Context, sourcePath, commitSHA, destination string) error {
 	archiveContext, cancel := context.WithCancel(ctx)
 	defer cancel()
-	command := exec.CommandContext(archiveContext, "git", "-C", sourcePath, "archive", "--format=tar", commitSHA)
+	command := exec.CommandContext(archiveContext, "git", "-c", "safe.directory="+sourcePath, "-C", sourcePath, "archive", "--format=tar", commitSHA)
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("execution: open Git archive: %w", err)

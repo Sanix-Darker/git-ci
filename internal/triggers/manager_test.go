@@ -27,6 +27,7 @@ func TestCommitTriggerBaselinesFiltersAndDeduplicates(t *testing.T) {
 	gitTrigger(t, repository, "config", "user.name", "git-ci trigger tests")
 	gitTrigger(t, repository, "add", "-A")
 	gitTrigger(t, repository, "commit", "-m", "initial")
+	t.Setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
 
 	database, err := store.Open(ctx, filepath.Join(root, "gci.db"))
 	if err != nil {
@@ -101,7 +102,7 @@ func writeTriggerFile(t *testing.T, path, contents string) {
 
 func gitTrigger(t *testing.T, path string, arguments ...string) string {
 	t.Helper()
-	command := exec.Command("git", append([]string{"-C", path}, arguments...)...)
+	command := exec.Command("git", append([]string{"-c", "safe.directory=" + path, "-C", path}, arguments...)...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %v: %s", arguments, err, output)
