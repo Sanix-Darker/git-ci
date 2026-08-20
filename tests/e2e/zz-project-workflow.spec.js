@@ -79,6 +79,20 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
   await page.goto("/app/workflows");
 
+  const gpu = page.locator("details.workflow-detail").filter({ hasText: "GPU Delivery" });
+  await gpu.locator("summary").click();
+  await expect(gpu.getByLabel("Pipeline dependency graph")).toContainText("NO RUNNER");
+  await expect(gpu).toContainText("MISSING GPU");
+  await expect(gpu.getByRole("button", { name: "RUNNER REQUIRED" })).toBeDisabled();
+  const gpuWorkflowID = (await gpu.getAttribute("id")).replace("workflow-", "");
+  const csrfToken = await gpu.locator('input[name="_csrf"]').inputValue();
+  const rejected = await page.request.post(`/api/v1/workflows/${gpuWorkflowID}/runs`, {
+    data: { ref: "main" },
+    headers: { "X-CSRF-Token": csrfToken },
+  });
+  expect(rejected.status()).toBe(409);
+  expect((await rejected.json()).error.code).toBe("runner_unavailable");
+
   const manual = page.locator("details.workflow-detail").filter({ hasText: "Failure CI" });
   await manual.locator("summary").click();
   await expect(pipeline).not.toHaveAttribute("open", "");

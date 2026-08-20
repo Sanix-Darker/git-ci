@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/sanix-darker/git-ci/internal/auth"
+	execdomain "github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/store"
 )
 
@@ -111,6 +112,7 @@ func (a *API) writeStoreError(writer http.ResponseWriter, err error, message str
 	var conflict *store.ErrConflict
 	var rollback *store.ErrRollbackEligibility
 	var replay *store.ErrReplayEligibility
+	var runnerUnavailable *execdomain.ErrRunnerUnavailable
 	switch {
 	case errors.As(err, &notFound):
 		writeError(writer, http.StatusNotFound, "not_found", message)
@@ -120,6 +122,8 @@ func (a *API) writeStoreError(writer http.ResponseWriter, err error, message str
 		writeError(writer, http.StatusUnprocessableEntity, rollback.Code, rollback.Message)
 	case errors.As(err, &replay):
 		writeError(writer, http.StatusUnprocessableEntity, replay.Code, replay.Message)
+	case errors.As(err, &runnerUnavailable):
+		writeError(writer, http.StatusConflict, "runner_unavailable", runnerUnavailable.Error())
 	default:
 		writeError(writer, http.StatusUnprocessableEntity, "execution_failed", message)
 	}

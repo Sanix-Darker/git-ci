@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/sanix-darker/git-ci/internal/executionsemantics"
+	"github.com/sanix-darker/git-ci/internal/runnerinventory"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 	"github.com/sanix-darker/git-ci/pkg/types"
@@ -46,6 +47,7 @@ type Manager struct {
 	workspaces    *workspaceManager
 	dataRoot      string
 	archives      *archiveManager
+	inventory     runnerinventory.Inventory
 }
 
 type SecretResolver interface {
@@ -70,6 +72,10 @@ func WithDataRoot(root string) Option {
 	return func(manager *Manager) { manager.dataRoot = root }
 }
 
+func WithRunnerInventory(inventory runnerinventory.Inventory) Option {
+	return func(manager *Manager) { manager.inventory = inventory.Snapshot() }
+}
+
 func NewManager(database *store.Store, options ...Option) (*Manager, error) {
 	if database == nil {
 		return nil, errors.New("execution: store is required")
@@ -79,6 +85,7 @@ func NewManager(database *store.Store, options ...Option) (*Manager, error) {
 		workerID:     fmt.Sprintf("local-%d", os.Getpid()),
 		pollInterval: defaultPollInterval,
 		wake:         make(chan struct{}, 1),
+		inventory:    runnerinventory.Local(runnerinventory.Config{}),
 	}
 	for _, option := range options {
 		if option != nil {
@@ -101,6 +108,13 @@ func NewManager(database *store.Store, options ...Option) (*Manager, error) {
 	return manager, nil
 }
 
+func (m *Manager) RunnerInventory() runnerinventory.Inventory {
+	if m == nil {
+		return runnerinventory.Inventory{}
+	}
+	return m.inventory.Snapshot()
+}
+
 // SyncProject discovers provider files beneath one registered project and
 // makes that exact set active. Removed definitions stay stored but inactive so
 // historical runs retain their workflow foreign key.
@@ -113,6 +127,7 @@ func (m *Manager) SyncProject(ctx context.Context, projectID string) ([]store.Wo
 	if err != nil {
 		return nil, err
 	}
+	applyDefinitionsRunnerInventory(definitions, m.inventory)
 	keys := make([]string, 0, len(definitions))
 	for _, definition := range definitions {
 		definitionJSON, marshalErr := json.Marshal(definition)
@@ -172,6 +187,10 @@ func (m *Manager) enqueueTriggered(ctx context.Context, workflowID, ref, commitS
 	var definition Definition
 	if err := json.Unmarshal(workflow.Definition, &definition); err != nil {
 		return store.Run{}, fmt.Errorf("execution: decode workflow definition: %w", err)
+	}
+	applyDefinitionRunnerInventory(&definition, m.inventory)
+	if err := validateDefinitionRunnerAvailability(definition); err != nil {
+		return store.Run{}, err
 	}
 	runEnvironment, err := applyManualInputs(workflow.Environment, definition.TriggerPolicies, inputs)
 	if err != nil {

@@ -61,11 +61,13 @@ type Job struct {
 
 	// Runner specification
 	// GitHub: runs-on, GitLab: tags/image, Jenkins: agent, CircleCI: executor
-	RunsOn   string   `yaml:"runs-on,omitempty" json:"runs-on,omitempty"`
-	Tags     []string `yaml:"tags,omitempty" json:"tags,omitempty"`         // GitLab
-	Image    string   `yaml:"image,omitempty" json:"image,omitempty"`       // GitLab/CircleCI
-	Agent    *Agent   `yaml:"agent,omitempty" json:"agent,omitempty"`       // Jenkins
-	Executor string   `yaml:"executor,omitempty" json:"executor,omitempty"` // CircleCI
+	RunsOn       string   `yaml:"runs-on,omitempty" json:"runs-on,omitempty"`
+	RunnerLabels []string `yaml:"runner-labels,omitempty" json:"runner-labels,omitempty"`
+	RunnerGroup  string   `yaml:"runner-group,omitempty" json:"runner-group,omitempty"`
+	Tags         []string `yaml:"tags,omitempty" json:"tags,omitempty"`         // GitLab
+	Image        string   `yaml:"image,omitempty" json:"image,omitempty"`       // GitLab/CircleCI
+	Agent        *Agent   `yaml:"agent,omitempty" json:"agent,omitempty"`       // Jenkins
+	Executor     string   `yaml:"executor,omitempty" json:"executor,omitempty"` // CircleCI
 
 	// Container/Docker support (GitHub/GitLab/CircleCI)
 	Container *Container          `yaml:"container,omitempty" json:"container,omitempty"`

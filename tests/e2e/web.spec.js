@@ -121,7 +121,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.locator("details.workflow-detail", { hasText: "Alpha CI" })).toBeVisible();
   await page.getByRole("button", { name: "SYNC BETA-WORKER" }).click();
   await expect(page.locator("details.workflow-detail", { hasText: ".gitlab-ci.yml" })).toBeVisible();
-  await expect(page.getByText("GITHUB", { exact: true })).toHaveCount(7);
+  await expect(page.getByText("GITHUB", { exact: true })).toHaveCount(8);
   await expect(page.getByText("GITLAB", { exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: "Secrets" }).click();
@@ -297,6 +297,11 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.getByRole("status").filter({ hasText: "SCHEDULE UPDATED" })).toBeVisible();
 
   await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "LOCAL RUNNER" })).toBeVisible();
+  await expect(page.locator("[data-runner-card]")).toContainText("ONLINE / SERIAL / CAPACITY 1");
+  const runnerResponse = await page.request.get("/api/v1/runners");
+  expect(runnerResponse.status()).toBe(200);
+  expect((await runnerResponse.json()).count).toBe(1);
   await expect(page.getByRole("heading", { name: "EMAIL ALERTS" })).toBeVisible();
   await page.getByLabel("RECIPIENTS").fill("ops@example.com");
   await expect(page.getByText("UI PREVIEW / DELIVERY NOT ACTIVE")).toBeVisible();
@@ -307,7 +312,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await page.getByLabel("NAME").fill("github-push");
   await page.getByRole("button", { name: /CREATE ENDPOINT/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "WEBHOOK TOKEN" })).toBeVisible();
-  await expect(page.locator(".compact-list")).toContainText("github-push");
+  await expect(page.locator(".configuration-grid .compact-list")).toContainText("github-push");
 
   await page.goto("/app/projects");
   await expect(page.locator(".project-rows")).toContainText("alpha-service");

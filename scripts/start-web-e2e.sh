@@ -198,6 +198,16 @@ jobs:
       - name: Finish
         run: test -f composite-target.txt
 YAML
+cat >"$project_root/alpha-service/.github/workflows/gpu.yml" <<'YAML'
+name: GPU Delivery
+on: workflow_dispatch
+jobs:
+  accelerate:
+    runs-on: [self-hosted, linux, x64, gpu]
+    steps:
+      - name: Probe GPU
+        run: printf 'gpu ready\n'
+YAML
 cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
 stages: [test]
 default:

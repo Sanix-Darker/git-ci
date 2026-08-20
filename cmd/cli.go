@@ -314,6 +314,22 @@ func commands() []*cli.Command {
 					Usage:   "Allowed root containing selectable VPS projects",
 					EnvVars: []string{"GIT_CI_PROJECTS_ROOT"},
 				},
+				&cli.StringSliceFlag{
+					Name:    "runner-label",
+					Usage:   "Additional case-insensitive GitHub runner label",
+					EnvVars: []string{"GIT_CI_RUNNER_LABELS"},
+				},
+				&cli.StringSliceFlag{
+					Name:    "runner-tag",
+					Usage:   "Additional case-sensitive GitLab runner tag",
+					EnvVars: []string{"GIT_CI_RUNNER_TAGS"},
+				},
+				&cli.StringFlag{
+					Name:    "runner-group",
+					Usage:   "GitHub runner group exposed by the local worker",
+					Value:   "default",
+					EnvVars: []string{"GIT_CI_RUNNER_GROUP"},
+				},
 				&cli.StringFlag{
 					Name:    "admin-token-file",
 					Usage:   "Mode-0600 admin token file (defaults below state-dir)",

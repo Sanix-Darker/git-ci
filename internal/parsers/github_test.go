@@ -82,6 +82,40 @@ func TestGithubParser_ParseMatrix(t *testing.T) {
 	}
 }
 
+func TestGithubParserPreservesAllRunnerLabelsAndGroup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runners.yml")
+	contents := []byte(`
+name: Runner routing
+on: workflow_dispatch
+jobs:
+  labels:
+    runs-on: [self-hosted, Linux, gpu]
+    steps:
+      - run: echo labels
+  grouped:
+    runs-on:
+      group: builders
+      labels: [self-hosted, ARM64]
+    steps:
+      - run: echo group
+`)
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pipeline, err := NewGithubParser().Parse(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := pipeline.Jobs["labels"]
+	if got := strings.Join(labels.RunnerLabels, ","); got != "self-hosted,Linux,gpu" {
+		t.Fatalf("runner labels = %q", got)
+	}
+	grouped := pipeline.Jobs["grouped"]
+	if grouped.RunnerGroup != "builders" || strings.Join(grouped.RunnerLabels, ",") != "self-hosted,ARM64" {
+		t.Fatalf("grouped runner = %#v", grouped)
+	}
+}
+
 func TestGithubParser_ParseServices(t *testing.T) {
 	parser := NewGithubParser()
 	pipeline, err := parser.Parse(testdataPath("github", "services.yml"))
