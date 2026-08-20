@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -31,11 +30,13 @@ const (
 // run enters the queue; workers never accept arbitrary paths or commands from
 // HTTP requests.
 type Manager struct {
-	store        *store.Store
-	secrets      SecretResolver
-	workerID     string
-	pollInterval time.Duration
-	wake         chan struct{}
+	store         *store.Store
+	secrets       SecretResolver
+	workerID      string
+	pollInterval  time.Duration
+	wake          chan struct{}
+	workspaceRoot string
+	workspaces    *workspaceManager
 }
 
 type SecretResolver interface {
@@ -50,6 +51,10 @@ type Option func(*Manager)
 
 func WithSecretResolver(resolver SecretResolver) Option {
 	return func(manager *Manager) { manager.secrets = resolver }
+}
+
+func WithWorkspaceRoot(root string) Option {
+	return func(manager *Manager) { manager.workspaceRoot = root }
 }
 
 func NewManager(database *store.Store, options ...Option) (*Manager, error) {
@@ -67,6 +72,11 @@ func NewManager(database *store.Store, options ...Option) (*Manager, error) {
 			option(manager)
 		}
 	}
+	workspaces, err := newWorkspaceManager(manager.workspaceRoot)
+	if err != nil {
+		return nil, err
+	}
+	manager.workspaces = workspaces
 	return manager, nil
 }
 
@@ -137,6 +147,10 @@ func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitS
 	if ref == "" {
 		ref = "refs/heads/" + project.DefaultBranch
 	}
+	resolvedCommit, err := resolveGitCommit(ctx, *project.CanonicalPath, ref, commitSHA)
+	if err != nil {
+		return store.Run{}, err
+	}
 	jobs := make([]store.EnqueueJob, 0, len(definition.Jobs))
 	for _, job := range definition.Jobs {
 		dependencies := uniqueStrings(append(append([]string{}, job.Needs...), job.Requires...))
@@ -184,7 +198,7 @@ func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitS
 		WorkflowID:  workflow.ID,
 		TriggerType: strings.TrimSpace(trigger),
 		Ref:         strings.TrimSpace(ref),
-		CommitSHA:   strings.TrimSpace(commitSHA),
+		CommitSHA:   resolvedCommit,
 		SourcePath:  *project.CanonicalPath,
 		Environment: workflow.Environment,
 		Jobs:        jobs,
@@ -220,6 +234,9 @@ func (m *Manager) Notify() {
 func (m *Manager) Run(ctx context.Context) error {
 	if _, err := m.store.RecoverExpiredRunWorkers(ctx, time.Now().UTC(), time.Now().UTC().Add(-runWorkerLeaseTTL)); err != nil {
 		return fmt.Errorf("execution: recover interrupted runs: %w", err)
+	}
+	if err := m.workspaces.CleanupRecovered(ctx, m.store); err != nil {
+		return fmt.Errorf("execution: recover run workspaces: %w", err)
 	}
 	ticker := time.NewTicker(m.pollInterval)
 	defer ticker.Stop()
@@ -266,11 +283,19 @@ func (m *Manager) ProcessNext(ctx context.Context) (bool, error) {
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan struct{})
 	go m.heartbeatRunWorker(workerCtx, run.ID, stopWorker, workerDone)
-	err = m.executeRun(workerCtx, *run)
+	workspace, workspaceErr := m.workspaces.Acquire(workerCtx, *run)
+	if workspaceErr != nil {
+		err = m.failWorkspaceSetup(workerCtx, *run, workspaceErr)
+	} else {
+		err = m.executeRun(workerCtx, *run, workspace.SourcePath)
+	}
 	stopWorker()
 	<-workerDone
 	if releaseErr := m.store.ReleaseRunWorker(context.WithoutCancel(ctx), run.ID, m.workerID); err == nil && releaseErr != nil {
 		err = releaseErr
+	}
+	if cleanupErr := m.cleanupTerminalWorkspace(context.WithoutCancel(ctx), run.ID); err == nil && cleanupErr != nil {
+		err = cleanupErr
 	}
 	if err != nil {
 		return true, err
@@ -278,7 +303,7 @@ func (m *Manager) ProcessNext(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
+func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath string) error {
 	graph, err := m.store.GetRunGraph(ctx, run.ID)
 	if err != nil {
 		return fmt.Errorf("execution: load claimed run: %w", err)
@@ -347,7 +372,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
 			jobCtx, stopEnvironment = context.WithCancel(ctx)
 			go m.heartbeatEnvironment(jobCtx, item.Job.ID, stopEnvironment, environmentDone)
 		}
-		status, err := m.executeJob(jobCtx, graph.Run, item, jobSecrets)
+		status, err := m.executeJob(jobCtx, graph.Run, item, workspacePath, jobSecrets)
 		if preparation.Lease != nil {
 			stopEnvironment()
 			<-environmentDone
@@ -389,6 +414,38 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
 		return fmt.Errorf("execution: finish run: %w", err)
 	}
 	return nil
+}
+
+func (m *Manager) failWorkspaceSetup(ctx context.Context, run store.Run, cause error) error {
+	graph, err := m.store.GetRunGraph(ctx, run.ID)
+	if err != nil {
+		return fmt.Errorf("execution: load run after workspace failure: %w", err)
+	}
+	for index, item := range graph.Jobs {
+		if index == 0 && len(item.Steps) > 0 {
+			if err := m.appendSystem(ctx, item.Steps[0].ID, "workspace setup failed: "+cause.Error()); err != nil {
+				return err
+			}
+		}
+		if err := m.skipJob(ctx, item); err != nil {
+			return err
+		}
+	}
+	if _, err := m.store.TransitionRun(ctx, run.ID, store.StatusFailed); err != nil {
+		return fmt.Errorf("execution: fail run after workspace setup: %w", err)
+	}
+	return nil
+}
+
+func (m *Manager) cleanupTerminalWorkspace(ctx context.Context, runID string) error {
+	graph, err := m.store.GetRunGraph(ctx, runID)
+	if err != nil {
+		return err
+	}
+	if !isTerminalExecutionStatus(graph.Run.Status) {
+		return nil
+	}
+	return m.workspaces.Cleanup(runID)
 }
 
 type deploymentPreparation struct {
@@ -570,7 +627,7 @@ func isTerminalExecutionStatus(status store.Status) bool {
 	}
 }
 
-func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph, secretValues map[string]string) (store.Status, error) {
+func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph, workspacePath string, secretValues map[string]string) (store.Status, error) {
 	if _, err := m.store.TransitionJob(ctx, item.Job.ID, store.StatusRunning); err != nil {
 		return "", fmt.Errorf("execution: start job: %w", err)
 	}
@@ -601,7 +658,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 		if _, err := m.store.TransitionStep(ctx, step.ID, store.StatusRunning); err != nil {
 			return "", fmt.Errorf("execution: start step: %w", err)
 		}
-		err = m.executeStep(jobCtx, run, item.Job, step, secretValues)
+		err = m.executeStep(jobCtx, run, item.Job, step, workspacePath, secretValues)
 		if err == nil {
 			if _, transitionErr := m.store.TransitionStep(ctx, step.ID, store.StatusSucceeded); transitionErr != nil {
 				return "", transitionErr
@@ -647,17 +704,17 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	return status, nil
 }
 
-func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job, step store.Step, secretValues map[string]string) error {
+func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job, step store.Step, workspacePath string, secretValues map[string]string) error {
 	if step.Action != nil {
 		if strings.HasPrefix(*step.Action, "actions/checkout@") {
-			return m.appendSystem(ctx, step.ID, "using registered checkout "+run.SourcePath)
+			return m.appendSystem(ctx, step.ID, "using pinned commit workspace "+pointerValue(run.CommitSHA))
 		}
 		return fmt.Errorf("unsupported action %q", *step.Action)
 	}
 	if step.Command == nil {
 		return errors.New("step has no command")
 	}
-	directory, err := containedWorkingDirectory(run.SourcePath, pointerValue(step.WorkingDirectory))
+	directory, err := containedWorkingDirectory(workspacePath, pointerValue(step.WorkingDirectory))
 	if err != nil {
 		return err
 	}
@@ -681,7 +738,7 @@ func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job,
 		"CI":              "true",
 		"GCI_RUN_ID":      run.ID,
 		"GCI_JOB_ID":      job.ID,
-		"GCI_PROJECT_DIR": run.SourcePath,
+		"GCI_PROJECT_DIR": workspacePath,
 	})
 	stdout, err := command.StdoutPipe()
 	if err != nil {
@@ -829,22 +886,6 @@ func pointerValue(value *string) string {
 		return ""
 	}
 	return *value
-}
-
-func containedWorkingDirectory(root, relative string) (string, error) {
-	root = filepath.Clean(root)
-	if relative == "" {
-		return root, nil
-	}
-	if filepath.IsAbs(relative) {
-		return "", errors.New("execution: working directory must be relative")
-	}
-	target := filepath.Clean(filepath.Join(root, relative))
-	rel, err := filepath.Rel(root, target)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", errors.New("execution: working directory escapes registered project")
-	}
-	return target, nil
 }
 
 func shellCommand(shell, command string) (string, []string) {

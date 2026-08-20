@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -177,11 +178,15 @@ func newAPIFixture(t *testing.T, maxBodyBytes int64) *apiFixture {
 	root := filepath.Join(base, "projects")
 	projectPath := filepath.Join(root, "project")
 	staticDir := filepath.Join(base, "site")
-	for _, directory := range []string{filepath.Join(projectPath, ".git"), staticDir} {
+	for _, directory := range []string{projectPath, staticDir} {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", directory, err)
 		}
 	}
+	runAPIGit(t, projectPath, "init", "-b", "main")
+	runAPIGit(t, projectPath, "config", "user.email", "git-ci@example.invalid")
+	runAPIGit(t, projectPath, "config", "user.name", "git-ci API tests")
+	runAPIGit(t, projectPath, "commit", "--allow-empty", "-m", "initial fixture")
 	if err := os.WriteFile(filepath.Join(staticDir, "index.html"), []byte("public-home"), 0o644); err != nil {
 		t.Fatalf("write index: %v", err)
 	}
@@ -202,7 +207,10 @@ func newAPIFixture(t *testing.T, maxBodyBytes int64) *apiFixture {
 	if err != nil {
 		t.Fatalf("new secret manager: %v", err)
 	}
-	executionManager, err := execution.NewManager(database, execution.WithSecretResolver(secretManager))
+	executionManager, err := execution.NewManager(database,
+		execution.WithSecretResolver(secretManager),
+		execution.WithWorkspaceRoot(filepath.Join(base, "workspaces")),
+	)
 	if err != nil {
 		t.Fatalf("new execution manager: %v", err)
 	}
@@ -224,6 +232,27 @@ func newAPIFixture(t *testing.T, maxBodyBytes int64) *apiFixture {
 		t.Fatalf("new API: %v", err)
 	}
 	return &apiFixture{handler: handler, store: database, root: root, projectPath: projectPath, token: token}
+}
+
+func (f *apiFixture) commitProject(t *testing.T) {
+	t.Helper()
+	runAPIGit(t, f.projectPath, "add", "-A")
+	runAPIGit(t, f.projectPath, "commit", "--allow-empty", "-m", "API fixture snapshot")
+}
+
+func (f *apiFixture) projectHead(t *testing.T) string {
+	t.Helper()
+	return strings.TrimSpace(runAPIGit(t, f.projectPath, "rev-parse", "HEAD"))
+}
+
+func runAPIGit(t *testing.T, root string, arguments ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", root}, arguments...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", arguments, err, output)
+	}
+	return string(output)
 }
 
 func (f *apiFixture) login(t *testing.T) (*http.Cookie, string) {

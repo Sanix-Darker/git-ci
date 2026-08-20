@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ func TestManagerSyncProjectAndEnqueueWorkflowSnapshotsDefinition(t *testing.T) {
 	writeManagerWorkflow(t, workflowPath, githubWorkflow("Build v1", `printf 'first-definition\n'`))
 
 	first := syncManagerWorkflow(t, ctx, manager, project.ID)
-	firstRun, err := manager.EnqueueWorkflow(ctx, first.ID, "", "first-sha")
+	firstRun, err := manager.EnqueueWorkflow(ctx, first.ID, "", "")
 	if err != nil {
 		t.Fatalf("enqueue first workflow: %v", err)
 	}
@@ -43,7 +44,7 @@ func TestManagerSyncProjectAndEnqueueWorkflowSnapshotsDefinition(t *testing.T) {
 		t.Fatalf("first run command = %q, want original definition", got)
 	}
 
-	secondRun, err := manager.EnqueueWorkflow(ctx, second.ID, "refs/heads/release", "second-sha")
+	secondRun, err := manager.EnqueueWorkflow(ctx, second.ID, "refs/heads/release", managerRepositoryHead(t, root))
 	if err != nil {
 		t.Fatalf("enqueue second workflow: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestManagerSyncProjectAndEnqueueWorkflowSnapshotsDefinition(t *testing.T) {
 
 func TestManagerExecutesDependenciesAndPersistsStdoutAndStderr(t *testing.T) {
 	ctx, database, manager, project, root := newManagerTestFixture(t)
-	orderPath := filepath.Join(root, "execution-order")
+	orderPath := filepath.Join(t.TempDir(), "execution-order")
 	writeManagerWorkflow(t, filepath.Join(root, ".github", "workflows", "pipeline.yml"), strings.Join([]string{
 		"name: Ordered pipeline",
 		"on: workflow_dispatch",
@@ -71,7 +72,7 @@ func TestManagerExecutesDependenciesAndPersistsStdoutAndStderr(t *testing.T) {
 		"    steps:",
 		"      - name: Prepare",
 		"        run: |",
-		"          printf 'prepare' > execution-order",
+		"          printf 'prepare' > " + shellTestPath(orderPath),
 		"          printf 'stdout-line\\n'",
 		"          printf 'stderr-line\\n' >&2",
 		"  verify:",
@@ -80,8 +81,8 @@ func TestManagerExecutesDependenciesAndPersistsStdoutAndStderr(t *testing.T) {
 		"    steps:",
 		"      - name: Verify dependency",
 		"        run: |",
-		"          test \"$(cat execution-order)\" = prepare",
-		"          printf 'verify' >> execution-order",
+		"          test \"$(cat " + shellTestPath(orderPath) + ")\" = prepare",
+		"          printf 'verify' >> " + shellTestPath(orderPath),
 	}, "\n"))
 
 	workflow := syncManagerWorkflow(t, ctx, manager, project.ID)
@@ -132,7 +133,7 @@ func TestManagerExecutesDependenciesAndPersistsStdoutAndStderr(t *testing.T) {
 
 func TestManagerSkipsDependentJobsAfterFailure(t *testing.T) {
 	ctx, database, manager, project, root := newManagerTestFixture(t)
-	dependentMarker := filepath.Join(root, "dependent-ran")
+	dependentMarker := filepath.Join(t.TempDir(), "dependent-ran")
 	writeManagerWorkflow(t, filepath.Join(root, ".github", "workflows", "failure.yml"), strings.Join([]string{
 		"name: Failed dependency",
 		"on: workflow_dispatch",
@@ -145,7 +146,7 @@ func TestManagerSkipsDependentJobsAfterFailure(t *testing.T) {
 		"    needs: fail",
 		"    runs-on: ubuntu-latest",
 		"    steps:",
-		"      - run: printf should-not-run > dependent-ran",
+		"      - run: printf should-not-run > " + shellTestPath(dependentMarker),
 	}, "\n"))
 
 	workflow := syncManagerWorkflow(t, ctx, manager, project.ID)
@@ -171,7 +172,7 @@ func TestManagerSkipsDependentJobsAfterFailure(t *testing.T) {
 
 func TestManagerAllowsFailedDependencyWhenConfigured(t *testing.T) {
 	ctx, database, manager, project, root := newManagerTestFixture(t)
-	marker := filepath.Join(root, "dependent-ran")
+	marker := filepath.Join(t.TempDir(), "dependent-ran")
 	writeManagerWorkflow(t, filepath.Join(root, ".github", "workflows", "allowed-failure.yml"), strings.Join([]string{
 		"name: Allowed failure",
 		"on: workflow_dispatch",
@@ -185,7 +186,7 @@ func TestManagerAllowsFailedDependencyWhenConfigured(t *testing.T) {
 		"    needs: unstable",
 		"    runs-on: ubuntu-latest",
 		"    steps:",
-		"      - run: printf continued > dependent-ran",
+		"      - run: printf continued > " + shellTestPath(marker),
 	}, "\n"))
 
 	workflow := syncManagerWorkflow(t, ctx, manager, project.ID)
@@ -215,7 +216,7 @@ func TestManagerAllowsFailedDependencyWhenConfigured(t *testing.T) {
 
 func TestManagerCancelsRunningRun(t *testing.T) {
 	ctx, database, manager, project, root := newManagerTestFixture(t)
-	readyPath := filepath.Join(root, "worker-ready")
+	readyPath := filepath.Join(t.TempDir(), "worker-ready")
 	writeManagerWorkflow(t, filepath.Join(root, ".github", "workflows", "cancel.yml"), strings.Join([]string{
 		"name: Cancellable",
 		"on: workflow_dispatch",
@@ -224,7 +225,7 @@ func TestManagerCancelsRunningRun(t *testing.T) {
 		"    runs-on: ubuntu-latest",
 		"    steps:",
 		"      - timeout-minutes: 1",
-		"        run: printf ready > worker-ready; exec sleep 30",
+		"        run: printf ready > " + shellTestPath(readyPath) + "; exec sleep 30",
 	}, "\n"))
 	workflow := syncManagerWorkflow(t, ctx, manager, project.ID)
 	run, err := manager.EnqueueWorkflow(ctx, workflow.ID, "", "")
@@ -300,14 +301,14 @@ func TestManagerRejectsEscapingWorkingDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list containment logs: %v", err)
 	}
-	if len(lines) != 1 || lines[0].Stream != store.LogStreamSystem || !strings.Contains(lines[0].Message, "escapes registered project") {
+	if len(lines) != 1 || lines[0].Stream != store.LogStreamSystem || !strings.Contains(lines[0].Message, "escapes run workspace") {
 		t.Errorf("containment logs = %#v, want one system rejection", lines)
 	}
 }
 
 func TestManagerFailsUnsupportedActionWithoutExecutingFollowingStep(t *testing.T) {
 	ctx, database, manager, project, root := newManagerTestFixture(t)
-	marker := filepath.Join(root, "following-step-ran")
+	marker := filepath.Join(t.TempDir(), "following-step-ran")
 	writeManagerWorkflow(t, filepath.Join(root, ".github", "workflows", "action.yml"), strings.Join([]string{
 		"name: Unsupported action",
 		"on: workflow_dispatch",
@@ -316,7 +317,7 @@ func TestManagerFailsUnsupportedActionWithoutExecutingFollowingStep(t *testing.T
 		"    runs-on: ubuntu-latest",
 		"    steps:",
 		"      - uses: actions/setup-go@v5",
-		"      - run: printf unsafe > following-step-ran",
+		"      - run: printf unsafe > " + shellTestPath(marker),
 	}, "\n"))
 
 	workflow := syncManagerWorkflow(t, ctx, manager, project.ID)
@@ -348,6 +349,9 @@ func newManagerTestFixture(t *testing.T) (context.Context, *store.Store, *Manage
 	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
+	runManagerGit(t, root, "init", "-b", "main")
+	runManagerGit(t, root, "config", "user.email", "git-ci@example.invalid")
+	runManagerGit(t, root, "config", "user.name", "git-ci tests")
 	database, err := store.Open(ctx, filepath.Join(t.TempDir(), "git-ci.db"))
 	if err != nil {
 		t.Fatalf("open temporary SQLite store: %v", err)
@@ -369,7 +373,7 @@ func newManagerTestFixture(t *testing.T) (context.Context, *store.Store, *Manage
 	if err != nil {
 		t.Fatalf("create registered project: %v", err)
 	}
-	manager, err := NewManager(database)
+	manager, err := NewManager(database, WithWorkspaceRoot(filepath.Join(t.TempDir(), "workspaces")))
 	if err != nil {
 		t.Fatalf("create execution manager: %v", err)
 	}
@@ -400,6 +404,11 @@ func githubWorkflow(name, command string) string {
 
 func syncManagerWorkflow(t *testing.T, ctx context.Context, manager *Manager, projectID string) store.Workflow {
 	t.Helper()
+	project, err := manager.store.GetProject(ctx, projectID)
+	if err != nil || project.CanonicalPath == nil {
+		t.Fatalf("load project before workflow sync: %#v, %v", project, err)
+	}
+	commitManagerRepository(t, *project.CanonicalPath)
 	workflows, err := manager.SyncProject(ctx, projectID)
 	if err != nil {
 		t.Fatalf("sync project workflows: %v", err)
@@ -412,7 +421,7 @@ func syncManagerWorkflow(t *testing.T, ctx context.Context, manager *Manager, pr
 
 func enqueueAndProcess(t *testing.T, ctx context.Context, manager *Manager, workflowID string) store.Run {
 	t.Helper()
-	run, err := manager.EnqueueWorkflow(ctx, workflowID, "", "fixture-sha")
+	run, err := manager.EnqueueWorkflow(ctx, workflowID, "", "")
 	if err != nil {
 		t.Fatalf("enqueue workflow: %v", err)
 	}
@@ -424,6 +433,31 @@ func enqueueAndProcess(t *testing.T, ctx context.Context, manager *Manager, work
 		t.Fatal("ProcessNext() = false, want one claimed run")
 	}
 	return run
+}
+
+func commitManagerRepository(t *testing.T, root string) {
+	t.Helper()
+	runManagerGit(t, root, "add", "-A")
+	runManagerGit(t, root, "commit", "--allow-empty", "-m", "test snapshot")
+}
+
+func managerRepositoryHead(t *testing.T, root string) string {
+	t.Helper()
+	return strings.TrimSpace(runManagerGit(t, root, "rev-parse", "HEAD"))
+}
+
+func runManagerGit(t *testing.T, root string, arguments ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", root}, arguments...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v: %s", arguments, err, output)
+	}
+	return string(output)
+}
+
+func shellTestPath(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'\"'\"'`) + "'"
 }
 
 func jobGraph(t *testing.T, graph store.RunGraph, key string) store.JobGraph {

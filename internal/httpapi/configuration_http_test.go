@@ -26,6 +26,7 @@ jobs:
 `), 0o644); err != nil {
 		t.Fatalf("write workflow: %v", err)
 	}
+	fixture.commitProject(t)
 
 	unauthorized := fixture.request(t, http.MethodGet, "/api/v1/projects/missing/secrets", nil, "", nil, "", nil)
 	assertAPIError(t, unauthorized, http.StatusUnauthorized, "missing_credentials")
@@ -134,7 +135,7 @@ jobs:
 		"X-Git-CI-Delivery": []string{"delivery-001"},
 		"X-Git-CI-Event":    []string{"push"},
 	}
-	firstDelivery := fixture.request(t, http.MethodPost, "/hooks/"+createdEndpoint.Endpoint.ID, map[string]any{"ref": "refs/heads/main", "after": "abc123"}, "", nil, "", deliveryHeaders)
+	firstDelivery := fixture.request(t, http.MethodPost, "/hooks/"+createdEndpoint.Endpoint.ID, map[string]any{"ref": "refs/heads/main", "after": fixture.projectHead(t)}, "", nil, "", deliveryHeaders)
 	if firstDelivery.Code != http.StatusAccepted || strings.Contains(firstDelivery.Body.String(), `"duplicate":true`) {
 		t.Fatalf("first webhook delivery status = %d, body=%s", firstDelivery.Code, firstDelivery.Body.String())
 	}

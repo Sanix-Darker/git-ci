@@ -34,6 +34,7 @@ jobs:
 `), 0o644); err != nil {
 		t.Fatalf("write workflow: %v", err)
 	}
+	fixture.commitProject(t)
 
 	unauthorized := fixture.request(t, http.MethodGet, "/api/v1/projects/missing/workflows", nil, "", nil, "", nil)
 	assertAPIError(t, unauthorized, http.StatusUnauthorized, "missing_credentials")
@@ -98,7 +99,7 @@ jobs:
 	assertAPIError(t, enqueueMissingCSRF, http.StatusForbidden, "csrf_failed")
 
 	enqueued := fixture.request(t, http.MethodPost, "/api/v1/workflows/"+workflow.ID+"/runs", map[string]any{
-		"ref": "refs/heads/main", "commitSha": "abc123",
+		"ref": "refs/heads/main", "commitSha": fixture.projectHead(t),
 	}, "", cookie, csrf, nil)
 	if enqueued.Code != http.StatusAccepted {
 		t.Fatalf("enqueue status = %d, body=%s", enqueued.Code, enqueued.Body.String())

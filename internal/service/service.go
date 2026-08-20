@@ -81,7 +81,10 @@ func New(ctx context.Context, config Config) (*Service, error) {
 		_ = database.Close()
 		return nil, fmt.Errorf("service: secret manager: %w", err)
 	}
-	executionManager, err := execution.NewManager(database, execution.WithSecretResolver(secretManager))
+	executionManager, err := execution.NewManager(database,
+		execution.WithSecretResolver(secretManager),
+		execution.WithWorkspaceRoot(filepath.Join(config.StateDir, "workspaces")),
+	)
 	if err != nil {
 		_ = database.Close()
 		return nil, fmt.Errorf("service: execution manager: %w", err)

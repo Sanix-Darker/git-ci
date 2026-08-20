@@ -10,7 +10,7 @@ binary="$runtime/gci"
 port="${GCI_WEB_E2E_PORT:-18089}"
 
 rm -rf "$runtime"
-mkdir -p "$project_root/alpha-service/.git" "$project_root/alpha-service/.github/workflows" "$project_root/beta-worker/.git" "$state_dir"
+mkdir -p "$project_root/alpha-service/.github/workflows" "$project_root/beta-worker" "$state_dir"
 printf '%s\n' '# alpha service' >"$project_root/alpha-service/README.md"
 printf '%s\n' '# beta worker' >"$project_root/beta-worker/README.md"
 cat >"$project_root/alpha-service/.github/workflows/ci.yml" <<'YAML'
@@ -50,6 +50,14 @@ worker-test:
   script:
     - printf 'worker passed\n'
 YAML
+
+for project in "$project_root/alpha-service" "$project_root/beta-worker"; do
+	git -C "$project" init --quiet --initial-branch=main
+	git -C "$project" config user.email git-ci@example.invalid
+	git -C "$project" config user.name "git-ci E2E"
+	git -C "$project" add --all
+	git -C "$project" commit --quiet --message "E2E fixture snapshot"
+done
 
 cd "$repo_root"
 go build -o "$binary" ./cmd
