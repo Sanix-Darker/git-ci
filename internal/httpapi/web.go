@@ -218,6 +218,7 @@ func (a *API) renderAppSectionState(writer http.ResponseWriter, request *http.Re
 		Candidates:  candidates,
 		Error:       message,
 		Notice:      notice,
+		RunFilter:   runFilterFromRequest(request),
 	}
 	if err := a.populateExecutionPage(request.Context(), &data, ""); err != nil {
 		http.Error(writer, "failed to load execution state", http.StatusInternalServerError)

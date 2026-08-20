@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build:web": "mkdir -p internal/webui/assets site/assets && npx @tailwindcss/cli -i ./web/input.css -o ./internal/webui/assets/app.css --minify && cp ./internal/webui/assets/app.css ./site/assets/app.css && cp ./node_modules/htmx.org/dist/htmx.min.js ./internal/webui/assets/htmx.min.js",
+    "build:web": "mkdir -p internal/webui/assets site/assets && npx @tailwindcss/cli -i ./web/input.css -o ./internal/webui/assets/app.css --minify && cp ./internal/webui/assets/app.css ./site/assets/app.css && cp ./web/app.js ./internal/webui/assets/app.js && cp ./node_modules/htmx.org/dist/htmx.min.js ./internal/webui/assets/htmx.min.js",
     "test:e2e": "npm run build:web && playwright test"
   },
   "keywords": [],

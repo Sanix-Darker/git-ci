@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/sanix-darker/git-ci/internal/auth"
 	execdomain "github.com/sanix-darker/git-ci/internal/execution"
@@ -55,6 +57,43 @@ func (a *API) handleRunPageWeb(writer http.ResponseWriter, request *http.Request
 
 func (a *API) handleRunPanelWeb(writer http.ResponseWriter, request *http.Request) {
 	a.renderRun(writer, request, request.PathValue("run"), "", true)
+}
+
+func (a *API) handleStepLogsWeb(writer http.ResponseWriter, request *http.Request) {
+	runID, stepID := request.PathValue("run"), request.PathValue("step")
+	graph, err := a.store.GetRunGraph(request.Context(), runID)
+	if err != nil {
+		var notFound *store.ErrNotFound
+		if errors.As(err, &notFound) {
+			http.NotFound(writer, request)
+			return
+		}
+		http.Error(writer, "failed to load run logs", http.StatusInternalServerError)
+		return
+	}
+	stepName, found := "", false
+	for _, item := range graph.Jobs {
+		for _, step := range item.Steps {
+			if step.ID == stepID {
+				stepName, found = step.Name, true
+				break
+			}
+		}
+	}
+	if !found {
+		http.NotFound(writer, request)
+		return
+	}
+	lines, err := a.store.ListLogLines(request.Context(), stepID)
+	if err != nil {
+		http.Error(writer, "failed to load step logs", http.StatusInternalServerError)
+		return
+	}
+	data := webui.StepLogView{RunID: runID, StepID: stepID, StepName: stepName, Terminal: terminalStatus(graph.Run.Status)}
+	for _, line := range lines {
+		data.Logs = append(data.Logs, webui.LogView{Sequence: int(line.Sequence), Stream: strings.ToUpper(string(line.Stream)), Message: line.Message})
+	}
+	a.web.RenderStepLogs(writer, http.StatusOK, data)
 }
 
 func (a *API) renderRun(writer http.ResponseWriter, request *http.Request, runID, message string, panel bool) {
@@ -120,6 +159,12 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 		}
 	}
 	sort.Slice(data.Runs, func(i, j int) bool { return data.Runs[i].CreatedAt > data.Runs[j].CreatedAt })
+	if data.Page == "overview" || data.Page == "runs" {
+		data.RunFilter = normalizeRunFilter(data.RunFilter)
+		allRuns := data.Runs
+		data.Runs = filterRunViews(allRuns, data.RunFilter, time.Now().UTC())
+		data.Telemetry = buildRunTelemetry(allRuns, data.RunFilter, time.Now().UTC())
+	}
 	for _, run := range data.Runs {
 		graph, err := a.store.GetRunGraph(ctx, run.ID)
 		if err != nil {
@@ -161,20 +206,15 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 		}
 		for _, step := range item.Steps {
 			view := webui.RunStepView{
-				ID: step.ID, Name: step.Name, Status: strings.ToUpper(string(step.Status)),
-				Dot: statusDot(step.Status), Command: stringValue(step.Command),
-			}
-			lines, err := a.store.ListLogLines(ctx, step.ID)
-			if err != nil {
-				return webui.RunDetailView{}, err
-			}
-			for _, line := range lines {
-				view.Logs = append(view.Logs, webui.LogView{Sequence: int(line.Sequence), Stream: strings.ToUpper(string(line.Stream)), Message: line.Message})
+				ID: step.ID, RunID: runID, Name: step.Name, Status: strings.ToUpper(string(step.Status)),
+				Dot: statusDot(step.Status), Command: stringValue(step.Command), Terminal: detail.Terminal,
 			}
 			job.Steps = append(job.Steps, view)
 		}
+		job.DependencyKeys = decodeDependencies(item.Job.DependencyKeys)
 		detail.Jobs = append(detail.Jobs, job)
 	}
+	detail.GraphRows = buildGraphRows(detail.Jobs)
 	return detail, nil
 }
 
@@ -186,12 +226,241 @@ func runView(run store.Run, projectName string, workflowNames map[string]string)
 		workflowName = *run.WorkflowKey
 	}
 	ref := strings.TrimPrefix(stringValue(run.Ref), "refs/heads/")
+	durationSeconds := int64(0)
+	if run.StartedAt != nil {
+		end := run.UpdatedAt
+		if run.FinishedAt != nil {
+			end = *run.FinishedAt
+		}
+		if end.After(*run.StartedAt) {
+			durationSeconds = int64(end.Sub(*run.StartedAt).Seconds())
+		}
+	}
 	return webui.RunView{
 		ID: run.ID, ProjectName: projectName, WorkflowName: workflowName,
 		WorkflowKey: stringValue(run.WorkflowKey), Status: strings.ToUpper(string(run.Status)), Dot: statusDot(run.Status),
 		Ref: ref, CommitSHA: stringValue(run.CommitSHA), CreatedAt: run.CreatedAt.UTC().Format("2006-01-02 15:04:05Z"),
-		CanCancel: run.Status == store.StatusQueued || run.Status == store.StatusRunning,
+		CanCancel:   run.Status == store.StatusQueued || run.Status == store.StatusRunning,
+		CreatedUnix: run.CreatedAt.Unix(), DurationSeconds: durationSeconds, DurationLabel: formatRunDuration(durationSeconds),
 	}
+}
+
+func runFilterFromRequest(request *http.Request) webui.RunFilterView {
+	return normalizeRunFilter(webui.RunFilterView{
+		Range:   strings.ToLower(strings.TrimSpace(request.URL.Query().Get("range"))),
+		Status:  strings.ToLower(strings.TrimSpace(request.URL.Query().Get("status"))),
+		Project: strings.TrimSpace(request.URL.Query().Get("project")),
+	})
+}
+
+func normalizeRunFilter(filter webui.RunFilterView) webui.RunFilterView {
+	switch filter.Range {
+	case "1h", "6h", "24h", "7d", "30d", "all":
+	default:
+		filter.Range = "24h"
+	}
+	switch filter.Status {
+	case "", "queued", "running", "succeeded", "failed", "cancelled", "skipped":
+	default:
+		filter.Status = ""
+	}
+	return filter
+}
+
+func filterRunViews(runs []webui.RunView, filter webui.RunFilterView, now time.Time) []webui.RunView {
+	filter = normalizeRunFilter(filter)
+	cutoff := time.Time{}
+	switch filter.Range {
+	case "1h":
+		cutoff = now.Add(-time.Hour)
+	case "6h":
+		cutoff = now.Add(-6 * time.Hour)
+	case "24h":
+		cutoff = now.Add(-24 * time.Hour)
+	case "7d":
+		cutoff = now.Add(-7 * 24 * time.Hour)
+	case "30d":
+		cutoff = now.Add(-30 * 24 * time.Hour)
+	}
+	filtered := make([]webui.RunView, 0, len(runs))
+	for _, run := range runs {
+		if !cutoff.IsZero() && time.Unix(run.CreatedUnix, 0).Before(cutoff) {
+			continue
+		}
+		if filter.Status != "" && !strings.EqualFold(run.Status, filter.Status) {
+			continue
+		}
+		if filter.Project != "" && run.ProjectName != filter.Project && run.ID != filter.Project {
+			continue
+		}
+		filtered = append(filtered, run)
+	}
+	return filtered
+}
+
+func buildRunTelemetry(runs []webui.RunView, filter webui.RunFilterView, now time.Time) webui.RunTelemetryView {
+	filtered := filterRunViews(runs, filter, now)
+	telemetry := webui.RunTelemetryView{Window: strings.ToUpper(normalizeRunFilter(filter).Range), Total: len(filtered), PassRate: "--"}
+	for _, run := range filtered {
+		switch strings.ToLower(run.Status) {
+		case "succeeded":
+			telemetry.Succeeded++
+		case "failed":
+			telemetry.Failed++
+		case "queued", "running":
+			telemetry.Active++
+		}
+	}
+	decided := telemetry.Succeeded + telemetry.Failed
+	if decided > 0 {
+		telemetry.PassRate = fmt.Sprintf("%d%%", telemetry.Succeeded*100/decided)
+	}
+	telemetry.Volume = volumeHistogram(filtered, normalizeRunFilter(filter).Range, now)
+	telemetry.Duration = durationHistogram(filtered)
+	return telemetry
+}
+
+func volumeHistogram(runs []webui.RunView, window string, now time.Time) []webui.HistogramBarView {
+	span := 24 * time.Hour
+	switch window {
+	case "1h":
+		span = time.Hour
+	case "6h":
+		span = 6 * time.Hour
+	case "7d":
+		span = 7 * 24 * time.Hour
+	case "30d":
+		span = 30 * 24 * time.Hour
+	case "all":
+		span = 24 * time.Hour
+		for _, run := range runs {
+			age := now.Sub(time.Unix(run.CreatedUnix, 0))
+			if age > span {
+				span = age
+			}
+		}
+	}
+	const bucketCount = 12
+	width := span / bucketCount
+	start := now.Add(-span)
+	bars := make([]webui.HistogramBarView, bucketCount)
+	for index := range bars {
+		point := start.Add(time.Duration(index+1) * width)
+		label := point.Format("15:04")
+		if span > 48*time.Hour {
+			label = point.Format("02 Jan")
+		}
+		bars[index].Label = label
+	}
+	for _, run := range runs {
+		index := int(time.Unix(run.CreatedUnix, 0).Sub(start) / width)
+		if index < 0 {
+			continue
+		}
+		if index >= bucketCount {
+			index = bucketCount - 1
+		}
+		bars[index].Count++
+	}
+	return scaleHistogram(bars)
+}
+
+func durationHistogram(runs []webui.RunView) []webui.HistogramBarView {
+	bars := []webui.HistogramBarView{{Label: "<10S"}, {Label: "<30S"}, {Label: "<1M"}, {Label: "<5M"}, {Label: "5M+"}}
+	for _, run := range runs {
+		if run.DurationSeconds <= 0 {
+			continue
+		}
+		index := 4
+		switch {
+		case run.DurationSeconds < 10:
+			index = 0
+		case run.DurationSeconds < 30:
+			index = 1
+		case run.DurationSeconds < 60:
+			index = 2
+		case run.DurationSeconds < 300:
+			index = 3
+		}
+		bars[index].Count++
+	}
+	return scaleHistogram(bars)
+}
+
+func scaleHistogram(bars []webui.HistogramBarView) []webui.HistogramBarView {
+	maximum := 0
+	for _, bar := range bars {
+		if bar.Count > maximum {
+			maximum = bar.Count
+		}
+	}
+	if maximum == 0 {
+		return bars
+	}
+	for index := range bars {
+		if bars[index].Count > 0 {
+			bars[index].Level = 1 + bars[index].Count*9/maximum
+		}
+	}
+	return bars
+}
+
+func buildGraphRows(jobs []webui.RunJobView) []webui.RunGraphRowView {
+	byKey := make(map[string]webui.RunJobView, len(jobs))
+	for _, job := range jobs {
+		byKey[job.Key] = job
+	}
+	levels, visiting := make(map[string]int, len(jobs)), make(map[string]bool, len(jobs))
+	var levelOf func(string) int
+	levelOf = func(key string) int {
+		if level, ok := levels[key]; ok {
+			return level
+		}
+		if visiting[key] {
+			return 0
+		}
+		visiting[key] = true
+		level := 0
+		for _, dependency := range byKey[key].DependencyKeys {
+			if _, ok := byKey[dependency]; ok {
+				candidate := levelOf(dependency) + 1
+				if candidate > level {
+					level = candidate
+				}
+			}
+		}
+		visiting[key] = false
+		levels[key] = level
+		return level
+	}
+	maxLevel := 0
+	for _, job := range jobs {
+		if level := levelOf(job.Key); level > maxLevel {
+			maxLevel = level
+		}
+	}
+	rows := make([]webui.RunGraphRowView, maxLevel+1)
+	for level := range rows {
+		rows[level].Level = level
+	}
+	for _, job := range jobs {
+		level := levelOf(job.Key)
+		rows[level].Jobs = append(rows[level].Jobs, job)
+	}
+	return rows
+}
+
+func formatRunDuration(seconds int64) string {
+	if seconds <= 0 {
+		return "--"
+	}
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	if seconds < 3600 {
+		return fmt.Sprintf("%dm %ds", seconds/60, seconds%60)
+	}
+	return fmt.Sprintf("%dh %dm", seconds/3600, seconds%3600/60)
 }
 
 func statusDot(status store.Status) string {

@@ -330,3 +330,119 @@
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
+
+/* Operator motion, telemetry, and loading atoms */
+.workspace { position: relative; }
+.route-skeleton { position: absolute; z-index: 20; inset: 0; display: grid; align-content: start; gap: 1rem; padding: 3.6rem; background: #080808; opacity: 0; pointer-events: none; transition: opacity 80ms steps(2, end); }
+.route-skeleton .skeleton-line, .route-skeleton i, .log-skeleton i { display: block; background: #272727; animation: skeleton-step 720ms steps(2, end) 120ms infinite alternate; }
+.skeleton-kicker { width: 110px; height: 9px; }
+.skeleton-title { width: min(520px, 70%); height: 72px; }
+.skeleton-wide { width: 100%; height: 16px; margin-top: 1rem; }
+.skeleton-medium { width: 62%; height: 16px; }
+.skeleton-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 2rem; background: #383838; }
+.skeleton-grid i { height: 160px; background: #111; }
+#app-frame.is-loading .route-skeleton { opacity: 1; }
+#app-frame.is-loading .workspace > :not(.route-skeleton) { opacity: .12; filter: blur(1.5px); transform: translateY(2px); transition: opacity 90ms linear, filter 90ms linear, transform 90ms steps(2, end); }
+#app-frame.is-entering .workspace > :not(.route-skeleton) { animation: workspace-enter 220ms steps(4, end) both; }
+.action-confirmed { animation: action-confirmed 180ms steps(3, end); }
+.request-failed { animation: request-failed 180ms steps(4, end); }
+.notice { animation: notice-enter 220ms steps(4, end) both; }
+
+.telemetry-shell { margin-bottom: 1rem; border: 1px solid #383838; background: #080808; }
+.telemetry-head { display: flex; min-height: 78px; align-items: center; justify-content: space-between; gap: 1.5rem; border-bottom: 1px solid #383838; padding: 1rem 1.25rem; }
+.telemetry-head h2 { margin: .35rem 0 0; font-family: var(--font-display); font-size: clamp(1.4rem, 2.2vw, 2.2rem); letter-spacing: -.04em; }
+.telemetry-head > a { color: #b8b8b8; font-size: .57rem; font-weight: 900; text-decoration: none; }
+.telemetry-grid { display: grid; grid-template-columns: minmax(320px, 1.45fr) minmax(240px, 1fr) minmax(190px, .65fr); min-height: 214px; }
+.telemetry-grid > * + * { border-left: 1px solid #383838; }
+.histogram-card { display: grid; grid-template-rows: 38px 1fr; min-width: 0; padding: 1rem 1.25rem 1.1rem; }
+.histogram-card > header { display: flex; align-items: start; justify-content: space-between; color: #727272; font-size: .55rem; font-weight: 900; letter-spacing: .08em; }
+.histogram-card > header b { color: #b8b8b8; }
+.histogram-bars { display: grid; grid-template-columns: repeat(12, minmax(8px, 1fr)); align-items: end; gap: 5px; min-height: 124px; border-bottom: 1px solid #383838; }
+.duration-bars { grid-template-columns: repeat(5, minmax(18px, 1fr)); }
+.histogram-column { display: grid; height: 100%; grid-template-rows: 1fr 20px; align-items: end; gap: 5px; }
+.histogram-column small { overflow: hidden; color: #565656; font-size: .42rem; text-align: center; white-space: nowrap; }
+.histogram-fill { display: block; width: 100%; min-height: 1px; background: #383838; transform-origin: bottom; animation: histogram-enter 260ms steps(5, end) both; }
+.histogram-fill.level-0 { height: 1px; }
+.histogram-fill.level-1 { height: 10%; }.histogram-fill.level-2 { height: 20%; }.histogram-fill.level-3 { height: 30%; }.histogram-fill.level-4 { height: 40%; }.histogram-fill.level-5 { height: 50%; }
+.histogram-fill.level-6 { height: 60%; }.histogram-fill.level-7 { height: 70%; }.histogram-fill.level-8 { height: 80%; }.histogram-fill.level-9 { height: 90%; }.histogram-fill.level-10 { height: 100%; background: #b8b8b8; }
+.telemetry-facts { display: grid; grid-template-columns: 1fr 1fr; margin: 0; }
+.telemetry-facts div { display: grid; align-content: center; gap: .4rem; min-height: 92px; padding: 1rem; }
+.telemetry-facts div:nth-child(even) { border-left: 1px solid #383838; }
+.telemetry-facts div:nth-child(n+3) { border-top: 1px solid #383838; }
+.telemetry-facts dt { color: #727272; font-size: .5rem; font-weight: 900; }
+.telemetry-facts dd { display: flex; align-items: center; gap: .55rem; margin: 0; font-family: var(--font-display); font-size: 1.25rem; }
+.run-filters { display: flex; align-items: end; gap: .6rem; }
+.run-filters label { display: grid; gap: .3rem; color: #727272; font-size: .47rem; font-weight: 900; letter-spacing: .08em; }
+.run-filters select { height: 34px; min-width: 126px; border: 1px solid #383838; padding: 0 .55rem; background: #080808; color: #b8b8b8; font-size: .54rem; font-weight: 900; }
+.range-picker { display: flex; }
+.range-picker button { min-width: 38px; height: 34px; border: 1px solid #383838; border-right: 0; padding: 0 .45rem; background: #080808; color: #727272; cursor: pointer; font-size: .52rem; font-weight: 900; }
+.range-picker button:last-child { border-right: 1px solid #383838; }
+.range-picker button:hover, .range-picker button.active { background: #fff; color: #080808; }
+
+.pipeline-graph { display: grid; gap: 24px; margin: 1rem 0; border: 1px solid #383838; padding: 1.25rem; }
+.pipeline-stage { position: relative; display: grid; grid-template-columns: 92px 1fr; gap: 1rem; }
+.pipeline-stage + .pipeline-stage::before { position: absolute; top: -25px; left: 45px; width: 1px; height: 25px; background: #383838; content: ""; }
+.pipeline-stage > header { display: grid; align-content: start; gap: .3rem; border-right: 1px solid #383838; padding: .75rem .75rem .75rem 0; color: #727272; font-size: .5rem; font-weight: 900; }
+.pipeline-stage-nodes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .75rem; }
+.pipeline-stage .run-node { min-height: 126px; padding: 1rem; transition: border-color 120ms steps(2, end), transform 120ms steps(2, end); }
+.pipeline-stage .run-node:hover { border-color: #b8b8b8; transform: translateY(-2px); }
+
+.surface-card .data-head, .surface-card .data-row { padding-right: 1.25rem; padding-left: 1.25rem; }
+.candidate, .project-rows article, .compact-list article { padding: 1rem 1.25rem; }
+.workflow-card-body { padding: 1.5rem; }
+.job-detail > header { padding: 1rem 1.25rem; }
+.step-detail > header { padding: .8rem 1rem; }
+.step-command { display: block; padding: .75rem 1rem; }
+.log-console { content-visibility: auto; contain-intrinsic-size: 180px; }
+.log-console-lazy { position: relative; min-height: 126px; overflow: hidden; }
+.log-skeleton { display: grid !important; grid-template-columns: 34% 78% 52%; align-content: center; gap: .75rem; min-height: 126px !important; border: 0 !important; padding: 1rem !important; opacity: 0; animation: skeleton-reveal 1ms linear 120ms forwards; }
+.log-skeleton i { height: 11px; }
+.log-console-loaded > div { animation: log-line-enter 180ms steps(4, end) both; }
+.log-console-loaded > div:nth-child(2) { animation-delay: 25ms; }.log-console-loaded > div:nth-child(3) { animation-delay: 50ms; }.log-console-loaded > div:nth-child(4) { animation-delay: 75ms; }.log-console-loaded > div:nth-child(5) { animation-delay: 100ms; }
+.log-console-loaded > div:has(> b:nth-child(2)) b { color: #727272; }
+.log-console-loaded > div:has(> b:nth-child(2)) pre { padding: .5rem .8rem; }
+
+@keyframes skeleton-step { from { opacity: .35; } to { opacity: .85; } }
+@keyframes skeleton-reveal { to { opacity: 1; } }
+@keyframes workspace-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes action-confirmed { 50% { transform: translateY(1px); } }
+@keyframes request-failed { 25% { transform: translateX(-2px); } 50% { transform: translateX(2px); } 75% { transform: translateX(-1px); } }
+@keyframes notice-enter { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes histogram-enter { from { opacity: 0; transform: scaleY(.05); } to { opacity: 1; transform: scaleY(1); } }
+@keyframes log-line-enter { from { opacity: 0; filter: blur(2px); transform: translateY(2px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
+
+@media (max-width: 1100px) {
+  .telemetry-head { align-items: flex-start; flex-direction: column; }
+  .run-filters { width: 100%; flex-wrap: wrap; }
+  .telemetry-grid { grid-template-columns: 1fr 1fr; }
+  .telemetry-facts { grid-column: 1 / -1; border-top: 1px solid #383838; }
+  .telemetry-grid > .telemetry-facts { border-left: 0; }
+}
+
+@media (max-width: 720px) {
+  .workspace { padding-right: 1rem; padding-left: 1rem; }
+  .route-skeleton { padding: 1.5rem 1rem; }
+  .skeleton-title { width: 86%; height: 48px; }
+  .skeleton-grid, .telemetry-grid { grid-template-columns: 1fr; }
+  .skeleton-grid i { height: 90px; }
+  .telemetry-head, .histogram-card { padding: 1rem; }
+  .telemetry-grid > * + * { border-top: 1px solid #383838; border-left: 0; }
+  .run-filters { display: grid; grid-template-columns: 1fr 1fr; }
+  .range-picker { grid-column: 1 / -1; overflow-x: auto; }
+  .range-picker button { flex: 1; min-width: 44px; }
+  .run-filters select { width: 100%; min-width: 0; }
+  .pipeline-stage { grid-template-columns: 1fr; }
+  .pipeline-stage > header { border-right: 0; border-bottom: 1px solid #383838; padding: 0 0 .6rem; }
+  .pipeline-stage + .pipeline-stage::before { left: 50%; }
+  .run-table .data-head, .job-table .data-head { display: none; }
+  .run-table .data-row, .job-table .data-row { display: grid; width: 100%; min-height: 0; grid-template-columns: 1fr 1fr; gap: .9rem 1rem; margin: 0; padding: 1rem; }
+  .run-table .data-row > [data-label], .job-table .data-row > [data-label] { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .run-table .data-row > [data-label]::before, .job-table .data-row > [data-label]::before { display: block; margin-bottom: .25rem; color: #565656; content: attr(data-label); font-size: .44rem; font-weight: 900; letter-spacing: .08em; }
+  .run-table .data-row > b, .job-table .data-row > b { position: absolute; right: 1rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app-frame.is-loading .workspace > :not(.route-skeleton) { filter: none; transform: none; }
+  .route-skeleton .skeleton-line, .route-skeleton i, .log-skeleton i, .log-console-loaded > div, .histogram-fill { animation: none !important; filter: none !important; transform: none !important; }
+  .log-skeleton { opacity: 1; }
+}

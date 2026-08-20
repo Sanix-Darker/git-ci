@@ -39,6 +39,8 @@ type PageData struct {
 	Schedules   []ScheduleView
 	Deployments []DeploymentView
 	Webhooks    []WebhookView
+	RunFilter   RunFilterView
+	Telemetry   RunTelemetryView
 }
 
 type WorkflowView struct {
@@ -49,6 +51,8 @@ type WorkflowView struct {
 type RunView struct {
 	ID, ProjectName, WorkflowName, WorkflowKey, Status, Dot, Ref, CommitSHA, CreatedAt string
 	CanCancel                                                                          bool
+	CreatedUnix, DurationSeconds                                                       int64
+	DurationLabel                                                                      string
 }
 
 type JobView struct {
@@ -57,26 +61,55 @@ type JobView struct {
 }
 
 type RunDetailView struct {
-	Run      RunView
-	Jobs     []RunJobView
-	Terminal bool
+	Run       RunView
+	Jobs      []RunJobView
+	GraphRows []RunGraphRowView
+	Terminal  bool
 }
 
 type RunJobView struct {
 	ID, Key, Name, Status, Dot, Runner, Dependencies string
 	AllowFailure                                     bool
+	DependencyKeys                                   []string
 	Steps                                            []RunStepView
 }
 
 type RunStepView struct {
-	ID, Name, Status, Dot, Command string
-	Logs                           []LogView
+	ID, RunID, Name, Status, Dot, Command string
+	Terminal                              bool
 }
 
 type LogView struct {
 	Sequence int
 	Stream   string
 	Message  string
+}
+
+type RunGraphRowView struct {
+	Level int
+	Jobs  []RunJobView
+}
+
+type RunFilterView struct {
+	Range, Status, Project string
+}
+
+type HistogramBarView struct {
+	Label string
+	Count int
+	Level int
+}
+
+type RunTelemetryView struct {
+	Window, PassRate                 string
+	Total, Succeeded, Failed, Active int
+	Volume, Duration                 []HistogramBarView
+}
+
+type StepLogView struct {
+	RunID, StepID, StepName string
+	Terminal                bool
+	Logs                    []LogView
 }
 
 type SecretView struct{ ID, ProjectName, Name, UpdatedAt string }
@@ -146,7 +179,11 @@ func (r *Renderer) RenderRunPanel(writer http.ResponseWriter, status int, data P
 	r.render(writer, status, "run_detail_panel", data)
 }
 
-func (r *Renderer) render(writer http.ResponseWriter, status int, name string, data PageData) {
+func (r *Renderer) RenderStepLogs(writer http.ResponseWriter, status int, data StepLogView) {
+	r.render(writer, status, "step_logs", data)
+}
+
+func (r *Renderer) render(writer http.ResponseWriter, status int, name string, data any) {
 	var output bytes.Buffer
 	if err := r.templates.ExecuteTemplate(&output, name, data); err != nil {
 		http.Error(writer, "template rendering failed", http.StatusInternalServerError)

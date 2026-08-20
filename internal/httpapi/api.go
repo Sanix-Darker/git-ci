@@ -121,6 +121,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /app/workflows/{workflow}/runs", a.requireWebAuth(http.HandlerFunc(a.handleEnqueueRunWeb)))
 	mux.Handle("GET /app/runs/{run}", a.requireWebAuth(http.HandlerFunc(a.handleRunPageWeb)))
 	mux.Handle("GET /app/runs/{run}/panel", a.requireWebAuth(http.HandlerFunc(a.handleRunPanelWeb)))
+	mux.Handle("GET /app/runs/{run}/steps/{step}/logs", a.requireWebAuth(http.HandlerFunc(a.handleStepLogsWeb)))
 	mux.Handle("POST /app/runs/{run}/cancel", a.requireWebAuth(http.HandlerFunc(a.handleCancelRunWeb)))
 	mux.Handle("POST /app/secrets", a.requireWebAuth(http.HandlerFunc(a.handleUpsertSecretWeb)))
 	mux.Handle("POST /app/secrets/{secret}/delete", a.requireWebAuth(http.HandlerFunc(a.handleDeleteSecretWeb)))

@@ -8,8 +8,9 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="htmx-config" content='{"allowEval":false,"selfRequestsOnly":true,"historyCacheSize":0}'>
     <title>git-ci / {{.Title}}</title>
-    <link rel="stylesheet" href="/ui/assets/app.css">
-    <script src="/ui/assets/htmx.min.js" defer></script>
+    <link rel="stylesheet" href="/ui/assets/app.css?v={{.Version}}">
+    <script src="/ui/assets/htmx.min.js?v={{.Version}}" defer></script>
+    <script src="/ui/assets/app.js?v={{.Version}}" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#workspace">Skip to workspace</a>
@@ -28,6 +29,13 @@
 <div id="app-frame" class="app-frame">
   {{template "sidebar" .}}
   <main id="workspace" class="workspace">
+    <div class="route-skeleton" aria-hidden="true">
+      <span class="skeleton-line skeleton-kicker"></span>
+      <span class="skeleton-line skeleton-title"></span>
+      <div class="skeleton-grid"><i></i><i></i><i></i></div>
+      <span class="skeleton-line skeleton-wide"></span>
+      <span class="skeleton-line skeleton-medium"></span>
+    </div>
     <header class="workspace-header">
       <div><p class="kicker">{{upper .Kicker}}</p><h1>{{upper .Title}}</h1></div>
       <p>{{.Description}}</p>
@@ -145,6 +153,7 @@
 {{end}}
 
 {{define "overview_panel"}}
+{{template "run_telemetry" .}}
 <section class="metric-row" aria-label="Service metrics">
   <article><strong>{{pad2 (len .Projects)}}</strong><span>REGISTERED PROJECTS</span></article>
   <article><strong>{{pad2 (len .Workflows)}}</strong><span>ACTIVE WORKFLOWS</span></article>
@@ -227,6 +236,7 @@
 
 {{define "runs_panel"}}
 {{if .SelectedRun}}{{template "run_detail_panel" .}}{{else}}
+{{template "run_telemetry" .}}
 <section class="surface-card flush-card">
   <div class="card-heading padded-heading"><div><p class="kicker">SQLITE HISTORY</p><h2>ALL RUNS</h2></div><span>{{pad2 (len .Runs)}}</span></div>
   {{template "run_rows" .}}
@@ -239,7 +249,7 @@
   <div class="data-head"><span>STATE</span><span>WORKFLOW</span><span>PROJECT</span><span>REF</span><span>CREATED</span><span></span></div>
   {{range .Runs}}
   <a class="data-row" href="/app/runs/{{.ID}}">
-    <span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.WorkflowName}}</strong><span>{{.ProjectName}}</span><code>{{.Ref}}</code><time>{{.CreatedAt}}</time><b>-></b>
+    <span class="status-cell" data-label="STATE"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong data-label="WORKFLOW">{{.WorkflowName}}</strong><span data-label="PROJECT">{{.ProjectName}}</span><code data-label="REF">{{.Ref}}</code><time data-label="CREATED">{{.CreatedAt}}</time><b>-></b>
   </a>
   {{else}}<div class="empty-state"><i></i><p>NO RUNS QUEUED</p></div>{{end}}
 </div>
@@ -252,7 +262,7 @@
     <div class="data-head"><span>STATE</span><span>JOB</span><span>WORKFLOW</span><span>PROJECT</span><span>STEPS</span><span></span></div>
     {{range .Jobs}}
     <a class="data-row" href="/app/runs/{{.RunID}}">
-      <span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.Name}}</strong><span>{{.WorkflowName}}</span><span>{{.ProjectName}}</span><code>{{pad2 .StepCount}}</code><b>-></b>
+      <span class="status-cell" data-label="STATE"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong data-label="JOB">{{.Name}}</strong><span data-label="WORKFLOW">{{.WorkflowName}}</span><span data-label="PROJECT">{{.ProjectName}}</span><code data-label="STEPS">{{pad2 .StepCount}}</code><b>-></b>
     </a>
     {{else}}<div class="empty-state"><i></i><p>NO JOB SNAPSHOTS STORED</p></div>{{end}}
   </div>
@@ -267,8 +277,8 @@
     <div class="run-detail-state"><span><i class="dot {{.Run.Dot}}"></i>{{.Run.Status}}</span>{{if .Run.CanCancel}}<form method="post" action="/app/runs/{{.Run.ID}}/cancel" hx-post="/app/runs/{{.Run.ID}}/cancel" hx-target="#run-detail" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">CANCEL</button></form>{{end}}</div>
   </header>
   <dl class="run-facts"><div><dt>PROJECT</dt><dd>{{.Run.ProjectName}}</dd></div><div><dt>REF</dt><dd>{{.Run.Ref}}</dd></div><div><dt>COMMIT</dt><dd>{{if .Run.CommitSHA}}{{short .Run.CommitSHA}}{{else}}LOCAL{{end}}</dd></div><div><dt>CREATED</dt><dd>{{.Run.CreatedAt}}</dd></div></dl>
-  <div class="run-graph" aria-label="Pipeline dependency graph">
-    {{range .Jobs}}<article class="run-node"><header><i class="dot {{.Dot}}"></i><span>{{.Status}}</span></header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}
+  <div class="pipeline-graph" aria-label="Pipeline dependency graph">
+    {{range .GraphRows}}<section class="pipeline-stage"><header><span>STAGE {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><i class="dot {{.Dot}}"></i><span>{{.Status}}</span></header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}</div></section>{{end}}
   </div>
   <div class="job-details">
     {{range .Jobs}}
@@ -279,8 +289,9 @@
         <section class="step-detail">
           <header><span><i class="dot {{.Dot}}"></i>{{.Name}}</span><b>{{.Status}}</b></header>
           {{if .Command}}<code class="step-command">$ {{.Command}}</code>{{end}}
-          <div class="log-console" aria-label="Logs for {{.Name}}">
-            {{range .Logs}}<div><span>{{pad2 .Sequence}}</span><b>{{.Stream}}</b><pre>{{.Message}}</pre></div>{{else}}<p>WAITING FOR OUTPUT</p>{{end}}
+          <div class="log-console log-console-lazy" aria-label="Logs for {{.Name}}" aria-busy="true" hx-get="/app/runs/{{.RunID}}/steps/{{.ID}}/logs" hx-trigger="revealed" hx-swap="outerHTML">
+            <div class="log-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
+            <noscript><p>LOG STREAM REQUIRES JAVASCRIPT. USE THE CLI OR API V1.</p></noscript>
           </div>
         </section>
         {{end}}
@@ -290,6 +301,39 @@
   </div>
 </section>
 {{end}}
+{{end}}
+
+{{define "step_logs"}}
+<div class="log-console log-console-loaded" aria-label="Logs for {{.StepName}}" aria-busy="false" data-terminal="{{.Terminal}}" {{if not .Terminal}}hx-get="/app/runs/{{.RunID}}/steps/{{.StepID}}/logs" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
+  {{range .Logs}}<div><span>{{pad2 .Sequence}}</span><b>{{.Stream}}</b><pre>{{.Message}}</pre></div>{{else}}<p>WAITING FOR OUTPUT</p>{{end}}
+</div>
+{{end}}
+
+{{define "run_telemetry"}}
+<section class="telemetry-shell" aria-label="Run telemetry">
+  <header class="telemetry-head">
+    <div><p class="kicker">OBSERVABILITY / {{upper .Telemetry.Window}}</p><h2>EXECUTION SIGNAL</h2></div>
+    {{if eq .Page "runs"}}
+    <form class="run-filters" method="get" action="/app/runs" hx-get="/app/runs" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-trigger="change from:select" hx-indicator="#global-indicator">
+      <div class="range-picker" role="group" aria-label="Time range">
+        <button type="submit" name="range" value="1h" class="{{if eq .RunFilter.Range "1h"}}active{{end}}">1H</button>
+        <button type="submit" name="range" value="6h" class="{{if eq .RunFilter.Range "6h"}}active{{end}}">6H</button>
+        <button type="submit" name="range" value="24h" class="{{if eq .RunFilter.Range "24h"}}active{{end}}">24H</button>
+        <button type="submit" name="range" value="7d" class="{{if eq .RunFilter.Range "7d"}}active{{end}}">7D</button>
+        <button type="submit" name="range" value="30d" class="{{if eq .RunFilter.Range "30d"}}active{{end}}">30D</button>
+        <button type="submit" name="range" value="all" class="{{if eq .RunFilter.Range "all"}}active{{end}}">ALL</button>
+      </div>
+      <label>STATUS<select name="status"><option value="">ANY</option><option value="succeeded" {{if eq .RunFilter.Status "succeeded"}}selected{{end}}>SUCCEEDED</option><option value="failed" {{if eq .RunFilter.Status "failed"}}selected{{end}}>FAILED</option><option value="running" {{if eq .RunFilter.Status "running"}}selected{{end}}>RUNNING</option><option value="queued" {{if eq .RunFilter.Status "queued"}}selected{{end}}>QUEUED</option><option value="cancelled" {{if eq .RunFilter.Status "cancelled"}}selected{{end}}>CANCELLED</option></select></label>
+      <label>PROJECT<select name="project"><option value="">ALL PROJECTS</option>{{range .Projects}}<option value="{{.ID}}" {{if eq $.RunFilter.Project .ID}}selected{{end}}>{{upper .Name}}</option>{{end}}</select></label>
+    </form>
+    {{else}}<a href="/app/runs">EXPLORE RUNS -&gt;</a>{{end}}
+  </header>
+  <div class="telemetry-grid">
+    <article class="histogram-card"><header><span>RUN VOLUME</span><b>{{pad2 .Telemetry.Total}}</b></header><div class="histogram-bars" aria-label="Run volume histogram">{{range .Telemetry.Volume}}<span class="histogram-column" title="{{.Label}} / {{.Count}} runs"><i class="histogram-fill level-{{.Level}}"></i><small>{{.Label}}</small></span>{{end}}</div></article>
+    <article class="histogram-card duration-card"><header><span>DURATION</span><b>BUCKETS</b></header><div class="histogram-bars duration-bars" aria-label="Run duration histogram">{{range .Telemetry.Duration}}<span class="histogram-column" title="{{.Label}} / {{.Count}} runs"><i class="histogram-fill level-{{.Level}}"></i><small>{{.Label}}</small></span>{{end}}</div></article>
+    <dl class="telemetry-facts"><div><dt>PASS RATE</dt><dd>{{.Telemetry.PassRate}}</dd></div><div><dt>ACTIVE</dt><dd><i class="dot {{if .Telemetry.Active}}dot-blue{{end}}"></i>{{pad2 .Telemetry.Active}}</dd></div><div><dt>FAILED</dt><dd><i class="dot {{if .Telemetry.Failed}}dot-red{{end}}"></i>{{pad2 .Telemetry.Failed}}</dd></div><div><dt>SUCCEEDED</dt><dd><i class="dot {{if .Telemetry.Succeeded}}dot-green{{end}}"></i>{{pad2 .Telemetry.Succeeded}}</dd></div></dl>
+  </div>
+</section>
 {{end}}
 
 {{define "future_panel"}}
