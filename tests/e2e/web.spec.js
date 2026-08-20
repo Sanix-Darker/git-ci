@@ -8,6 +8,7 @@ test("@responsive public page presents the CLI and self-hosted service", async (
   await page.goto("/");
   await expect(page).toHaveTitle(/git-ci/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("RUN CI");
+  await expect(page.getByText(/CI\/CD alternative to GitHub Actions and GitLab CI/)).toBeVisible();
   await expect(page.getByText("CLI FIRST.")).toBeVisible();
   await expect(page.getByRole("link", { name: /OPERATOR LOGIN/ })).toHaveAttribute("href", "/login");
   expect(await page.locator("body").evaluate((node) => getComputedStyle(node).backgroundImage)).toBe("none");
@@ -104,7 +105,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await testJob.getByRole("button", { name: "REPLAY STEP" }).first().click();
   await expect(testJob.getByRole("button", { name: "CONFIRM REPLAY STEP" }).first()).toBeVisible();
   await testJob.getByRole("button", { name: "CONFIRM REPLAY STEP" }).first().click();
-  await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+$/);
+  await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+\?notice=REPLAY(?:\+|%20)QUEUED$/);
   await expect(page.getByRole("status").filter({ hasText: "REPLAY QUEUED" })).toBeVisible();
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
   await expect(page.getByLabel("Run provenance")).toContainText("STEP REPLAY");
