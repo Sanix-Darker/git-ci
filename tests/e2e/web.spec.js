@@ -29,9 +29,16 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByRole("heading", { name: "DASHBOARD" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Control plane" })).toContainText("Jobs");
+  await expect(page.getByLabel("Run volume histogram")).toBeVisible();
 
+  await page.route("**/app/projects", async (route) => {
+    if (route.request().method() === "GET") await new Promise((resolve) => setTimeout(resolve, 240));
+    await route.continue();
+  });
   await page.getByRole("link", { name: /Projects/ }).click();
+  await expect(page.locator("#app-frame")).toHaveClass(/is-loading/);
   await expect(page).toHaveURL(/\/app\/projects$/);
+  await page.unroute("**/app/projects");
   await expect(page.getByRole("heading", { name: "PROJECTS" })).toBeVisible();
   const alpha = page.locator("article.candidate", { hasText: "alpha-service" });
   await expect(alpha).toBeVisible();
@@ -71,10 +78,23 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.locator(".run-node").filter({ has: page.getByText("Prepare", { exact: true }) })).toBeVisible();
   await expect(page.locator(".run-node").filter({ has: page.getByText("Test", { exact: true }) })).toContainText("AFTER PREPARE");
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
-  await expect(page.getByLabel("Logs for Prepare")).toContainText("prepared");
-  await expect(page.getByLabel("Logs for Test")).toContainText("tests passed");
-  await expect(page.getByLabel("Logs for Secret mask")).toContainText("***");
-  await expect(page.getByLabel("Logs for Secret mask")).not.toContainText("e2e-super-secret");
+  await expect(page.locator(".pipeline-stage")).toHaveCount(2);
+  const prepareLogs = page.getByLabel("Logs for Prepare");
+  const testLogs = page.getByLabel("Logs for Test");
+  const secretLogs = page.getByLabel("Logs for Secret mask");
+  await prepareLogs.scrollIntoViewIfNeeded();
+  await expect(prepareLogs).toContainText("prepared");
+  await testLogs.scrollIntoViewIfNeeded();
+  await expect(testLogs).toContainText("tests passed");
+  await secretLogs.scrollIntoViewIfNeeded();
+  await expect(secretLogs).toContainText("***");
+  await expect(secretLogs).not.toContainText("e2e-super-secret");
+
+  await page.getByRole("link", { name: /Runs/ }).click();
+  await expect(page.getByRole("group", { name: "Time range" })).toBeVisible();
+  await page.getByRole("button", { name: "ALL", exact: true }).click();
+  await expect(page).toHaveURL(/range=all/);
+  await expect(page.getByLabel("Run duration histogram")).toBeVisible();
 
   await page.getByRole("link", { name: /Jobs/ }).click();
   await expect(page).toHaveURL(/\/app\/jobs$/);
@@ -106,4 +126,28 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.getByLabel("Token")).toBeVisible();
   const protectedResponse = await page.request.get("/api/v1/projects");
   expect(protectedResponse.status()).toBe(401);
+});
+
+test("@responsive operator surfaces preserve padding, mobile records, and reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/login");
+  const token = (await fs.readFile(tokenPath, "utf8")).trim();
+  await page.getByLabel("Token").fill(token);
+  await page.getByRole("button", { name: /ENTER CONTROL PLANE/ }).click();
+  await expect(page.getByRole("heading", { name: "DASHBOARD" })).toBeVisible();
+  const layout = await page.evaluate(() => {
+    const workspace = getComputedStyle(document.querySelector(".workspace"));
+    const animated = getComputedStyle(document.querySelector(".histogram-fill"));
+    return {
+      paddingLeft: parseFloat(workspace.paddingLeft),
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      animationDuration: animated.animationDuration,
+      gradient: getComputedStyle(document.body).backgroundImage,
+    };
+  });
+  expect(layout.paddingLeft).toBeGreaterThanOrEqual(16);
+  expect(layout.overflow).toBeLessThanOrEqual(0);
+  expect(layout.gradient).toBe("none");
+  expect(["0s", "0.001s", "1ms"]).toContain(layout.animationDuration);
 });

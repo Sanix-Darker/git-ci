@@ -8,8 +8,9 @@
     <meta name="robots" content="noindex,nofollow">
     <meta name="htmx-config" content='{"allowEval":false,"selfRequestsOnly":true,"historyCacheSize":0}'>
     <title>git-ci / login</title>
-    <link rel="stylesheet" href="/ui/assets/app.css">
-    <script src="/ui/assets/htmx.min.js" defer></script>
+    <link rel="stylesheet" href="/ui/assets/app.css?v={{.Version}}">
+    <script src="/ui/assets/htmx.min.js?v={{.Version}}" defer></script>
+    <script src="/ui/assets/app.js?v={{.Version}}" defer></script>
   </head>
   <body class="auth-page">
     <a class="skip-link" href="#login">Skip to login</a>
