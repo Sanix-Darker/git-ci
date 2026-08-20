@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 )
 
 const defaultPollInterval = time.Second
@@ -131,13 +132,18 @@ func (m *Manager) processPolicy(ctx context.Context, policy store.ProjectCommitT
 	if sha == *policy.LastCommitSHA {
 		return m.store.RecordProjectCommitTriggerCheck(ctx, policy.ProjectID, &sha, false, nil)
 	}
+	paths, err := changedPaths(ctx, *project.CanonicalPath, *policy.LastCommitSHA, sha)
+	if err != nil {
+		return err
+	}
+	event := triggerpolicy.Event{Type: "push", Ref: "refs/heads/" + policy.Ref, ChangedPaths: paths, PathsKnown: true}
 	workflows, err := m.enqueuer.SyncProject(ctx, project.ID)
 	if err != nil {
 		return fmt.Errorf("triggers: sync workflows: %w", err)
 	}
 	triggered := false
 	for _, workflow := range workflows {
-		accepts, err := acceptsCommit(workflow.Definition)
+		accepts, err := acceptsCommitEvent(workflow.Definition, event)
 		if err != nil {
 			return fmt.Errorf("triggers: inspect workflow %q: %w", workflow.Key, err)
 		}
@@ -169,18 +175,37 @@ func (m *Manager) Notify() {
 
 func acceptsCommit(raw []byte) (bool, error) {
 	var definition struct {
-		Triggers []string `json:"triggers"`
+		Triggers        []string               `json:"triggers"`
+		TriggerPolicies []triggerpolicy.Policy `json:"triggerPolicies"`
 	}
 	if err := json.Unmarshal(raw, &definition); err != nil {
 		return false, err
 	}
-	for _, trigger := range definition.Triggers {
-		switch strings.ToLower(strings.TrimSpace(trigger)) {
-		case "push", "commit":
-			return true, nil
-		}
+	return triggerpolicy.Match(definition.TriggerPolicies, definition.Triggers, triggerpolicy.Event{Type: "push"}), nil
+}
+
+func acceptsCommitEvent(raw []byte, event triggerpolicy.Event) (bool, error) {
+	var definition struct {
+		Triggers        []string               `json:"triggers"`
+		TriggerPolicies []triggerpolicy.Policy `json:"triggerPolicies"`
 	}
-	return false, nil
+	if err := json.Unmarshal(raw, &definition); err != nil {
+		return false, err
+	}
+	return triggerpolicy.Match(definition.TriggerPolicies, definition.Triggers, event), nil
+}
+
+func changedPaths(ctx context.Context, path, before, after string) ([]string, error) {
+	command := exec.CommandContext(ctx, "git", "-c", "safe.directory="+path, "-C", path, "diff", "--name-only", "--diff-filter=ACDMRTUXB", before, after, "--")
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("triggers: inspect changed paths: %s", strings.TrimSpace(string(output)))
+	}
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return nil, nil
+	}
+	return lines, nil
 }
 
 func normalizeBranch(ref, fallback string) (string, error) {

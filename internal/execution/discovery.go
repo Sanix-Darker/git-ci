@@ -12,6 +12,7 @@ import (
 
 	"github.com/sanix-darker/git-ci/internal/parsers"
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 	"github.com/sanix-darker/git-ci/pkg/types"
 	yaml "gopkg.in/yaml.v3"
 )
@@ -32,18 +33,19 @@ const (
 // a control plane. File is always a slash-separated path relative to
 // ProjectPath, while Key is stable for a registered project and source file.
 type Definition struct {
-	Key              string            `json:"key"`
-	ProjectID        string            `json:"projectId,omitempty"`
-	ProjectSlug      string            `json:"projectSlug,omitempty"`
-	ProjectPath      string            `json:"projectPath"`
-	Provider         Provider          `json:"provider"`
-	File             string            `json:"file"`
-	Name             string            `json:"name"`
-	Environment      map[string]string `json:"environment"`
-	Stages           []string          `json:"stages"`
-	Triggers         []string          `json:"triggers"`
-	Jobs             []JobDefinition   `json:"jobs"`
-	TopologicalOrder []string          `json:"topologicalOrder"`
+	Key              string                 `json:"key"`
+	ProjectID        string                 `json:"projectId,omitempty"`
+	ProjectSlug      string                 `json:"projectSlug,omitempty"`
+	ProjectPath      string                 `json:"projectPath"`
+	Provider         Provider               `json:"provider"`
+	File             string                 `json:"file"`
+	Name             string                 `json:"name"`
+	Environment      map[string]string      `json:"environment"`
+	Stages           []string               `json:"stages"`
+	Triggers         []string               `json:"triggers"`
+	TriggerPolicies  []triggerpolicy.Policy `json:"triggerPolicies,omitempty"`
+	Jobs             []JobDefinition        `json:"jobs"`
+	TopologicalOrder []string               `json:"topologicalOrder"`
 }
 
 // JobDefinition is a provider-neutral, persistence-ready job. Key is the
@@ -537,6 +539,10 @@ func normalizeDefinition(
 	if projectKey == "" {
 		projectKey = root
 	}
+	triggerPolicies, err := triggerpolicy.ParseFile(string(file.provider), file.absolute, pipeline.Triggers)
+	if err != nil {
+		return Definition{}, fmt.Errorf("normalize trigger policy: %w", err)
+	}
 	definition := Definition{
 		Key:              projectKey + ":" + string(file.provider) + ":" + file.relative,
 		ProjectID:        project.ID,
@@ -548,6 +554,7 @@ func normalizeDefinition(
 		Environment:      copyStringMap(pipeline.Environment),
 		Stages:           copyStringSlice(pipeline.Stages),
 		Triggers:         sortedUnique(pipeline.Triggers),
+		TriggerPolicies:  triggerPolicies,
 		Jobs:             make([]JobDefinition, 0, len(order)),
 		TopologicalOrder: copyStringSlice(order),
 	}

@@ -14,7 +14,7 @@ module.exports = defineConfig({
   },
   projects: [
     { name: "desktop-chromium", use: { ...devices["Desktop Chrome"] } },
-    { name: "mobile-chromium", grep: /@responsive/, use: { ...devices["Pixel 7"] } },
+    { name: "mobile-chromium", grep: /@responsive/, use: { ...devices["Desktop Chrome"], viewport: { width: 390, height: 844 } } },
   ],
   webServer: {
     command: "bash scripts/start-web-e2e.sh",

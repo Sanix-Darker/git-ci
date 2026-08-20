@@ -18,7 +18,7 @@
 @layer base {
   :root { color-scheme: dark; background: #080808; color: #fff; font-family: var(--font-sans); }
   *, *::before, *::after { box-sizing: border-box; border-radius: 0; }
-  html { background: #080808; scroll-behavior: smooth; }
+  html { background: #080808; scroll-behavior: auto; }
   body { min-width: 320px; min-height: 100vh; margin: 0; overflow-x: hidden; background: #080808; color: #fff; font-size: 14px; line-height: 1.5; }
   button, input { font: inherit; }
   a, button { -webkit-tap-highlight-color: transparent; }
@@ -810,9 +810,21 @@
 .workflow-step { display: grid; grid-template-columns: 3.5rem minmax(8rem, 0.4fr) minmax(0, 1fr); gap: 0.65rem; padding: 0.6rem; border-top: 1px solid #222; align-items: center; }
 .workflow-step > span { color: #888; font-size: 0.55rem; }
 .workflow-step code { overflow: hidden; color: #aaa; text-overflow: ellipsis; white-space: nowrap; }
-.manual-dispatch { display: grid; grid-template-columns: minmax(10rem, 0.7fr) minmax(14rem, 1.3fr) auto; gap: 0.65rem; align-items: end; margin-top: 0.75rem; padding: 0.75rem; border: 1px solid #777; background: #050505; }
+.manual-dispatch { position: relative; z-index: 1; isolation: isolate; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.65rem; align-items: end; margin-top: 0.75rem; padding: 0.75rem; border: 1px solid #777; background: #050505; }
+.manual-dispatch > * { min-width: 0; }
 .manual-dispatch label span { display: block; margin-bottom: 0.35rem; color: #aaa; font-size: 0.58rem; }
-.manual-dispatch input { width: 100%; border: 1px solid #555; background: #111; color: #eee; padding: 0.68rem; font: inherit; }
+.manual-dispatch input, .manual-dispatch select { width: 100%; min-height: 42px; border: 1px solid #555; border-radius: 0; background: #111; color: #eee; padding: 0.68rem; font: inherit; }
+.manual-dispatch > button { position: relative; z-index: 2; grid-column: 1 / -1; min-height: 42px; justify-self: stretch; }
+.dispatch-input > small { display: block; margin-top: 0.35rem; border-left: 1px solid #444; padding-left: 0.5rem; color: #777; font-size: 0.55rem; }
+.trigger-policies { margin-top: 0.75rem; border: 1px solid #444; background: #050505; }
+.trigger-policies > header { display: flex; justify-content: space-between; padding: 0.65rem; border-bottom: 1px solid #333; color: #aaa; font-size: 0.58rem; }
+.trigger-policies > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.trigger-policies article { min-width: 0; min-height: 6rem; padding: 0.75rem; }
+.trigger-policies article + article { border-left: 1px solid #333; }
+.trigger-policies h4 { display: flex; align-items: center; gap: 0.45rem; margin: 0 0 0.65rem; font-size: 0.68rem; }
+.trigger-policies p { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; }
+.trigger-policies b, .trigger-policies code, .trigger-policies em { padding: 0.3rem 0.4rem; border: 1px solid #444; color: #aaa; font-size: 0.52rem; font-style: normal; }
+.trigger-policies em { border-color: #8c3434; color: #e06d6d; }
 
 @media (max-width: 720px) {
   .resource-head { align-items: stretch; flex-direction: column; }
@@ -820,6 +832,9 @@
   .resource-card > summary, .workflow-detail > summary { grid-template-columns: auto minmax(0, 1fr); }
   .resource-stat, .resource-open { grid-column: 2; justify-self: start; text-align: left; }
   .definition-facts, .manual-dispatch { grid-template-columns: 1fr; }
+  .manual-dispatch > button { min-height: 44px; }
+  .trigger-policies > div { grid-template-columns: 1fr; }
+  .trigger-policies article + article { border-top: 1px solid #333; border-left: 0; }
   .commit-trigger { grid-template-columns: 1fr; }
   .commit-trigger header, .commit-trigger dl, .commit-trigger-error { grid-column: 1; }
   .commit-trigger dl { grid-template-columns: 1fr; }

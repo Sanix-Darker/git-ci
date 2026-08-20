@@ -31,6 +31,15 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(pipeline.locator('input[name="commitSha"]')).toBeVisible();
   await expect(pipeline.getByRole("button", { name: /RUN WORKFLOW/ })).toBeVisible();
 
+  const manual = page.locator("details.workflow-detail").filter({ hasText: "Failure CI" });
+  await manual.locator("summary").click();
+  await expect(pipeline).not.toHaveAttribute("open", "");
+  await expect(manual.getByLabel(/TARGET/)).toHaveValue("staging");
+  await manual.getByLabel(/TARGET/).selectOption("production");
+  await expect(manual.getByLabel(/DRY-RUN/)).toHaveValue("true");
+  await manual.getByRole("button", { name: /RUN WORKFLOW/ }).click();
+  await expect(page).toHaveURL(/\/app\/runs\//);
+
   await page.goto("/app/projects");
   const projectCard = page.locator("details.resource-card").filter({ hasText: "alpha-service" });
   await projectCard.locator("summary").click();

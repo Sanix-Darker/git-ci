@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 )
 
 const (
@@ -122,10 +123,18 @@ func (m *Manager) SyncProject(ctx context.Context, projectID string) ([]store.Wo
 // EnqueueWorkflow creates a complete immutable run graph from the currently
 // active stored workflow definition.
 func (m *Manager) EnqueueWorkflow(ctx context.Context, workflowID, ref, commitSHA string) (store.Run, error) {
-	return m.EnqueueTriggered(ctx, workflowID, ref, commitSHA, "manual")
+	return m.EnqueueWorkflowWithInputs(ctx, workflowID, ref, commitSHA, nil)
+}
+
+func (m *Manager) EnqueueWorkflowWithInputs(ctx context.Context, workflowID, ref, commitSHA string, inputs map[string]string) (store.Run, error) {
+	return m.enqueueTriggered(ctx, workflowID, ref, commitSHA, "manual", inputs)
 }
 
 func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitSHA, trigger string) (store.Run, error) {
+	return m.enqueueTriggered(ctx, workflowID, ref, commitSHA, trigger, nil)
+}
+
+func (m *Manager) enqueueTriggered(ctx context.Context, workflowID, ref, commitSHA, trigger string, inputs map[string]string) (store.Run, error) {
 	workflow, err := m.store.GetWorkflow(ctx, workflowID)
 	if err != nil {
 		return store.Run{}, err
@@ -143,6 +152,10 @@ func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitS
 	var definition Definition
 	if err := json.Unmarshal(workflow.Definition, &definition); err != nil {
 		return store.Run{}, fmt.Errorf("execution: decode workflow definition: %w", err)
+	}
+	runEnvironment, err := applyManualInputs(workflow.Environment, definition.TriggerPolicies, inputs)
+	if err != nil {
+		return store.Run{}, fmt.Errorf("execution: dispatch inputs: %w", err)
 	}
 	if ref == "" {
 		ref = "refs/heads/" + project.DefaultBranch
@@ -202,7 +215,7 @@ func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitS
 		Ref:         strings.TrimSpace(ref),
 		CommitSHA:   resolvedCommit,
 		SourcePath:  *project.CanonicalPath,
-		Environment: workflow.Environment,
+		Environment: runEnvironment,
 		Jobs:        jobs,
 	})
 	if err != nil {
@@ -210,6 +223,43 @@ func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitS
 	}
 	m.Notify()
 	return run, nil
+}
+
+func applyManualInputs(environment []byte, policies []triggerpolicy.Policy, provided map[string]string) ([]byte, error) {
+	resolved, err := triggerpolicy.ResolveManualInputs(policies, provided)
+	if err != nil {
+		return nil, err
+	}
+	if len(resolved) == 0 {
+		return append([]byte(nil), environment...), nil
+	}
+	values := make(map[string]string)
+	if len(environment) > 0 && string(environment) != "null" {
+		if err := json.Unmarshal(environment, &values); err != nil {
+			return nil, fmt.Errorf("decode workflow environment: %w", err)
+		}
+	}
+	for name, value := range resolved {
+		values[inputEnvironmentKey(name)] = value
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return nil, fmt.Errorf("encode workflow environment: %w", err)
+	}
+	return encoded, nil
+}
+
+func inputEnvironmentKey(name string) string {
+	var key strings.Builder
+	key.WriteString("INPUT_")
+	for _, character := range strings.ToUpper(strings.TrimSpace(name)) {
+		if character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' {
+			key.WriteRune(character)
+		} else {
+			key.WriteByte('_')
+		}
+	}
+	return strings.TrimRight(key.String(), "_")
 }
 
 func (m *Manager) EnqueueDeploymentRollback(ctx context.Context, params store.EnqueueRollbackParams) (store.Run, error) {
