@@ -15,6 +15,7 @@ import (
 	"github.com/sanix-darker/git-ci/internal/auth"
 	execdomain "github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 	"github.com/sanix-darker/git-ci/internal/webui"
 )
 
@@ -30,7 +31,18 @@ func (a *API) handleSyncWorkflowsWeb(writer http.ResponseWriter, request *http.R
 }
 
 func (a *API) handleEnqueueRunWeb(writer http.ResponseWriter, request *http.Request) {
-	run, err := a.execution.EnqueueWorkflow(request.Context(), request.PathValue("workflow"), request.FormValue("ref"), request.FormValue("commitSha"))
+	if err := request.ParseForm(); err != nil {
+		a.renderAppSection(writer, request, "workflows", "invalid dispatch form", http.StatusBadRequest)
+		return
+	}
+	inputs := make(map[string]string)
+	for name, values := range request.PostForm {
+		if !strings.HasPrefix(name, "input.") || len(values) == 0 {
+			continue
+		}
+		inputs[strings.TrimPrefix(name, "input.")] = values[len(values)-1]
+	}
+	run, err := a.execution.EnqueueWorkflowWithInputs(request.Context(), request.PathValue("workflow"), request.FormValue("ref"), request.FormValue("commitSha"), inputs)
 	if err != nil {
 		a.renderAppSection(writer, request, "workflows", err.Error(), http.StatusUnprocessableEntity)
 		return
@@ -234,10 +246,11 @@ func commitTriggerView(policy store.ProjectCommitTrigger) webui.CommitTriggerVie
 }
 
 type workflowDefinitionDocument struct {
-	Triggers         []string        `json:"triggers"`
-	Stages           []string        `json:"stages"`
-	TopologicalOrder []string        `json:"topologicalOrder"`
-	Jobs             json.RawMessage `json:"jobs"`
+	Triggers         []string               `json:"triggers"`
+	TriggerPolicies  []triggerpolicy.Policy `json:"triggerPolicies"`
+	Stages           []string               `json:"stages"`
+	TopologicalOrder []string               `json:"topologicalOrder"`
+	Jobs             json.RawMessage        `json:"jobs"`
 }
 
 type workflowDefinitionJobDocument struct {
@@ -264,6 +277,29 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 	}
 	view.Triggers = definition.Triggers
 	view.Stages = definition.Stages
+	manualInputs := make(map[string]struct{})
+	for _, policy := range definition.TriggerPolicies {
+		policyView := webui.WorkflowTriggerPolicyView{
+			Event: policy.Event, Branches: policy.Branches, BranchesIgnore: policy.BranchesIgnore,
+			Tags: policy.Tags, TagsIgnore: policy.TagsIgnore, Paths: policy.Paths,
+			PathsIgnore: policy.PathsIgnore, Actions: policy.Actions, Schedules: policy.Schedules,
+			Condition: policy.Condition, Evaluable: policy.Evaluable,
+		}
+		view.TriggerPolicies = append(view.TriggerPolicies, policyView)
+		if policy.Event != "workflow_dispatch" && policy.Event != "manual" {
+			continue
+		}
+		for _, input := range policy.Inputs {
+			if _, exists := manualInputs[input.Name]; exists {
+				continue
+			}
+			manualInputs[input.Name] = struct{}{}
+			view.ManualInputs = append(view.ManualInputs, webui.WorkflowInputView{
+				Name: input.Name, Description: input.Description, Type: input.Type,
+				Required: input.Required, Default: input.Default, Options: input.Options,
+			})
+		}
+	}
 
 	jobsByKey := make(map[string]workflowDefinitionJobDocument)
 	var jobs []workflowDefinitionJobDocument

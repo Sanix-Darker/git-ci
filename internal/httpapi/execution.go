@@ -40,13 +40,14 @@ func (a *API) handleWorkflow(writer http.ResponseWriter, request *http.Request) 
 
 func (a *API) handleEnqueueWorkflowRun(writer http.ResponseWriter, request *http.Request) {
 	var payload struct {
-		Ref       string `json:"ref"`
-		CommitSHA string `json:"commitSha"`
+		Ref       string            `json:"ref"`
+		CommitSHA string            `json:"commitSha"`
+		Inputs    map[string]string `json:"inputs"`
 	}
 	if !a.decodeJSON(writer, request, &payload) {
 		return
 	}
-	run, err := a.execution.EnqueueWorkflow(request.Context(), request.PathValue("workflow"), payload.Ref, payload.CommitSHA)
+	run, err := a.execution.EnqueueWorkflowWithInputs(request.Context(), request.PathValue("workflow"), payload.Ref, payload.CommitSHA, payload.Inputs)
 	if err != nil {
 		a.writeStoreError(writer, err, err.Error())
 		return

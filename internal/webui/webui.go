@@ -65,9 +65,24 @@ type WorkflowView struct {
 	Revision, JobCount                                    int
 	DefaultRef                                            string
 	Triggers                                              []string
+	TriggerPolicies                                       []WorkflowTriggerPolicyView
+	ManualInputs                                          []WorkflowInputView
 	Stages                                                []string
 	Jobs                                                  []WorkflowJobView
 	GraphRows                                             []RunGraphRowView
+}
+
+type WorkflowTriggerPolicyView struct {
+	Event, Condition                                               string
+	Branches, BranchesIgnore, Tags, TagsIgnore, Paths, PathsIgnore []string
+	Actions, Schedules                                             []string
+	Evaluable                                                      bool
+}
+
+type WorkflowInputView struct {
+	Name, Description, Type, Default string
+	Required                         bool
+	Options                          []string
 }
 
 type WorkflowJobView struct {

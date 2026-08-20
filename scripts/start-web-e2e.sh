@@ -48,7 +48,20 @@ jobs:
 YAML
 cat >"$project_root/alpha-service/.github/workflows/failure.yml" <<'YAML'
 name: Failure CI
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Deployment target
+        required: true
+        default: staging
+        type: choice
+        options: [staging, production]
+      dry-run:
+        description: Skip mutations
+        required: true
+        default: "true"
+        type: boolean
 jobs:
   fail:
     runs-on: ubuntu-latest

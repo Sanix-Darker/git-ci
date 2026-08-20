@@ -114,9 +114,23 @@
     });
   };
 
+  const installWorkflowAccordions = (root = document) => {
+    root.querySelectorAll(".workflow-catalog:not([data-accordion-ready])").forEach((catalog) => {
+      catalog.dataset.accordionReady = "true";
+      catalog.addEventListener("toggle", (event) => {
+        const opened = event.target;
+        if (!(opened instanceof HTMLDetailsElement) || !opened.matches(".workflow-detail") || !opened.open) return;
+        catalog.querySelectorAll("details.workflow-detail[open]").forEach((details) => {
+          if (details !== opened) details.open = false;
+        });
+      }, true);
+    });
+  };
+
   const installEnhancements = (root = document) => {
     installToasts(root);
     installProjectSearch(root);
+    installWorkflowAccordions(root);
   };
 
   if (document.readyState === "loading") {
