@@ -1047,7 +1047,7 @@ func validDeploymentTransition(from, to Status) bool {
 	}
 	switch from {
 	case StatusQueued:
-		return to == StatusRunning || to == StatusCancelled || to == StatusSkipped
+		return to == StatusRunning || to == StatusFailed || to == StatusCancelled || to == StatusSkipped
 	case StatusRunning:
 		return to == StatusSucceeded || to == StatusFailed || to == StatusCancelled
 	default:

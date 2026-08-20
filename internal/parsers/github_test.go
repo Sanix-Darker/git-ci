@@ -1,8 +1,10 @@
 package parsers
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -166,6 +168,59 @@ func TestGithubParser_ParseDefaults(t *testing.T) {
 	}
 }
 
+func TestGithubParser_ParseEnvironment(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment string
+		want        string
+	}{
+		{name: "scalar", environment: "production", want: "production"},
+		{
+			name: "object",
+			environment: strings.Join([]string{
+				"name: preview/${{ github.ref_name }}",
+				"url: https://preview.example.test/${{ github.ref_name }}",
+			}, "\n      "),
+			want: "preview/${{ github.ref_name }}",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := writeGithubWorkflow(t, test.environment)
+			pipeline, err := NewGithubParser().Parse(path)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			if got := pipeline.Jobs["deploy"].EnvironmentName; got != test.want {
+				t.Errorf("EnvironmentName = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestGithubParser_RejectsMalformedEnvironment(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment string
+		wantError   string
+	}{
+		{name: "empty scalar", environment: `""`, wantError: "name must not be empty"},
+		{name: "non string scalar", environment: "42", wantError: "must be a string or object"},
+		{name: "missing object name", environment: "url: https://example.test", wantError: "object must contain name"},
+		{name: "non string object name", environment: "name: 42", wantError: "object name must be a string"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := NewGithubParser().Parse(writeGithubWorkflow(t, test.environment))
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("Parse() error = %v, want containing %q", err, test.wantError)
+			}
+		})
+	}
+}
+
 func TestGithubParser_InvalidYAML(t *testing.T) {
 	parser := NewGithubParser()
 	_, err := parser.Parse(testdataPath("github", "invalid_yaml.yml"))
@@ -225,4 +280,24 @@ func TestGithubParser_Validate(t *testing.T) {
 	if err := parser.Validate(nil); err == nil {
 		t.Error("expected error for nil pipeline")
 	}
+}
+
+func writeGithubWorkflow(t *testing.T, environment string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "workflow.yml")
+	content := strings.Join([]string{
+		"name: Deploy",
+		"on: workflow_dispatch",
+		"jobs:",
+		"  deploy:",
+		"    runs-on: ubuntu-latest",
+		"    environment:",
+		"      " + environment,
+		"    steps:",
+		"      - run: echo deploy",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	return path
 }
