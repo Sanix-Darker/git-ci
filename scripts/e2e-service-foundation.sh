@@ -102,7 +102,14 @@ token="$(tr -d '\r\n' <"${state_dir}/admin.token")"
 assert_status GET / 200
 assert_status GET /healthz 200
 assert_status GET /api/v1/projects 401
-assert_status GET /app 404
+assert_status GET /login 200
+assert_status GET /app 303
+
+login_page="$(curl --silent "${base_url}/login")"
+if [[ "${login_page}" != *'OPERATOR GATE'* ]] || [[ "${login_page}" != *'htmx.min.js'* ]]; then
+  echo "login page is missing the HTMX operator surface" >&2
+  exit 1
+fi
 
 create_payload="$(printf '{"slug":"fixture","path":"%s","defaultBranch":"master"}' "${project_path}")"
 assert_status POST /api/v1/projects 201 \

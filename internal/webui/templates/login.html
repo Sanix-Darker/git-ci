@@ -1,0 +1,52 @@
+{{define "login"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="htmx-config" content='{"allowEval":false,"selfRequestsOnly":true,"historyCacheSize":0}'>
+    <title>git-ci / login</title>
+    <link rel="stylesheet" href="/ui/assets/app.css">
+    <script src="/ui/assets/htmx.min.js" defer></script>
+  </head>
+  <body class="auth-page">
+    <a class="skip-link" href="#login">Skip to login</a>
+    <header class="mast">
+      <a class="brand" href="/"><b>G</b><span>GIT-CI</span></a>
+      <span class="mast-context">SELF-HOSTED CONTROL PLANE</span>
+      <span class="mast-state"><i class="dot dot-green"></i>SERVICE ONLINE</span>
+    </header>
+    <main id="login" class="login-grid">
+      <section class="login-statement">
+        <p class="kicker">OPERATOR GATE / 01</p>
+        <h1>YOUR CI.<br><em>YOUR ACCESS.</em></h1>
+        <p class="lead">Authenticate with the admin token created by gci serve. It is exchanged for a signed, expiring browser session and is not persisted in the page.</p>
+        <dl class="auth-facts">
+          <div><dt>BOUNDARY</dt><dd>LOOPBACK SERVICE</dd></div>
+          <div><dt>SESSION</dt><dd>HTTPONLY + SIGNED</dd></div>
+          <div><dt>MUTATIONS</dt><dd>CSRF PROTECTED</dd></div>
+        </dl>
+      </section>
+      <section class="login-panel">
+        <div class="panel-cap"><span>ADMIN TOKEN</span><i class="dot dot-blue"></i></div>
+        <form method="post" action="/login" hx-post="/login" hx-target="#login-feedback" hx-swap="outerHTML" hx-disabled-elt="button">
+          <label for="token">Token</label>
+          <input id="token" name="token" type="password" required autocomplete="off" autocapitalize="none" spellcheck="false" autofocus>
+          <button class="primary-button" type="submit"><span>ENTER CONTROL PLANE</span><b>-></b></button>
+          {{template "login_feedback" .}}
+        </form>
+        <a class="back-link" href="/"><- BACK TO PROJECT PAGE</a>
+      </section>
+    </main>
+    <footer class="auth-footer"><span>GCI / {{.Version}}</span><span>API V1</span></footer>
+  </body>
+</html>
+{{end}}
+
+{{define "login_feedback"}}
+<p id="login-feedback" class="form-feedback{{if .Error}} is-error{{end}}" role="status">
+  {{if .Error}}<i class="dot dot-red"></i>{{.Error}}{{else}}TOKEN REQUIRED{{end}}
+</p>
+{{end}}

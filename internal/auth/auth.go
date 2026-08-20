@@ -235,6 +235,30 @@ func (m *Manager) AuthenticateBearer(token string) (Principal, error) {
 	return adminPrincipal(AuthMethodBearer), nil
 }
 
+// CurrentSession validates the signed browser session and returns the browser
+// values needed to make CSRF-protected requests. It never exposes the bearer
+// token or the session signing key.
+func (m *Manager) CurrentSession(request *http.Request) (Session, error) {
+	if request == nil {
+		return Session{}, newAuthError(CodeMissingCredentials)
+	}
+	cookieValue, found, err := m.sessionCookie(request)
+	if err != nil {
+		return Session{}, err
+	}
+	if !found {
+		return Session{}, newAuthError(CodeMissingCredentials)
+	}
+	claims, err := m.verifySession(cookieValue)
+	if err != nil {
+		return Session{}, err
+	}
+	return Session{
+		CSRFToken: claims.CSRFToken,
+		ExpiresAt: time.Unix(0, claims.ExpiresAt).UTC(),
+	}, nil
+}
+
 // Authenticate authenticates an HTTP request. A supplied Authorization header
 // takes precedence over a session cookie. Cookie-authenticated state-changing
 // requests require a matching X-CSRF-Token header; bearer-authenticated
@@ -252,19 +276,11 @@ func (m *Manager) Authenticate(request *http.Request) (Principal, error) {
 		return m.AuthenticateBearer(token)
 	}
 
-	cookieValue, found, err := m.sessionCookie(request)
+	session, err := m.CurrentSession(request)
 	if err != nil {
 		return Principal{}, err
 	}
-	if !found {
-		return Principal{}, newAuthError(CodeMissingCredentials)
-	}
-
-	claims, err := m.verifySession(cookieValue)
-	if err != nil {
-		return Principal{}, err
-	}
-	if !safeMethod(request.Method) && !csrfMatches(request.Header.Values("X-CSRF-Token"), claims.CSRFToken) {
+	if !safeMethod(request.Method) && !csrfMatches(request.Header.Values("X-CSRF-Token"), session.CSRFToken) {
 		return Principal{}, newAuthError(CodeCSRF)
 	}
 

@@ -1,49 +1,78 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
-    <meta name="description" content="Run CI workflows locally with git-ci." />
-    <title>git-ci</title>
-    <link rel="stylesheet" href="styles.css?v=2" />
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="description" content="git-ci runs CI workflows on your machine or VPS.">
+    <title>git-ci / CI belongs on your infrastructure</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/assets/app.css">
   </head>
   <body>
-    <main>
-      <header>
-        <p class="mark">git-ci</p>
-        <h1>Run CI before you push.</h1>
-        <p class="intro">A local runner for GitHub Actions and GitLab CI.</p>
-        <nav aria-label="Project links">
-          <a href="https://github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">source</a>
-          <a href="https://pkg.go.dev/github.com/sanix-darker/git-ci" target="_blank" rel="noreferrer">docs</a>
-        </nav>
-      </header>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="mast">
+      <a class="brand" href="/"><b>G</b><span>GIT-CI</span></a>
+      <span class="mast-context">CLI + SELF-HOSTED SERVICE</span>
+      <a class="mast-login" href="/login">OPERATOR LOGIN -></a>
+    </header>
 
-      <section aria-labelledby="install-title">
-        <h2 id="install-title">Install</h2>
-        <pre><code>git clone https://github.com/sanix-darker/git-ci.git
-cd git-ci && make install</code></pre>
-        <p>Requires Go 1.24 or newer.</p>
+    <main id="main" class="landing-main">
+      <section class="landing-hero">
+        <div class="hero-copy">
+          <p class="kicker">CONTINUOUS INTEGRATION / RECLAIMED</p>
+          <h1>RUN CI<br>ON YOUR<br><em>MACHINE.</em></h1>
+        </div>
+        <div class="hero-side">
+          <p class="hero-number">001</p>
+          <p class="lead">git-ci reads familiar workflow files and executes jobs where the code already lives: your laptop, your workstation, or your VPS.</p>
+          <div class="hero-actions">
+            <a class="primary-button" href="/login"><span>OPEN CONTROL PLANE</span><b>-></b></a>
+            <a class="secondary-button" href="https://github.com/sanix-darker/git-ci">SOURCE CODE</a>
+          </div>
+        </div>
       </section>
 
-      <section aria-labelledby="use-title">
-        <h2 id="use-title">Use</h2>
-        <pre><code>gci ls
-gci validate --strict
+      <div class="signal-rail" aria-hidden="true">
+        <i></i><i></i><i></i><i class="live"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+
+      <section class="landing-section equation">
+        <p class="section-mark">01 / THE EQUATION</p>
+        <div class="equation-grid">
+          <article class="inverse"><small>A</small><strong>YOUR VPS</strong><p>A server, checkout, and policy boundary you control.</p></article>
+          <article><small>B</small><strong>+ GIT-CI</strong><p>A Go binary for local workflow validation and execution.</p></article>
+          <article><small>C</small><strong>= YOUR CI</strong><p>No hosted minutes. No remote queue. No duplicate platform.</p></article>
+        </div>
+      </section>
+
+      <section class="landing-section">
+        <div class="landing-heading">
+          <p class="section-mark">02 / TWO MODES</p>
+          <h2>CLI FIRST.<br><em>SERVICE WHEN NEEDED.</em></h2>
+        </div>
+        <div class="mode-grid">
+          <article>
+            <header><span>LOCAL / CLI</span><i class="dot dot-green"></i></header>
+            <pre><code>gci validate --strict
 gci run --job test --docker</code></pre>
-        <p>List jobs. Validate a workflow. Run one locally.</p>
+            <p>List, validate, and execute pipeline jobs from any checkout.</p>
+          </article>
+          <article>
+            <header><span>VPS / SERVICE</span><i class="dot dot-blue"></i></header>
+            <pre><code>gci serve \
+  --projects-root /srv/projects</code></pre>
+            <p>Persistent projects, authenticated operations, runs, schedules, secrets, and deployments.</p>
+          </article>
+        </div>
       </section>
 
-      <section aria-labelledby="works-title">
-        <h2 id="works-title">Works with</h2>
-        <p>GitHub Actions · GitLab CI · Bash · Docker · Podman</p>
-      </section>
-
-      <footer>
-        <a href="/health">health: 202</a>
-        <span>local CI runner</span>
-      </footer>
     </main>
+
+    <footer class="site-footer">
+      <span>GIT-CI / OPEN SOURCE</span>
+      <a href="/healthz"><i class="dot dot-green"></i>HEALTH</a>
+      <span>API / V1</span>
+    </footer>
   </body>
 </html>

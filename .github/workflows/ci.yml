@@ -89,10 +89,41 @@ jobs:
       - name: Run service lifecycle
         run: make e2e-service
 
+  web-e2e:
+    name: Web E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify assets and browser journey
+        run: |
+          npm run build:web
+          git diff --exit-code -- internal/webui/assets/app.css internal/webui/assets/htmx.min.js site/assets/app.css
+          npx playwright test
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, test, public-surface-e2e, service-foundation-e2e]
+    needs: [lint, test, public-surface-e2e, service-foundation-e2e, web-e2e]
     strategy:
       matrix:
         os: [linux] # FIXME: darwin, windows (will re-activate after an MVP

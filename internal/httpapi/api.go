@@ -15,6 +15,7 @@ import (
 	"github.com/sanix-darker/git-ci/internal/auth"
 	"github.com/sanix-darker/git-ci/internal/projects"
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/webui"
 )
 
 const DefaultMaxBodyBytes int64 = 1 << 20
@@ -35,6 +36,7 @@ type API struct {
 	staticDir    string
 	version      string
 	maxBodyBytes int64
+	web          *webui.Renderer
 }
 
 type principalContextKey struct{}
@@ -73,6 +75,11 @@ func New(config Config) (http.Handler, error) {
 		version:      config.Version,
 		maxBodyBytes: config.MaxBodyBytes,
 	}
+	renderer, err := webui.New()
+	if err != nil {
+		return nil, fmt.Errorf("httpapi: web renderer: %w", err)
+	}
+	api.web = renderer
 	return api.routes(), nil
 }
 
@@ -80,6 +87,13 @@ func (a *API) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", a.handleHealth)
 	mux.HandleFunc("GET /health", a.handleHealth)
+	mux.Handle("GET /ui/assets/", http.StripPrefix("/ui/assets/", a.web.Assets()))
+	mux.HandleFunc("GET /login", a.handleLoginPage)
+	mux.HandleFunc("POST /login", a.handleLoginForm)
+	mux.Handle("POST /logout", a.requireWebAuth(http.HandlerFunc(a.handleLogoutWeb)))
+	mux.Handle("GET /app", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
+	mux.Handle("GET /app/{section}", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
+	mux.Handle("POST /app/projects", a.requireWebAuth(http.HandlerFunc(a.handleCreateProjectWeb)))
 	mux.HandleFunc("POST /api/v1/session/login", a.handleLogin)
 	mux.Handle("GET /api/v1", a.requireAuth(http.HandlerFunc(a.handleAPIRoot)))
 	mux.Handle("GET /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleSession)))
@@ -90,8 +104,6 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /api/v1/projects/{project}", a.requireAuth(http.HandlerFunc(a.handleProject)))
 	mux.HandleFunc("/api/", a.handleAPINotFound)
 	mux.HandleFunc("/api", a.handleAPINotFound)
-	mux.HandleFunc("/app", a.handleAppUnavailable)
-	mux.HandleFunc("/app/", a.handleAppUnavailable)
 
 	if a.staticDir != "" {
 		mux.Handle("/", http.FileServer(http.Dir(a.staticDir)))
@@ -177,10 +189,20 @@ func (a *API) handleLogin(writer http.ResponseWriter, request *http.Request) {
 
 func (a *API) handleSession(writer http.ResponseWriter, request *http.Request) {
 	principal := request.Context().Value(principalContextKey{}).(auth.Principal)
-	writeJSON(writer, http.StatusOK, map[string]any{
+	payload := map[string]any{
 		"actor": principal.Subject,
 		"auth":  principal.Method,
-	})
+	}
+	if principal.Method == auth.AuthMethodSession {
+		session, err := a.auth.CurrentSession(request)
+		if err != nil {
+			writeError(writer, http.StatusUnauthorized, authErrorCode(err), err.Error())
+			return
+		}
+		payload["csrfToken"] = session.CSRFToken
+		payload["expiresAt"] = session.ExpiresAt
+	}
+	writeJSON(writer, http.StatusOK, payload)
 }
 
 func (a *API) handleLogout(writer http.ResponseWriter, request *http.Request) {
@@ -305,10 +327,6 @@ func (a *API) handleProject(writer http.ResponseWriter, request *http.Request) {
 
 func (a *API) handleAPINotFound(writer http.ResponseWriter, _ *http.Request) {
 	writeError(writer, http.StatusNotFound, "route_not_found", "API route not found")
-}
-
-func (a *API) handleAppUnavailable(writer http.ResponseWriter, _ *http.Request) {
-	writeError(writer, http.StatusNotFound, "console_unavailable", "operator console is not enabled")
 }
 
 func (a *API) decodeJSON(writer http.ResponseWriter, request *http.Request, destination any) bool {
