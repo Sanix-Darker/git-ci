@@ -6,7 +6,7 @@ services:
     image: ${GIT_CI_SITE_IMAGE:-git-ci-site:local}
     restart: unless-stopped
     expose:
-      - "8080"
+      - "8087"
 
   caddy:
     image: caddy:2-alpine
@@ -19,6 +19,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    environment:
+      GCI_SITE_ADDRESS: ${GCI_SITE_ADDRESS:-gci.example.com}
+      GCI_UPSTREAM: git-ci-site:8087
     restart: unless-stopped
 
 volumes:

@@ -1,10 +1,10 @@
 # Docker Compose deployment variant.
-# For production, replace `git-ci.example.com` with your domain.
+# For production, replace `gci.example.com` with your domain.
 {
     email security@example.com
 }
 
-git-ci.example.com {
+{$GCI_SITE_ADDRESS:gci.example.com} {
     encode zstd gzip
 
     header {
@@ -16,9 +16,19 @@ git-ci.example.com {
         -Server
     }
 
+    @privileged path /api /api/* /app /app/*
+    respond @privileged 404
+
     handle /health {
-        respond "ACCEPTED" 202
+        rewrite * /healthz
+        reverse_proxy {$GCI_UPSTREAM:git-ci-site:8087}
     }
 
-    reverse_proxy git-ci-site:8080
+    handle /healthz {
+        reverse_proxy {$GCI_UPSTREAM:git-ci-site:8087}
+    }
+
+    handle {
+        reverse_proxy {$GCI_UPSTREAM:git-ci-site:8087}
+    }
 }
