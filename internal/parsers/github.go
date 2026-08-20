@@ -196,14 +196,20 @@ func (p *GithubParser) convertToPipeline(workflow *GithubWorkflow) (*types.Pipel
 
 // convertJob converts GitHub job to generic Job
 func (p *GithubParser) convertJob(jobID string, ghJob *GithubJob, globalDefaults *GithubDefaults) (*types.Job, error) {
+	environmentName, err := p.parseEnvironment(ghJob.Environment)
+	if err != nil {
+		return nil, fmt.Errorf("invalid environment: %w", err)
+	}
+
 	job := &types.Job{
-		Name:          p.getJobName(jobID, ghJob),
-		RunsOn:        p.parseRunsOn(ghJob.RunsOn),
-		Environment:   ghJob.Env,
-		If:            ghJob.If,
-		TimeoutMin:    ghJob.TimeoutMinutes,
-		ContinueOnErr: p.parseContinueOnError(ghJob.ContinueOnError),
-		Needs:         p.parseNeeds(ghJob.Needs),
+		Name:            p.getJobName(jobID, ghJob),
+		RunsOn:          p.parseRunsOn(ghJob.RunsOn),
+		Environment:     ghJob.Env,
+		EnvironmentName: environmentName,
+		If:              ghJob.If,
+		TimeoutMin:      ghJob.TimeoutMinutes,
+		ContinueOnErr:   p.parseContinueOnError(ghJob.ContinueOnError),
+		Needs:           p.parseNeeds(ghJob.Needs),
 	}
 
 	// Set default timeout if not specified
@@ -256,6 +262,40 @@ func (p *GithubParser) convertJob(jobID string, ghJob *GithubJob, globalDefaults
 	job.Steps = p.convertSteps(ghJob.Steps, defaultShell, defaultWorkDir)
 
 	return job, nil
+}
+
+// parseEnvironment normalizes the two GitHub Actions job environment forms:
+// a scalar name or an object containing name and an optional deployment URL.
+// Invalid declarations fail closed so a typo cannot silently bypass an
+// environment protection policy during execution.
+func (p *GithubParser) parseEnvironment(environment interface{}) (string, error) {
+	if environment == nil {
+		return "", nil
+	}
+
+	var name string
+	switch value := environment.(type) {
+	case string:
+		name = value
+	case map[string]interface{}:
+		rawName, found := value["name"]
+		if !found {
+			return "", fmt.Errorf("object must contain name")
+		}
+		var valid bool
+		name, valid = rawName.(string)
+		if !valid {
+			return "", fmt.Errorf("object name must be a string")
+		}
+	default:
+		return "", fmt.Errorf("must be a string or object, got %T", environment)
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("name must not be empty")
+	}
+	return name, nil
 }
 
 // convertSteps converts GitHub steps to generic Steps
@@ -584,9 +624,15 @@ func (p *GithubParser) parseReusableWorkflow(jobID string, ghJob *GithubJob) (*t
 	// Format: owner/repo/.github/workflows/workflow.yml@ref
 	// or: ./.github/workflows/workflow.yml
 
+	environmentName, err := p.parseEnvironment(ghJob.Environment)
+	if err != nil {
+		return nil, fmt.Errorf("invalid environment: %w", err)
+	}
+
 	job := &types.Job{
-		Name:   p.getJobName(jobID, ghJob),
-		RunsOn: "ubuntu-latest", // Default for reusable workflows
+		Name:            p.getJobName(jobID, ghJob),
+		RunsOn:          "ubuntu-latest", // Default for reusable workflows
+		EnvironmentName: environmentName,
 		Steps: []types.Step{
 			{
 				Name: fmt.Sprintf("Call reusable workflow: %s", ghJob.Uses),

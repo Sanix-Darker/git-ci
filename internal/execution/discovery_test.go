@@ -49,6 +49,9 @@ func TestDiscoverNormalizesGitHubWorkflow(t *testing.T) {
 		"    needs:",
 		"      - test",
 		"    runs-on: ubuntu-24.04",
+		"    environment:",
+		"      name: production",
+		"      url: https://deploy.example.test",
 		"    steps:",
 		"      - run: ./deploy.sh",
 	}, "\n"))
@@ -116,6 +119,9 @@ func TestDiscoverNormalizesGitHubWorkflow(t *testing.T) {
 	}
 	if test.Steps[1].WorkingDirectory != "cmd/api" || test.Steps[1].TimeoutMinutes != 12 {
 		t.Errorf("test step = %#v, want working directory and timeout", test.Steps[1])
+	}
+	if deploy := definition.Jobs[2]; deploy.EnvironmentName != "production" {
+		t.Errorf("deploy EnvironmentName = %q, want production", deploy.EnvironmentName)
 	}
 }
 

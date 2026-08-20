@@ -157,6 +157,14 @@ func TestConfigurationWebhookIdempotencyAndDeployments(t *testing.T) {
 	if !errors.Is(err, &ErrInvalidStatusTransition{}) {
 		t.Fatalf("terminal transition error = %v", err)
 	}
+	rejected, err := store.CreateDeployment(ctx, CreateDeploymentParams{ProjectID: project.ID, RunID: run.ID, Environment: "preview", Status: StatusQueued})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejected, err = store.TransitionDeployment(ctx, rejected.ID, StatusFailed, configurationStringPointer("ref not allowed"))
+	if err != nil || rejected.Status != StatusFailed || rejected.FinishedAt == nil || len(rejected.History) != 2 {
+		t.Fatalf("reject queued deployment = %#v, %v", rejected, err)
+	}
 }
 
 func configurationStringPointer(value string) *string { return &value }

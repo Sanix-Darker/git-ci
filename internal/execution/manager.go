@@ -18,7 +18,13 @@ import (
 	"github.com/sanix-darker/git-ci/internal/store"
 )
 
-const defaultPollInterval = 750 * time.Millisecond
+const (
+	defaultPollInterval       = 750 * time.Millisecond
+	runWorkerLeaseTTL         = 15 * time.Second
+	runWorkerHeartbeat        = 5 * time.Second
+	environmentLeaseTTL       = 30 * time.Second
+	environmentLeaseHeartbeat = 10 * time.Second
+)
 
 // Manager owns workflow synchronization, immutable run creation, and one
 // local execution worker. The registered project path is snapshotted before a
@@ -34,6 +40,10 @@ type Manager struct {
 
 type SecretResolver interface {
 	ResolveProject(context.Context, string) (map[string]string, error)
+}
+
+type environmentSecretResolver interface {
+	ResolveForJob(context.Context, string) (map[string]string, error)
 }
 
 type Option func(*Manager)
@@ -206,9 +216,9 @@ func (m *Manager) Notify() {
 	}
 }
 
-// Run recovers any interrupted work once, then drains queued runs serially.
+// Run recovers expired worker leases, then drains queued runs serially.
 func (m *Manager) Run(ctx context.Context) error {
-	if _, err := m.store.MarkInterruptedRunningRunsFailed(ctx); err != nil {
+	if _, err := m.store.RecoverExpiredRunWorkers(ctx, time.Now().UTC(), time.Now().UTC().Add(-runWorkerLeaseTTL)); err != nil {
 		return fmt.Errorf("execution: recover interrupted runs: %w", err)
 	}
 	ticker := time.NewTicker(m.pollInterval)
@@ -236,6 +246,13 @@ func (m *Manager) Run(ctx context.Context) error {
 // ProcessNext claims and executes at most one queued run. It is public to make
 // deterministic service integration tests possible without timing sleeps.
 func (m *Manager) ProcessNext(ctx context.Context) (bool, error) {
+	now := time.Now().UTC()
+	if _, err := m.store.RecoverExpiredRunWorkers(ctx, now, now.Add(-runWorkerLeaseTTL)); err != nil {
+		return false, fmt.Errorf("execution: recover expired workers: %w", err)
+	}
+	if err := m.resumeWaitingJobs(ctx, now); err != nil {
+		return false, fmt.Errorf("execution: resume waiting jobs: %w", err)
+	}
 	run, err := m.store.ClaimNextQueuedRun(ctx, m.workerID)
 	if err != nil {
 		return false, fmt.Errorf("execution: claim run: %w", err)
@@ -243,7 +260,19 @@ func (m *Manager) ProcessNext(ctx context.Context) (bool, error) {
 	if run == nil {
 		return false, nil
 	}
-	if err := m.executeRun(ctx, *run); err != nil {
+	if err := m.store.HeartbeatRunWorker(ctx, run.ID, m.workerID, now, runWorkerLeaseTTL); err != nil {
+		return true, fmt.Errorf("execution: establish worker lease: %w", err)
+	}
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	workerDone := make(chan struct{})
+	go m.heartbeatRunWorker(workerCtx, run.ID, stopWorker, workerDone)
+	err = m.executeRun(workerCtx, *run)
+	stopWorker()
+	<-workerDone
+	if releaseErr := m.store.ReleaseRunWorker(context.WithoutCancel(ctx), run.ID, m.workerID); err == nil && releaseErr != nil {
+		err = releaseErr
+	}
+	if err != nil {
 		return true, err
 	}
 	return true, nil
@@ -271,6 +300,11 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
 	}
 	for _, item := range graph.Jobs {
 		key := pointerValue(item.Job.Key)
+		allowedFailure[key] = item.Job.AllowFailure
+		if isTerminalExecutionStatus(item.Job.Status) {
+			statuses[key] = item.Job.Status
+			continue
+		}
 		dependencies := decodeStringList(item.Job.DependencyKeys)
 		if !dependenciesSatisfied(dependencies, statuses, allowedFailure) {
 			if err := m.skipJob(ctx, item); err != nil {
@@ -291,9 +325,47 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
 			_, err = m.store.TransitionRun(ctx, run.ID, store.StatusCancelled)
 			return err
 		}
-		status, err := m.executeJob(ctx, graph.Run, item, secretValues)
+		jobSecrets := secretValues
+		preparation, err := m.prepareDeploymentJob(ctx, graph.Run, item, secretValues)
 		if err != nil {
 			return err
+		}
+		if preparation.Paused {
+			return nil
+		}
+		if preparation.Failed {
+			statuses[key] = store.StatusFailed
+			continue
+		}
+		if preparation.Secrets != nil {
+			jobSecrets = preparation.Secrets
+		}
+		jobCtx := ctx
+		stopEnvironment := func() {}
+		environmentDone := make(chan struct{})
+		if preparation.Lease != nil {
+			jobCtx, stopEnvironment = context.WithCancel(ctx)
+			go m.heartbeatEnvironment(jobCtx, item.Job.ID, stopEnvironment, environmentDone)
+		}
+		status, err := m.executeJob(jobCtx, graph.Run, item, jobSecrets)
+		if preparation.Lease != nil {
+			stopEnvironment()
+			<-environmentDone
+			released, releaseErr := m.store.ReleaseEnvironmentLease(context.WithoutCancel(ctx), preparation.Lease.EnvironmentID, item.Job.ID, m.workerID)
+			if err == nil && releaseErr != nil {
+				err = fmt.Errorf("execution: release environment lease: %w", releaseErr)
+			} else if err == nil && !released {
+				err = errors.New("execution: environment lease ownership was lost")
+			}
+		}
+		if err != nil {
+			return err
+		}
+		if preparation.DeploymentID != "" {
+			reason := "workflow job completed"
+			if _, transitionErr := m.store.TransitionDeployment(ctx, preparation.DeploymentID, status, &reason); transitionErr != nil {
+				return fmt.Errorf("execution: finish deployment: %w", transitionErr)
+			}
 		}
 		statuses[key] = status
 		allowedFailure[key] = item.Job.AllowFailure
@@ -317,6 +389,185 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run) error {
 		return fmt.Errorf("execution: finish run: %w", err)
 	}
 	return nil
+}
+
+type deploymentPreparation struct {
+	Paused       bool
+	Failed       bool
+	Secrets      map[string]string
+	Lease        *store.EnvironmentLease
+	DeploymentID string
+}
+
+func (m *Manager) prepareDeploymentJob(ctx context.Context, run store.Run, item store.JobGraph, projectSecrets map[string]string) (deploymentPreparation, error) {
+	_, err := m.store.GetDeploymentTargetForJob(ctx, item.Job.ID)
+	if err != nil {
+		var notFound *store.ErrNotFound
+		if errors.As(err, &notFound) {
+			return deploymentPreparation{Secrets: projectSecrets}, nil
+		}
+		return deploymentPreparation{}, fmt.Errorf("execution: read deployment target: %w", err)
+	}
+	environment, err := m.store.EnsureEnvironmentForJob(ctx, item.Job.ID)
+	if err != nil {
+		return deploymentPreparation{}, fmt.Errorf("execution: ensure environment: %w", err)
+	}
+	deployment, err := m.store.EnsureDeploymentForJob(ctx, item.Job.ID)
+	if err != nil {
+		return deploymentPreparation{}, fmt.Errorf("execution: ensure deployment: %w", err)
+	}
+	if environment.Protected && environment.RequiredApprovals > 0 {
+		if _, err := m.store.RequestEnvironmentApproval(ctx, store.RequestEnvironmentApprovalParams{JobID: item.Job.ID, RequestedBy: m.workerID}); err != nil {
+			return deploymentPreparation{}, fmt.Errorf("execution: request environment approval: %w", err)
+		}
+	}
+	access, err := m.store.EvaluateEnvironmentAccess(ctx, item.Job.ID, time.Now().UTC())
+	if err != nil {
+		return deploymentPreparation{}, fmt.Errorf("execution: evaluate environment protection: %w", err)
+	}
+	if !access.Ready {
+		switch access.Reason {
+		case "approval_rejected", "approval_cancelled", "ref_not_allowed":
+			return m.failProtectedJob(ctx, item, deployment.ID, access.Reason)
+		default:
+			reason := store.JobWaitApproval
+			if access.Reason == "wait_timer" {
+				reason = store.JobWaitTimer
+			}
+			if _, err := m.store.PauseJob(ctx, store.PauseJobParams{
+				RunID: run.ID, JobID: item.Job.ID, Reason: reason, Detail: access.Reason, AvailableAt: access.WaitUntil,
+			}); err != nil {
+				return deploymentPreparation{}, fmt.Errorf("execution: pause protected job: %w", err)
+			}
+			return deploymentPreparation{Paused: true, DeploymentID: deployment.ID}, nil
+		}
+	}
+	lease, err := m.store.AcquireEnvironmentLease(ctx, store.AcquireEnvironmentLeaseParams{
+		JobID: item.Job.ID, OwnerID: m.workerID, TTL: environmentLeaseTTL, Now: time.Now().UTC(),
+	})
+	if err != nil {
+		return deploymentPreparation{}, fmt.Errorf("execution: acquire environment lease: %w", err)
+	}
+	if !lease.Acquired {
+		if environment.ConcurrencyMode == store.EnvironmentConcurrencyCancelInProgress && lease.Lease.RunID != run.ID {
+			if _, err := m.store.RequestRunCancellation(ctx, lease.Lease.RunID); err != nil {
+				return deploymentPreparation{}, fmt.Errorf("execution: cancel superseded deployment: %w", err)
+			}
+		}
+		if _, err := m.store.PauseJob(ctx, store.PauseJobParams{
+			RunID: run.ID, JobID: item.Job.ID, Reason: store.JobWaitConcurrency, Detail: "environment lease is held",
+		}); err != nil {
+			return deploymentPreparation{}, fmt.Errorf("execution: pause concurrent deployment: %w", err)
+		}
+		return deploymentPreparation{Paused: true, DeploymentID: deployment.ID}, nil
+	}
+	jobSecrets := projectSecrets
+	if resolver, ok := m.secrets.(environmentSecretResolver); ok {
+		jobSecrets, err = resolver.ResolveForJob(ctx, item.Job.ID)
+		if err != nil {
+			_, _ = m.store.ReleaseEnvironmentLease(context.WithoutCancel(ctx), environment.ID, item.Job.ID, m.workerID)
+			return deploymentPreparation{}, fmt.Errorf("execution: resolve environment secrets: %w", err)
+		}
+	}
+	if deployment.Status == store.StatusQueued {
+		transitionReason := "environment protection satisfied"
+		if _, err := m.store.TransitionDeployment(ctx, deployment.ID, store.StatusRunning, &transitionReason); err != nil {
+			_, _ = m.store.ReleaseEnvironmentLease(context.WithoutCancel(ctx), environment.ID, item.Job.ID, m.workerID)
+			return deploymentPreparation{}, fmt.Errorf("execution: start deployment: %w", err)
+		}
+	} else if deployment.Status != store.StatusRunning {
+		_, _ = m.store.ReleaseEnvironmentLease(context.WithoutCancel(ctx), environment.ID, item.Job.ID, m.workerID)
+		return deploymentPreparation{}, fmt.Errorf("execution: deployment %s cannot resume from %s", deployment.ID, deployment.Status)
+	}
+	return deploymentPreparation{Secrets: jobSecrets, Lease: &lease.Lease, DeploymentID: deployment.ID}, nil
+}
+
+func (m *Manager) failProtectedJob(ctx context.Context, item store.JobGraph, deploymentID, reason string) (deploymentPreparation, error) {
+	if err := m.skipSteps(ctx, item.Steps); err != nil {
+		return deploymentPreparation{}, err
+	}
+	if _, err := m.store.TransitionJob(ctx, item.Job.ID, store.StatusFailed); err != nil {
+		return deploymentPreparation{}, fmt.Errorf("execution: fail protected job: %w", err)
+	}
+	if _, err := m.store.TransitionDeployment(ctx, deploymentID, store.StatusFailed, &reason); err != nil {
+		return deploymentPreparation{}, fmt.Errorf("execution: fail protected deployment: %w", err)
+	}
+	return deploymentPreparation{Failed: true, DeploymentID: deploymentID}, nil
+}
+
+func (m *Manager) resumeWaitingJobs(ctx context.Context, now time.Time) error {
+	waits, err := m.store.ListJobWaits(ctx)
+	if err != nil {
+		return err
+	}
+	for _, wait := range waits {
+		environment, err := m.store.EnsureEnvironmentForJob(ctx, wait.JobID)
+		if err != nil {
+			return err
+		}
+		if environment.Protected && environment.RequiredApprovals > 0 {
+			if _, err := m.store.RequestEnvironmentApproval(ctx, store.RequestEnvironmentApprovalParams{JobID: wait.JobID, RequestedBy: m.workerID}); err != nil {
+				return err
+			}
+		}
+		access, err := m.store.EvaluateEnvironmentAccess(ctx, wait.JobID, now)
+		if err != nil {
+			return err
+		}
+		terminalGate := access.Reason == "approval_rejected" || access.Reason == "approval_cancelled" || access.Reason == "ref_not_allowed"
+		if access.Ready || terminalGate || wait.Reason == store.JobWaitConcurrency {
+			if err := m.store.ResumeJob(ctx, wait.RunID, wait.JobID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (m *Manager) heartbeatRunWorker(ctx context.Context, runID string, cancel context.CancelFunc, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(runWorkerHeartbeat)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := m.store.HeartbeatRunWorker(ctx, runID, m.workerID, time.Now().UTC(), runWorkerLeaseTTL); err != nil {
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+func (m *Manager) heartbeatEnvironment(ctx context.Context, jobID string, cancel context.CancelFunc, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(environmentLeaseHeartbeat)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			result, err := m.store.AcquireEnvironmentLease(ctx, store.AcquireEnvironmentLeaseParams{
+				JobID: jobID, OwnerID: m.workerID, TTL: environmentLeaseTTL, Now: time.Now().UTC(),
+			})
+			if err != nil || !result.Acquired {
+				cancel()
+				return
+			}
+		}
+	}
+}
+
+func isTerminalExecutionStatus(status store.Status) bool {
+	switch status {
+	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusSkipped:
+		return true
+	default:
+		return false
+	}
 }
 
 func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph, secretValues map[string]string) (store.Status, error) {
@@ -516,6 +767,9 @@ func (m *Manager) isCancelled(ctx context.Context, runID string) (bool, error) {
 }
 
 func (m *Manager) skipJob(ctx context.Context, item store.JobGraph) error {
+	if isTerminalExecutionStatus(item.Job.Status) {
+		return nil
+	}
 	if err := m.skipSteps(ctx, item.Steps); err != nil {
 		return err
 	}

@@ -98,6 +98,7 @@ type Status string
 
 const (
 	StatusQueued    Status = "queued"
+	StatusWaiting   Status = "waiting"
 	StatusRunning   Status = "running"
 	StatusSucceeded Status = "succeeded"
 	StatusFailed    Status = "failed"
@@ -1154,9 +1155,10 @@ func (s *Store) ListLogLines(ctx context.Context, stepID string) ([]LogLine, err
 	return lines, nil
 }
 
-// RequestRunCancellation records a durable cancellation signal. Queued runs
-// become cancelled immediately; running workers read the signal and perform
-// their own orderly cancellation.
+// RequestRunCancellation records a durable cancellation signal. Queued and
+// waiting runs are cancelled transactionally, including their pending graph,
+// waits, and deployment audit trail. Running workers read the signal and
+// perform their own orderly cancellation.
 func (s *Store) RequestRunCancellation(ctx context.Context, runID string) (RunCancellation, error) {
 	if err := requireContext(ctx); err != nil {
 		return RunCancellation{}, err
@@ -1169,35 +1171,86 @@ func (s *Store) RequestRunCancellation(ctx context.Context, runID string) (RunCa
 	if err != nil {
 		return RunCancellation{}, err
 	}
-	now := nowUTC()
-
-	run, err := scanRun(db.QueryRowContext(ctx, `
-		UPDATE runs
-		SET
-			cancellation_requested = 1,
-			cancellation_requested_at = ?,
-			status = CASE WHEN status = ? THEN ? ELSE status END,
-			finished_at = CASE WHEN status = ? THEN ? ELSE finished_at END,
-			updated_at = ?
-		WHERE id = ?
-			AND status IN (?, ?)
-			AND cancellation_requested = 0
-		RETURNING `+runColumns,
-		now.UnixMilli(),
-		StatusQueued,
-		StatusCancelled,
-		StatusQueued,
-		now.UnixMilli(),
-		now.UnixMilli(),
-		runID,
-		StatusQueued,
-		StatusRunning,
-	))
-	if err == nil {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return RunCancellation{}, fmt.Errorf("store: begin run cancellation: %w", err)
+	}
+	defer tx.Rollback()
+	run, err := scanRun(tx.QueryRowContext(ctx, `SELECT `+runColumns+` FROM runs WHERE id = ?`, runID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return RunCancellation{}, &ErrNotFound{Resource: "run", Key: runID}
+	}
+	if err != nil {
+		return RunCancellation{}, fmt.Errorf("store: read run cancellation: %w", err)
+	}
+	if run.CancellationRequested || (run.Status != StatusQueued && run.Status != StatusWaiting && run.Status != StatusRunning) {
 		return cancellationFromRun(run), nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+
+	now := nowUTC()
+	immediate := run.Status == StatusQueued || run.Status == StatusWaiting
+	nextStatus := run.Status
+	var finishedAt any
+	if immediate {
+		nextStatus = StatusCancelled
+		finishedAt = now.UnixMilli()
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE runs SET cancellation_requested = 1, cancellation_requested_at = ?,
+			status = ?, finished_at = COALESCE(?, finished_at), updated_at = ? WHERE id = ?
+	`, now.UnixMilli(), nextStatus, finishedAt, now.UnixMilli(), runID); err != nil {
 		return RunCancellation{}, fmt.Errorf("store: request run cancellation: %w", err)
+	}
+	if immediate {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE steps SET status = ?, finished_at = ?, updated_at = ?
+			WHERE job_id IN (SELECT id FROM jobs WHERE run_id = ?) AND status = ?
+		`, StatusSkipped, now.UnixMilli(), now.UnixMilli(), runID, StatusQueued); err != nil {
+			return RunCancellation{}, fmt.Errorf("store: cancel pending run steps: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE jobs SET status = ?, finished_at = ?, updated_at = ?
+			WHERE run_id = ? AND status IN (?, ?)
+		`, StatusCancelled, now.UnixMilli(), now.UnixMilli(), runID, StatusQueued, StatusWaiting); err != nil {
+			return RunCancellation{}, fmt.Errorf("store: cancel pending run jobs: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM job_waits WHERE run_id = ?`, runID); err != nil {
+			return RunCancellation{}, fmt.Errorf("store: clear cancelled run waits: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM run_worker_leases WHERE run_id = ?`, runID); err != nil {
+			return RunCancellation{}, fmt.Errorf("store: clear cancelled run worker: %w", err)
+		}
+		rows, err := tx.QueryContext(ctx, `SELECT id FROM deployments WHERE run_id = ? AND status = ?`, runID, StatusQueued)
+		if err != nil {
+			return RunCancellation{}, fmt.Errorf("store: list cancelled deployments: %w", err)
+		}
+		deploymentIDs := make([]string, 0)
+		for rows.Next() {
+			var deploymentID string
+			if err := rows.Scan(&deploymentID); err != nil {
+				rows.Close()
+				return RunCancellation{}, fmt.Errorf("store: scan cancelled deployment: %w", err)
+			}
+			deploymentIDs = append(deploymentIDs, deploymentID)
+		}
+		if err := rows.Close(); err != nil {
+			return RunCancellation{}, fmt.Errorf("store: close cancelled deployments: %w", err)
+		}
+		for _, deploymentID := range deploymentIDs {
+			eventID, err := randomOpaqueID()
+			if err != nil {
+				return RunCancellation{}, fmt.Errorf("store: generate cancelled deployment event ID: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE deployments SET status = ?, finished_at = ?, updated_at = ? WHERE id = ?`, StatusCancelled, now.UnixMilli(), now.UnixMilli(), deploymentID); err != nil {
+				return RunCancellation{}, fmt.Errorf("store: cancel deployment: %w", err)
+			}
+			if _, err := tx.ExecContext(ctx, `INSERT INTO deployment_events (id, deployment_id, status, reason, created_at) VALUES (?, ?, ?, ?, ?)`, eventID, deploymentID, StatusCancelled, "run cancelled while waiting", now.UnixMilli()); err != nil {
+				return RunCancellation{}, fmt.Errorf("store: record cancelled deployment: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return RunCancellation{}, fmt.Errorf("store: commit run cancellation: %w", err)
 	}
 	return s.GetRunCancellation(ctx, runID)
 }
@@ -1567,14 +1620,14 @@ func validateAcyclicDependencies(jobs []EnqueueJob) error {
 
 func validateStatus(status Status) error {
 	if !validStatus(status) {
-		return invalidInput("status", "must be queued, running, succeeded, failed, cancelled, or skipped")
+		return invalidInput("status", "must be queued, waiting, running, succeeded, failed, cancelled, or skipped")
 	}
 	return nil
 }
 
 func validStatus(status Status) bool {
 	switch status {
-	case StatusQueued, StatusRunning, StatusSucceeded, StatusFailed, StatusCancelled, StatusSkipped:
+	case StatusQueued, StatusWaiting, StatusRunning, StatusSucceeded, StatusFailed, StatusCancelled, StatusSkipped:
 		return true
 	default:
 		return false
@@ -1593,7 +1646,9 @@ func validLogStream(stream LogStream) bool {
 func canTransition(current, next Status) bool {
 	switch current {
 	case StatusQueued:
-		return next == StatusRunning || next == StatusFailed || next == StatusCancelled || next == StatusSkipped
+		return next == StatusWaiting || next == StatusRunning || next == StatusFailed || next == StatusCancelled || next == StatusSkipped
+	case StatusWaiting:
+		return next == StatusQueued || next == StatusFailed || next == StatusCancelled || next == StatusSkipped
 	case StatusRunning:
 		return next == StatusSucceeded || next == StatusFailed || next == StatusCancelled || next == StatusSkipped
 	default:
