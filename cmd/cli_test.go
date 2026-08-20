@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	cli "github.com/urfave/cli/v2"
 )
@@ -126,6 +127,40 @@ func TestSetupEnvironment_PreservesExistingCIValues(t *testing.T) {
 	}
 	if got := os.Getenv("GIT_CI"); got != "from-user" {
 		t.Fatalf("expected GIT_CI to remain from user, got %q", got)
+	}
+}
+
+func TestServeCommandUsesSafeDefaults(t *testing.T) {
+	var serveCommand *cli.Command
+	for _, command := range commands() {
+		if command.Name == "serve" {
+			serveCommand = command
+			break
+		}
+	}
+	if serveCommand == nil {
+		t.Fatal("serve command is not registered")
+	}
+
+	flags := make(map[string]cli.Flag, len(serveCommand.Flags))
+	for _, flag := range serveCommand.Flags {
+		flags[flag.Names()[0]] = flag
+	}
+	listen, ok := flags["listen"].(*cli.StringFlag)
+	if !ok || listen.Value != "127.0.0.1:8087" {
+		t.Fatalf("listen default = %#v, want loopback 127.0.0.1:8087", flags["listen"])
+	}
+	stateDir, ok := flags["state-dir"].(*cli.StringFlag)
+	if !ok || stateDir.Value != ".gci-service" {
+		t.Fatalf("state-dir default = %#v", flags["state-dir"])
+	}
+	sessionTTL, ok := flags["session-ttl"].(*cli.DurationFlag)
+	if !ok || sessionTTL.Value != 8*time.Hour {
+		t.Fatalf("session-ttl default = %#v", flags["session-ttl"])
+	}
+	maxBody, ok := flags["max-body-bytes"].(*cli.Int64Flag)
+	if !ok || maxBody.Value != 1<<20 {
+		t.Fatalf("max-body-bytes default = %#v", flags["max-body-bytes"])
 	}
 }
 

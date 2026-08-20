@@ -288,6 +288,58 @@ func commands() []*cli.Command {
 			},
 		},
 		{
+			Name:   "serve",
+			Usage:  "Run the authenticated git-ci control service",
+			Action: handlers.CmdServe,
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:    "listen",
+					Usage:   "Loopback listen address",
+					Value:   "127.0.0.1:8087",
+					EnvVars: []string{"GIT_CI_LISTEN"},
+				},
+				&cli.StringFlag{
+					Name:    "state-dir",
+					Usage:   "Durable service state directory",
+					Value:   ".gci-service",
+					EnvVars: []string{"GIT_CI_STATE_DIR"},
+				},
+				&cli.StringFlag{
+					Name:    "static-dir",
+					Usage:   "Public static site directory",
+					Value:   "site",
+					EnvVars: []string{"GIT_CI_STATIC_DIR"},
+				},
+				&cli.StringSliceFlag{
+					Name:    "projects-root",
+					Usage:   "Allowed root containing selectable VPS projects",
+					EnvVars: []string{"GIT_CI_PROJECTS_ROOT"},
+				},
+				&cli.StringFlag{
+					Name:    "admin-token-file",
+					Usage:   "Mode-0600 admin token file (defaults below state-dir)",
+					EnvVars: []string{"GIT_CI_ADMIN_TOKEN_FILE"},
+				},
+				&cli.StringFlag{
+					Name:    "session-key-file",
+					Usage:   "Mode-0600 session signing key (defaults below state-dir)",
+					EnvVars: []string{"GIT_CI_SESSION_KEY_FILE"},
+				},
+				&cli.DurationFlag{
+					Name:    "session-ttl",
+					Usage:   "Authenticated browser session lifetime",
+					Value:   8 * time.Hour,
+					EnvVars: []string{"GIT_CI_SESSION_TTL"},
+				},
+				&cli.Int64Flag{
+					Name:    "max-body-bytes",
+					Usage:   "Maximum JSON request body size",
+					Value:   1 << 20,
+					EnvVars: []string{"GIT_CI_MAX_BODY_BYTES"},
+				},
+			},
+		},
+		{
 			Name:   "clean",
 			Usage:  "Clean up resources",
 			Action: handlers.CmdClean,

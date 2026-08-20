@@ -54,6 +54,7 @@ jobs:
       - name: Run tests
         run: |
           go test -v -race -coverprofile=coverage.out ./...
+          bash scripts/check-coverage.sh coverage.out
           go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage
@@ -72,10 +73,26 @@ jobs:
       - name: Run containment topology
         run: make e2e-public
 
+  service-foundation-e2e:
+    name: Service Foundation E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run service lifecycle
+        run: make e2e-service
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, test, public-surface-e2e]
+    needs: [lint, test, public-surface-e2e, service-foundation-e2e]
     strategy:
       matrix:
         os: [linux] # FIXME: darwin, windows (will re-activate after an MVP
