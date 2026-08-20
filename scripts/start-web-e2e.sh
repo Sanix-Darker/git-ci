@@ -10,9 +10,33 @@ binary="$runtime/gci"
 port="${GCI_WEB_E2E_PORT:-18089}"
 
 rm -rf "$runtime"
-mkdir -p "$project_root/alpha-service/.git" "$project_root/beta-worker/.git" "$state_dir"
+mkdir -p "$project_root/alpha-service/.git" "$project_root/alpha-service/.github/workflows" "$project_root/beta-worker/.git" "$state_dir"
 printf '%s\n' '# alpha service' >"$project_root/alpha-service/README.md"
 printf '%s\n' '# beta worker' >"$project_root/beta-worker/README.md"
+cat >"$project_root/alpha-service/.github/workflows/ci.yml" <<'YAML'
+name: Alpha CI
+on:
+  push:
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare
+        run: printf 'prepared\n'
+  test:
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test
+        run: printf 'tests passed\n'
+YAML
+cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
+stages: [test]
+worker-test:
+  stage: test
+  script:
+    - printf 'worker passed\n'
+YAML
 
 cd "$repo_root"
 go build -o "$binary" ./cmd

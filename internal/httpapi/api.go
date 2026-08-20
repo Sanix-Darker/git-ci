@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/sanix-darker/git-ci/internal/auth"
+	"github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/projects"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/webui"
@@ -27,6 +28,7 @@ type Config struct {
 	StaticDir    string
 	Version      string
 	MaxBodyBytes int64
+	Execution    *execution.Manager
 }
 
 type API struct {
@@ -37,6 +39,7 @@ type API struct {
 	version      string
 	maxBodyBytes int64
 	web          *webui.Renderer
+	execution    *execution.Manager
 }
 
 type principalContextKey struct{}
@@ -50,6 +53,9 @@ func New(config Config) (http.Handler, error) {
 	}
 	if config.Projects == nil {
 		return nil, errors.New("httpapi: project registry is required")
+	}
+	if config.Execution == nil {
+		return nil, errors.New("httpapi: execution manager is required")
 	}
 	if config.MaxBodyBytes <= 0 {
 		config.MaxBodyBytes = DefaultMaxBodyBytes
@@ -74,6 +80,7 @@ func New(config Config) (http.Handler, error) {
 		staticDir:    config.StaticDir,
 		version:      config.Version,
 		maxBodyBytes: config.MaxBodyBytes,
+		execution:    config.Execution,
 	}
 	renderer, err := webui.New()
 	if err != nil {
@@ -94,6 +101,11 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /app", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
 	mux.Handle("GET /app/{section}", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
 	mux.Handle("POST /app/projects", a.requireWebAuth(http.HandlerFunc(a.handleCreateProjectWeb)))
+	mux.Handle("POST /app/projects/{project}/workflows/sync", a.requireWebAuth(http.HandlerFunc(a.handleSyncWorkflowsWeb)))
+	mux.Handle("POST /app/workflows/{workflow}/runs", a.requireWebAuth(http.HandlerFunc(a.handleEnqueueRunWeb)))
+	mux.Handle("GET /app/runs/{run}", a.requireWebAuth(http.HandlerFunc(a.handleRunPageWeb)))
+	mux.Handle("GET /app/runs/{run}/panel", a.requireWebAuth(http.HandlerFunc(a.handleRunPanelWeb)))
+	mux.Handle("POST /app/runs/{run}/cancel", a.requireWebAuth(http.HandlerFunc(a.handleCancelRunWeb)))
 	mux.HandleFunc("POST /api/v1/session/login", a.handleLogin)
 	mux.Handle("GET /api/v1", a.requireAuth(http.HandlerFunc(a.handleAPIRoot)))
 	mux.Handle("GET /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleSession)))
@@ -102,6 +114,14 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /api/v1/projects", a.requireAuth(http.HandlerFunc(a.handleProjects)))
 	mux.Handle("POST /api/v1/projects", a.requireAuth(http.HandlerFunc(a.handleProjects)))
 	mux.Handle("GET /api/v1/projects/{project}", a.requireAuth(http.HandlerFunc(a.handleProject)))
+	mux.Handle("GET /api/v1/projects/{project}/workflows", a.requireAuth(http.HandlerFunc(a.handleProjectWorkflows)))
+	mux.Handle("POST /api/v1/projects/{project}/workflows/sync", a.requireAuth(http.HandlerFunc(a.handleSyncProjectWorkflows)))
+	mux.Handle("GET /api/v1/workflows/{workflow}", a.requireAuth(http.HandlerFunc(a.handleWorkflow)))
+	mux.Handle("POST /api/v1/workflows/{workflow}/runs", a.requireAuth(http.HandlerFunc(a.handleEnqueueWorkflowRun)))
+	mux.Handle("GET /api/v1/projects/{project}/runs", a.requireAuth(http.HandlerFunc(a.handleProjectRuns)))
+	mux.Handle("GET /api/v1/runs/{run}", a.requireAuth(http.HandlerFunc(a.handleRun)))
+	mux.Handle("POST /api/v1/runs/{run}/cancel", a.requireAuth(http.HandlerFunc(a.handleCancelRun)))
+	mux.Handle("GET /api/v1/runs/{run}/logs", a.requireAuth(http.HandlerFunc(a.handleRunLogs)))
 	mux.HandleFunc("/api/", a.handleAPINotFound)
 	mux.HandleFunc("/api", a.handleAPINotFound)
 
@@ -151,7 +171,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "audit"},
+		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "audit"},
 	})
 }
 

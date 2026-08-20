@@ -38,9 +38,34 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await alpha.getByRole("button", { name: /REGISTER/ }).click();
   await expect(page.locator(".project-rows")).toContainText("alpha-service");
 
+  const beta = page.locator("article.candidate", { hasText: "beta-worker" });
+  await expect(beta).toBeVisible();
+  await beta.getByRole("button", { name: /REGISTER/ }).click();
+  await expect(page.locator(".project-rows")).toContainText("beta-worker");
+
   await page.getByRole("link", { name: "Workflows" }).click();
   await expect(page).toHaveURL(/\/app\/workflows$/);
-  await expect(page.getByText("DOMAIN NOT ENABLED YET.")).toBeVisible();
+  await page.getByRole("button", { name: "SYNC ALPHA-SERVICE" }).click();
+  await expect(page.locator("article.workflow-card", { hasText: "Alpha CI" })).toBeVisible();
+  await page.getByRole("button", { name: "SYNC BETA-WORKER" }).click();
+  await expect(page.locator("article.workflow-card", { hasText: ".gitlab-ci.yml" })).toBeVisible();
+  await expect(page.getByText("GITHUB", { exact: true })).toBeVisible();
+  await expect(page.getByText("GITLAB", { exact: true })).toBeVisible();
+
+  const alphaWorkflow = page.locator("article.workflow-card", { hasText: "Alpha CI" });
+  await alphaWorkflow.getByRole("button", { name: /RUN NOW/ }).click();
+  await expect(page).toHaveURL(/\/app\/runs\/[A-Za-z0-9_-]+$/);
+  await expect(page.getByRole("heading", { name: "Alpha CI" })).toBeVisible();
+  await expect(page.locator(".run-node").filter({ has: page.getByText("Prepare", { exact: true }) })).toBeVisible();
+  await expect(page.locator(".run-node").filter({ has: page.getByText("Test", { exact: true }) })).toContainText("AFTER PREPARE");
+  await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
+  await expect(page.getByLabel("Logs for Prepare")).toContainText("prepared");
+  await expect(page.getByLabel("Logs for Test")).toContainText("tests passed");
+
+  await page.getByRole("link", { name: /Jobs/ }).click();
+  await expect(page).toHaveURL(/\/app\/jobs$/);
+  await expect(page.locator(".job-table")).toContainText("Prepare");
+  await expect(page.locator(".job-table")).toContainText("Test");
 
   await page.goto("/app/projects");
   await expect(page.locator(".project-rows")).toContainText("alpha-service");
