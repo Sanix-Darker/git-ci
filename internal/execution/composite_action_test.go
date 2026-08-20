@@ -150,8 +150,14 @@ runs:
     - shell: bash
       run: echo ok
 `)
-		if err := expandLocalCompositeActions(root, compositeFixturePipeline("./action")); err == nil || !strings.Contains(err.Error(), "outputs are not supported yet") {
-			t.Fatalf("error = %v", err)
+		pipeline := compositeFixturePipeline("./action")
+		pipeline.Jobs["job"].Steps[0].ID = "caller"
+		if err := expandLocalCompositeActions(root, pipeline); err != nil {
+			t.Fatal(err)
+		}
+		steps := pipeline.Jobs["job"].Steps
+		if len(steps) != 2 || steps[1].ID != "caller" || steps[1].Env[stepOutputMappingsEnvironment] == "" {
+			t.Fatalf("expanded output steps = %#v", steps)
 		}
 	})
 

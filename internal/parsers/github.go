@@ -218,6 +218,7 @@ func (p *GithubParser) convertJob(jobID string, ghJob *GithubJob, globalDefaults
 		TimeoutMin:      ghJob.TimeoutMinutes,
 		ContinueOnErr:   p.parseContinueOnError(ghJob.ContinueOnError),
 		Needs:           p.parseNeeds(ghJob.Needs),
+		Outputs:         ghJob.Outputs,
 	}
 	if ghJob.Concurrency != nil {
 		job.Concurrency = &types.Concurrency{

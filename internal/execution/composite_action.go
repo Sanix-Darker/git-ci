@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -22,13 +23,21 @@ const (
 	containerCompositeWorkspace = "/workspace"
 )
 
-var compositeInputExpression = regexp.MustCompile(`\$\{\{\s*inputs\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}`)
+var (
+	compositeInputExpression      = regexp.MustCompile(`\$\{\{\s*inputs\.([A-Za-z_][A-Za-z0-9_-]*)\s*\}\}`)
+	compositeStepOutputExpression = regexp.MustCompile(`steps\.([A-Za-z_][A-Za-z0-9_-]*)\.outputs\.`)
+)
 
 type compositeActionManifest struct {
-	Name    string                          `yaml:"name"`
-	Inputs  map[string]compositeActionInput `yaml:"inputs"`
-	Outputs map[string]interface{}          `yaml:"outputs"`
-	Runs    compositeActionRuns             `yaml:"runs"`
+	Name    string                           `yaml:"name"`
+	Inputs  map[string]compositeActionInput  `yaml:"inputs"`
+	Outputs map[string]compositeActionOutput `yaml:"outputs"`
+	Runs    compositeActionRuns              `yaml:"runs"`
+}
+
+type compositeActionOutput struct {
+	Description string `yaml:"description"`
+	Value       string `yaml:"value"`
 }
 
 type compositeActionInput struct {
@@ -43,8 +52,9 @@ type compositeActionRuns struct {
 }
 
 type compositeExpansionState struct {
-	root   string
-	unique map[string]struct{}
+	root     string
+	unique   map[string]struct{}
+	sequence int
 }
 
 func expandGitHubLocalCalls(root, workflowPath string, pipeline *types.Pipeline) error {
@@ -146,9 +156,6 @@ func (s *compositeExpansionState) expandAction(caller types.Step, ref, runtimeRo
 	if len(manifest.Runs.Steps) == 0 {
 		return nil, fmt.Errorf("%s has no composite steps", ref)
 	}
-	if len(manifest.Outputs) > 0 {
-		return nil, fmt.Errorf("%s declares outputs; composite outputs are not supported yet", ref)
-	}
 	inputs, err := resolveCompositeInputs(ref, manifest.Inputs, caller.With)
 	if err != nil {
 		return nil, err
@@ -164,8 +171,10 @@ func (s *compositeExpansionState) expandAction(caller types.Step, ref, runtimeRo
 	if runtime.GOOS == "windows" && runtimeRoot == containerCompositeWorkspace {
 		runtimeActionPath = path.Join(runtimeRoot, relative)
 	}
-	result := make([]types.Step, 0, len(manifest.Runs.Steps))
-	active := append(append([]string(nil), stack...), relative)
+	s.sequence++
+	scope := fmt.Sprintf("__gci_action_%03d_", s.sequence)
+	templates := make([]types.Step, 0, len(manifest.Runs.Steps))
+	stepIDs := make(map[string]string)
 	for index, template := range manifest.Runs.Steps {
 		child, err := resolveCompositeStep(template, inputs)
 		if err != nil {
@@ -177,6 +186,23 @@ func (s *compositeExpansionState) expandAction(caller types.Step, ref, runtimeRo
 		if child.Run != "" && strings.TrimSpace(child.Shell) == "" {
 			return nil, fmt.Errorf("%s step %d run command requires shell", ref, index+1)
 		}
+		if child.ID != "" {
+			if !outputNamePattern.MatchString(child.ID) {
+				return nil, fmt.Errorf("%s step %d has invalid id %q", ref, index+1, child.ID)
+			}
+			if _, duplicate := stepIDs[child.ID]; duplicate {
+				return nil, fmt.Errorf("%s declares duplicate step id %q", ref, child.ID)
+			}
+			stepIDs[child.ID] = scope + child.ID
+			child.ID = stepIDs[child.ID]
+		}
+		templates = append(templates, child)
+	}
+
+	result := make([]types.Step, 0, len(templates)+1)
+	active := append(append([]string(nil), stack...), relative)
+	for index, child := range templates {
+		child = rewriteCompositeStepOutputs(child, stepIDs)
 		child.Env = mergeCompositeEnvironment(caller.Env, child.Env)
 		child.Env["GITHUB_ACTION_PATH"] = runtimeActionPath
 		child.If = combineCompositeConditions(caller.If, child.If)
@@ -192,7 +218,87 @@ func (s *compositeExpansionState) expandAction(caller types.Step, ref, runtimeRo
 		}
 		result = append(result, nested...)
 	}
+	if len(manifest.Outputs) > 0 {
+		mappings := make(map[string]string, len(manifest.Outputs))
+		keys := make([]string, 0, len(manifest.Outputs))
+		for key := range manifest.Outputs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if !outputNamePattern.MatchString(key) {
+				return nil, fmt.Errorf("%s declares invalid output name %q", ref, key)
+			}
+			value := strings.TrimSpace(manifest.Outputs[key].Value)
+			if value == "" {
+				return nil, fmt.Errorf("%s output %q requires a value", ref, key)
+			}
+			value, err = resolveCompositeString(value, inputs)
+			if err != nil {
+				return nil, fmt.Errorf("%s output %q: %w", ref, key, err)
+			}
+			mappings[key] = rewriteCompositeStepOutputString(value, stepIDs)
+		}
+		if strings.TrimSpace(caller.ID) != "" {
+			encoded, err := json.Marshal(mappings)
+			if err != nil {
+				return nil, fmt.Errorf("%s encode output mappings: %w", ref, err)
+			}
+			environment := mergeCompositeEnvironment(caller.Env, nil)
+			environment[stepOutputMappingsEnvironment] = string(encoded)
+			result = append(result, types.Step{
+				ID: caller.ID, Name: provenance + " / OUTPUTS", Run: ":", Shell: "sh",
+				Env: environment, If: caller.If,
+			})
+		}
+	}
 	return result, nil
+}
+
+func rewriteCompositeStepOutputs(step types.Step, identifiers map[string]string) types.Step {
+	rewrite := func(value string) string { return rewriteCompositeStepOutputString(value, identifiers) }
+	step.Name = rewrite(step.Name)
+	step.Run = rewrite(step.Run)
+	step.Uses = rewrite(step.Uses)
+	step.Command = rewrite(step.Command)
+	step.Task = rewrite(step.Task)
+	step.If = rewrite(step.If)
+	step.When = rewrite(step.When)
+	step.Shell = rewrite(step.Shell)
+	step.WorkingDir = rewrite(step.WorkingDir)
+	for index := range step.Script {
+		step.Script[index] = rewrite(step.Script[index])
+	}
+	for index := range step.Arguments {
+		step.Arguments[index] = rewrite(step.Arguments[index])
+	}
+	for key, value := range step.Env {
+		step.Env[key] = rewrite(value)
+	}
+	for key, value := range step.With {
+		step.With[key] = rewrite(value)
+	}
+	for key, value := range step.Parameters {
+		step.Parameters[key] = rewrite(value)
+	}
+	for key, value := range step.Inputs {
+		step.Inputs[key] = rewrite(value)
+	}
+	return step
+}
+
+func rewriteCompositeStepOutputString(value string, identifiers map[string]string) string {
+	return compositeStepOutputExpression.ReplaceAllStringFunc(value, func(expression string) string {
+		matches := compositeStepOutputExpression.FindStringSubmatch(expression)
+		if len(matches) != 2 {
+			return expression
+		}
+		identifier, exists := identifiers[matches[1]]
+		if !exists {
+			return expression
+		}
+		return "steps." + identifier + ".outputs."
+	})
 }
 
 func (s *compositeExpansionState) loadManifest(relative string) (compositeActionManifest, string, error) {
