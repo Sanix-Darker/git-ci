@@ -651,10 +651,22 @@ func (p *GithubParser) parseReusableWorkflow(jobID string, ghJob *GithubJob) (*t
 		return nil, fmt.Errorf("invalid environment: %w", err)
 	}
 
+	call := &types.WorkflowCall{
+		Uses: ghJob.Uses,
+		With: make(map[string]interface{}, len(ghJob.With)),
+	}
+	for key, value := range ghJob.With {
+		call.With[key] = value
+	}
 	job := &types.Job{
 		Name:            p.getJobName(jobID, ghJob),
 		RunsOn:          "ubuntu-latest", // Default for reusable workflows
 		EnvironmentName: environmentName,
+		Needs:           p.parseNeeds(ghJob.Needs),
+		If:              ghJob.If,
+		TimeoutMin:      ghJob.TimeoutMinutes,
+		ContinueOnErr:   p.parseContinueOnError(ghJob.ContinueOnError),
+		WorkflowCall:    call,
 		Steps: []types.Step{
 			{
 				Name: fmt.Sprintf("Call reusable workflow: %s", ghJob.Uses),
@@ -663,23 +675,32 @@ func (p *GithubParser) parseReusableWorkflow(jobID string, ghJob *GithubJob) (*t
 			},
 		},
 	}
+	if ghJob.Strategy != nil {
+		job.Strategy = p.parseStrategy(ghJob.Strategy)
+	}
+	if ghJob.Concurrency != nil {
+		job.Concurrency = &types.Concurrency{Group: ghJob.Concurrency.Group, CancelInProgress: ghJob.Concurrency.CancelInProgress}
+	}
 
 	// Handle secrets
 	if ghJob.Secrets != nil {
 		switch v := ghJob.Secrets.(type) {
 		case string:
 			if v == "inherit" {
+				call.Secrets = map[string]string{"*": "inherit"}
 				job.Environment = map[string]string{
 					"SECRETS": "inherited",
 				}
 			}
 		case map[string]interface{}:
 			// Map individual secrets
+			call.Secrets = make(map[string]string, len(v))
 			for k, val := range v {
 				if job.Environment == nil {
 					job.Environment = make(map[string]string)
 				}
 				job.Environment[fmt.Sprintf("SECRET_%s", strings.ToUpper(k))] = fmt.Sprintf("%v", val)
+				call.Secrets[k] = fmt.Sprintf("%v", val)
 			}
 		}
 	}

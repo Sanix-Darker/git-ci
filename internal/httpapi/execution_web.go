@@ -274,11 +274,16 @@ type workflowDefinitionJobDocument struct {
 	Interruptible bool                                 `json:"interruptible"`
 	FailFast      bool                                 `json:"failFast"`
 	MaxParallel   int                                  `json:"maxParallel"`
+	WorkflowCall  *workflowCallDefinitionDocument      `json:"workflowCall"`
 	Container     *containerDefinitionDocument         `json:"container"`
 	Services      map[string]serviceDefinitionDocument `json:"services"`
 	Artifacts     *artifactDefinitionDocument          `json:"artifacts"`
 	Cache         *cacheDefinitionDocument             `json:"cache"`
 	Steps         []workflowDefinitionStepDocument     `json:"steps"`
+}
+
+type workflowCallDefinitionDocument struct {
+	Uses string `json:"uses"`
 }
 
 type containerDefinitionDocument struct {
@@ -511,6 +516,9 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 
 func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
 	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if job.WorkflowCall != nil && job.WorkflowCall.Uses != "" {
+		badges = append(badges, webui.SemanticBadgeView{Label: "REUSE " + job.WorkflowCall.Uses, Tone: "runtime", Hint: "Expanded same-commit reusable workflow"})
+	}
 	if job.Container != nil && job.Container.Image != "" {
 		badges = append(badges, webui.SemanticBadgeView{Label: "CONTAINER " + job.Container.Image, Tone: "runtime", Hint: "Steps execute in one persistent job container"})
 	}

@@ -126,6 +126,46 @@ jobs:
       - name: Probe service
         run: printf 'runtime topology\n'
 YAML
+cat >"$project_root/alpha-service/.github/workflows/shared.yml" <<'YAML'
+name: Shared Verify
+on:
+  workflow_call:
+    inputs:
+      target:
+        required: true
+        type: string
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Shared compile
+        run: printf 'compile %s\n' '${{ inputs.target }}'
+  audit:
+    needs: compile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Shared audit
+        run: printf 'audit complete\n'
+YAML
+cat >"$project_root/alpha-service/.github/workflows/reuse.yml" <<'YAML'
+name: Reusable Delivery
+on: workflow_dispatch
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    steps:
+      - run: printf 'reuse prepared\n'
+  shared:
+    needs: prepare
+    uses: ./.github/workflows/shared.yml
+    with:
+      target: production
+  publish:
+    needs: shared
+    runs-on: ubuntu-latest
+    steps:
+      - run: printf 'reuse published\n'
+YAML
 cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
 stages: [test]
 default:

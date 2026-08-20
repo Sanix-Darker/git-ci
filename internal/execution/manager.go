@@ -1262,6 +1262,7 @@ type frozenJobSemantics struct {
 	Interruptible bool                                 `json:"interruptible"`
 	FailFast      bool                                 `json:"failFast"`
 	MaxParallel   int                                  `json:"maxParallel"`
+	WorkflowCall  *types.WorkflowCall                  `json:"workflowCall"`
 	Container     *types.Container                     `json:"container"`
 	Services      map[string]*types.Service            `json:"services"`
 	Artifacts     *types.ArtifactConfig                `json:"artifacts"`

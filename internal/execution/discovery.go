@@ -82,6 +82,7 @@ type JobDefinition struct {
 	Interruptible   bool                                 `json:"interruptible,omitempty"`
 	FailFast        bool                                 `json:"failFast,omitempty"`
 	MaxParallel     int                                  `json:"maxParallel,omitempty"`
+	WorkflowCall    *types.WorkflowCall                  `json:"workflowCall,omitempty"`
 	Container       *types.Container                     `json:"container,omitempty"`
 	Services        map[string]*types.Service            `json:"services,omitempty"`
 	Artifacts       *types.ArtifactConfig                `json:"artifacts,omitempty"`
@@ -551,6 +552,11 @@ func normalizeDefinition(
 	if pipeline == nil {
 		return Definition{}, fmt.Errorf("parser returned no pipeline")
 	}
+	if file.provider == ProviderGitHubActions {
+		if err := expandLocalReusableWorkflows(root, file.absolute, pipeline); err != nil {
+			return Definition{}, fmt.Errorf("expand reusable workflows: %w", err)
+		}
+	}
 
 	sourceKeys := make([]string, 0, len(pipeline.Jobs))
 	for key := range pipeline.Jobs {
@@ -675,6 +681,7 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		When:            job.When,
 		Concurrency:     normalizeConcurrency(job.Concurrency),
 		Interruptible:   job.Interruptible,
+		WorkflowCall:    copyWorkflowCall(job.WorkflowCall),
 		Container:       copyContainer(job.Container),
 		Services:        copyServices(job.Services),
 		Artifacts:       copyArtifactConfig(job.Artifacts),
@@ -732,6 +739,9 @@ func applyMatrixVariant(job *JobDefinition, variant executionsemantics.MatrixVar
 		return err
 	}
 	if err := resolveMatrixContainer(job.Container, variant.Values); err != nil {
+		return err
+	}
+	if err := resolveMatrixWorkflowCall(job.WorkflowCall, variant.Values); err != nil {
 		return err
 	}
 	serviceKeys := make([]string, 0, len(job.Services))
@@ -825,7 +835,7 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 		"rules": job.Rules, "only": job.Only, "except": job.Except, "when": job.When,
 		"concurrency": job.Concurrency, "interruptible": job.Interruptible,
 		"failFast": job.FailFast, "maxParallel": job.MaxParallel,
-		"container": job.Container, "services": job.Services,
+		"workflowCall": job.WorkflowCall, "container": job.Container, "services": job.Services,
 		"artifacts": job.Artifacts, "cache": job.Cache,
 	}
 	encoded, err := json.Marshal(metadata)
@@ -1032,6 +1042,19 @@ func copyContainer(value *types.Container) *types.Container {
 		health.Test = copyStringSlice(value.HealthCheck.Test)
 		clone.HealthCheck = &health
 	}
+	return &clone
+}
+
+func copyWorkflowCall(value *types.WorkflowCall) *types.WorkflowCall {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	clone.With = make(map[string]interface{}, len(value.With))
+	for key, item := range value.With {
+		clone.With[key] = item
+	}
+	clone.Secrets = copyStringMap(value.Secrets)
 	return &clone
 }
 
