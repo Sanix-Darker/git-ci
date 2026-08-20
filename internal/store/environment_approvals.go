@@ -39,6 +39,22 @@ type EnvironmentApprovalDecision struct {
 	CreatedAt time.Time                 `json:"createdAt"`
 }
 
+type ListEnvironmentApprovalsParams struct {
+	ProjectID string
+	Status    EnvironmentApprovalStatus
+}
+
+type EnvironmentApprovalSummary struct {
+	EnvironmentApprovalRequest
+	ProjectID       string         `json:"projectId"`
+	ProjectName     string         `json:"projectName"`
+	EnvironmentName string         `json:"environmentName"`
+	DeploymentTier  DeploymentTier `json:"deploymentTier"`
+	JobName         string         `json:"jobName"`
+	Ref             *string        `json:"ref,omitempty"`
+	CommitSHA       *string        `json:"commitSha,omitempty"`
+}
+
 type RequestEnvironmentApprovalParams struct {
 	JobID       string
 	RequestedBy string
@@ -128,6 +144,51 @@ func (s *Store) GetEnvironmentApprovalRequest(ctx context.Context, requestID str
 		return EnvironmentApprovalRequest{}, fmt.Errorf("store: get environment approval request: %w", err)
 	}
 	return request, nil
+}
+
+func (s *Store) ListEnvironmentApprovalRequests(ctx context.Context, params ListEnvironmentApprovalsParams) ([]EnvironmentApprovalSummary, error) {
+	if err := validateConfigurationContext(ctx); err != nil {
+		return nil, err
+	}
+	db, err := s.dbHandle()
+	if err != nil {
+		return nil, err
+	}
+	params.ProjectID = strings.TrimSpace(params.ProjectID)
+	if params.Status != "" && params.Status != EnvironmentApprovalPending && params.Status != EnvironmentApprovalApproved && params.Status != EnvironmentApprovalRejected && params.Status != EnvironmentApprovalCancelled {
+		return nil, invalidInput("approval status", "must be pending, approved, rejected, or cancelled")
+	}
+	rows, err := db.QueryContext(ctx, `
+		SELECT request.id, request.environment_id, request.run_id, request.job_id, request.status,
+			request.required_approvals, request.requested_by, request.requested_at, request.decided_at,
+			environment.project_id, project.name, environment.name, environment.deployment_tier,
+			job.name, run.ref, run.commit_sha
+		FROM environment_approval_requests AS request
+		JOIN environments AS environment ON environment.id = request.environment_id
+		JOIN projects AS project ON project.id = environment.project_id
+		JOIN runs AS run ON run.id = request.run_id
+		JOIN jobs AS job ON job.id = request.job_id
+		WHERE (? = '' OR environment.project_id = ?)
+			AND (? = '' OR request.status = ?)
+		ORDER BY CASE request.status WHEN 'pending' THEN 0 ELSE 1 END,
+			request.requested_at DESC, request.id DESC
+	`, params.ProjectID, params.ProjectID, params.Status, params.Status)
+	if err != nil {
+		return nil, fmt.Errorf("store: list environment approval requests: %w", err)
+	}
+	defer rows.Close()
+	items := make([]EnvironmentApprovalSummary, 0)
+	for rows.Next() {
+		item, err := scanEnvironmentApprovalSummary(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: scan environment approval request: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: iterate environment approval requests: %w", err)
+	}
+	return items, nil
 }
 
 func (s *Store) DecideEnvironmentApproval(ctx context.Context, params DecideEnvironmentApprovalParams) (EnvironmentApprovalRequest, error) {
@@ -261,4 +322,22 @@ func scanEnvironmentApprovalRequest(scanner configurationScanner) (EnvironmentAp
 	request.RequestedAt = timeFromMillis(requestedAt)
 	request.DecidedAt = nullTimePointer(decidedAt)
 	return request, nil
+}
+
+func scanEnvironmentApprovalSummary(scanner configurationScanner) (EnvironmentApprovalSummary, error) {
+	var item EnvironmentApprovalSummary
+	var requestedAt int64
+	var decidedAt sql.NullInt64
+	var ref, commitSHA sql.NullString
+	if err := scanner.Scan(&item.ID, &item.EnvironmentID, &item.RunID, &item.JobID, &item.Status,
+		&item.RequiredApprovals, &item.RequestedBy, &requestedAt, &decidedAt,
+		&item.ProjectID, &item.ProjectName, &item.EnvironmentName, &item.DeploymentTier,
+		&item.JobName, &ref, &commitSHA); err != nil {
+		return EnvironmentApprovalSummary{}, err
+	}
+	item.RequestedAt = timeFromMillis(requestedAt)
+	item.DecidedAt = nullTimePointer(decidedAt)
+	item.Ref = nullStringPointer(ref)
+	item.CommitSHA = nullStringPointer(commitSHA)
+	return item, nil
 }

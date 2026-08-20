@@ -94,12 +94,78 @@
 </section>
 {{end}}
 
+{{define "approval_card"}}
+<article class="approval-card">
+  <header><span class="status-cell"><i class="dot dot-red"></i>WAITING</span><code>{{.DeploymentTier}}</code></header>
+  <div><p class="kicker">{{upper .ProjectName}} / {{upper .EnvironmentName}}</p><h3>{{.JobName}}</h3><a href="/app/runs/{{.RunID}}">RUN {{short .RunID}} -&gt;</a></div>
+  <dl><div><dt>REF</dt><dd>{{if .Ref}}{{.Ref}}{{else}}LOCAL{{end}}</dd></div><div><dt>COMMIT</dt><dd>{{if .CommitSHA}}{{short .CommitSHA}}{{else}}UNPINNED{{end}}</dd></div><div><dt>REQUESTED</dt><dd>{{.RequestedAt}}</dd></div></dl>
+  <form method="post" action="/app/approvals/{{.ID}}/decision" hx-post="/app/approvals/{{.ID}}/decision" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    <label>DECISION REASON<input name="reason" placeholder="release window / incident"></label>
+    <div><button type="submit" name="decision" value="approved">APPROVE</button><button class="danger-button" type="submit" name="decision" value="rejected">REJECT</button></div>
+  </form>
+</article>
+{{end}}
+
+{{define "environment_card"}}
+<article><header><span><i class="dot {{if .Protected}}dot-red{{else}}dot-green{{end}}"></i>{{upper .Name}}</span><code>{{.DeploymentTier}}</code></header><strong>{{upper .ProjectName}}</strong><dl><div><dt>GATE</dt><dd>{{if .Protected}}{{.RequiredApprovals}} APPROVAL / {{.WaitTimerSeconds}}S{{else}}OPEN{{end}}</dd></div><div><dt>REFS</dt><dd>{{if .AllowedRefs}}{{.AllowedRefs}}{{else}}ALL{{end}}</dd></div><div><dt>LOCK</dt><dd>{{.ConcurrencyMode}}</dd></div><div><dt>SECRETS</dt><dd>{{pad2 .SecretCount}}</dd></div></dl></article>
+{{end}}
+
+{{define "deployment_row"}}
+<a class="data-row" href="/app/runs/{{.RunID}}"><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.Environment}}</strong><code>{{.DeploymentTier}}</code><span>{{.ProjectName}}</span><span>{{.JobName}}</span><code>{{short .RunID}}</code><time>{{.UpdatedAt}}</time><b>-&gt;</b></a>
+{{end}}
+
 {{define "deployments_panel"}}
-<section class="surface-card flush-card">
-  <div class="card-heading padded-heading"><div><p class="kicker">ENVIRONMENT HISTORY</p><h2>DEPLOYMENTS</h2></div><span>{{pad2 (len .Deployments)}}</span></div>
+<section class="delivery-stack">
+  <section class="surface-card approval-surface">
+    <div class="card-heading padded-heading"><div><p class="kicker">HUMAN GATE</p><h2>APPROVAL QUEUE</h2></div><span>{{pad2 (len .Approvals)}}</span></div>
+    <div class="approval-grid">
+      {{range .Approvals}}
+      {{template "approval_card" .}}
+      {{else}}<div class="empty-state"><i></i><p>NO DEPLOYMENTS WAITING FOR A DECISION</p></div>{{end}}
+    </div>
+  </section>
+
+  <section class="delivery-config-grid">
+    <form class="config-form environment-policy-form" method="post" action="/app/environments" hx-post="/app/environments" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+      <header><p class="kicker">POLICY AS DATA</p><h2>ENVIRONMENT RULES</h2></header>
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <label>POLICY PROJECT<select name="projectId" required>{{range .Projects}}<option value="{{.ID}}">{{.Name}}</option>{{end}}</select></label>
+      <div class="form-pair"><label>ENVIRONMENT NAME<input name="name" required placeholder="production"></label><label>DEPLOYMENT TIER<select name="deploymentTier"><option value="production">PRODUCTION</option><option value="staging">STAGING</option><option value="testing">TESTING</option><option value="development">DEVELOPMENT</option><option value="other">OTHER</option></select></label></div>
+      <label class="check-field"><input type="checkbox" name="protected" checked> PROTECTED ENVIRONMENT</label>
+      <div class="form-pair"><label>REQUIRED APPROVALS<select name="requiredApprovals"><option value="1">ONE</option><option value="0">NONE</option></select></label><label>WAIT SECONDS<input name="waitTimerSeconds" type="number" min="0" max="86400" value="0"></label></div>
+      <label>ALLOWED REFS<textarea name="allowedRefs" rows="3" placeholder="refs/heads/main, refs/tags/v*"></textarea></label>
+      <label>CONCURRENCY<select name="concurrencyMode"><option value="queue">QUEUE</option><option value="cancel_in_progress">CANCEL IN PROGRESS</option></select></label>
+      <button type="submit">STORE POLICY <span>-&gt;</span></button>
+    </form>
+    <section class="surface-card environment-ledger">
+      <div class="card-heading padded-heading"><div><p class="kicker">PROTECTION MATRIX</p><h2>ENVIRONMENTS</h2></div><span>{{pad2 (len .Environments)}}</span></div>
+      <div class="environment-cards">
+        {{range .Environments}}{{template "environment_card" .}}{{else}}<div class="empty-state"><i></i><p>ENVIRONMENTS APPEAR WHEN A TARGET IS REGISTERED</p></div>{{end}}
+      </div>
+    </section>
+  </section>
+
+  <section class="delivery-config-grid secret-scope-grid">
+    <form class="config-form" method="post" action="/app/environment-secrets" hx-post="/app/environment-secrets" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+      <header><p class="kicker">REVEAL AFTER GATE</p><h2>ENV SECRET</h2></header>
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <label>SECRET ENVIRONMENT<select name="environmentId" required>{{range .Environments}}<option value="{{.ID}}">{{.ProjectName}} / {{.Name}}</option>{{end}}</select></label>
+      <label>SECRET NAME<input name="name" required pattern="[A-Z_][A-Z0-9_]*" placeholder="DEPLOY_TOKEN" autocomplete="off"></label>
+      <label>SECRET VALUE<input name="value" type="password" required placeholder="Encrypted once, never rendered" autocomplete="new-password"></label>
+      <button type="submit">ENCRYPT + SCOPE <span>-&gt;</span></button>
+    </form>
+    <section class="surface-card flush-card">
+      <div class="card-heading padded-heading"><div><p class="kicker">AES-256-GCM METADATA</p><h2>ENVIRONMENT SECRETS</h2></div><span>{{pad2 (len .EnvironmentSecrets)}}</span></div>
+      <div class="compact-list">{{range .EnvironmentSecrets}}<article><div><i class="dot dot-green"></i><span><strong>{{.Name}}</strong><small>{{upper .ProjectName}} / {{upper .EnvironmentName}}</small></span></div><div><time>{{.UpdatedAt}}</time><form method="post" action="/app/environment-secrets/{{.ID}}/delete" hx-post="/app/environment-secrets/{{.ID}}/delete" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">DELETE</button></form></div></article>{{else}}<div class="empty-state"><i></i><p>NO ENVIRONMENT SECRET METADATA</p></div>{{end}}</div>
+    </section>
+  </section>
+</section>
+<section id="deployment-history" class="surface-card flush-card" {{if .ActiveDeployments}}hx-get="/app/deployments" hx-trigger="every 1s" hx-select="#deployment-history" hx-target="this" hx-swap="outerHTML"{{end}}>
+  <div class="card-heading padded-heading"><div><p class="kicker">APPEND-ONLY HISTORY</p><h2>DEPLOYMENTS</h2></div><span>{{pad2 (len .Deployments)}}</span></div>
   <div class="data-table deployment-table">
-    <div class="data-head"><span>STATE</span><span>ENVIRONMENT</span><span>PROJECT</span><span>RUN</span><span>UPDATED</span><span></span></div>
-    {{range .Deployments}}<a class="data-row" href="/app/runs/{{.RunID}}"><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.Environment}}</strong><span>{{.ProjectName}}</span><code>{{short .RunID}}</code><time>{{.UpdatedAt}}</time><b>-></b></a>{{else}}<div class="empty-state"><i></i><p>NO DEPLOYMENT RECORDS. CREATE THEM THROUGH API V1.</p></div>{{end}}
+    <div class="data-head"><span>STATE</span><span>ENVIRONMENT</span><span>TIER</span><span>PROJECT</span><span>JOB</span><span>RUN</span><span>UPDATED</span><span></span></div>
+    {{range .Deployments}}{{template "deployment_row" .}}{{else}}<div class="empty-state"><i></i><p>NO DEPLOYMENT RECORDS YET</p></div>{{end}}
   </div>
 </section>
 {{end}}

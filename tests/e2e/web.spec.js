@@ -87,7 +87,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.locator(".run-node").filter({ has: page.getByText("Prepare", { exact: true }) })).toBeVisible();
   await expect(page.locator(".run-node").filter({ has: page.getByText("Test", { exact: true }) })).toContainText("AFTER PREPARE");
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
-  await expect(page.locator(".pipeline-stage")).toHaveCount(2);
+  await expect(page.locator(".pipeline-stage")).toHaveCount(3);
   const prepareLogs = page.getByLabel("Logs for Prepare");
   const testLogs = page.getByLabel("Logs for Test");
   const secretLogs = page.getByLabel("Logs for Secret mask");
@@ -109,6 +109,42 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page).toHaveURL(/\/app\/jobs$/);
   await expect(page.locator(".job-table")).toContainText("Prepare");
   await expect(page.locator(".job-table")).toContainText("Test");
+
+  await page.getByRole("link", { name: "Deployments" }).click();
+  await expect(page.getByRole("heading", { name: "APPROVAL QUEUE" })).toBeVisible();
+  const policyForm = page.locator("form.environment-policy-form");
+  await policyForm.getByLabel("POLICY PROJECT").selectOption({ label: "alpha-service" });
+  await policyForm.getByLabel("ENVIRONMENT NAME").fill("production");
+  await policyForm.getByRole("button", { name: /STORE POLICY/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "ENVIRONMENT POLICY STORED" })).toBeVisible();
+  await expect(page.locator(".environment-cards")).toContainText("PRODUCTION");
+  const environmentSecretForm = page.locator('form[action="/app/environment-secrets"]');
+  await environmentSecretForm.getByLabel("SECRET ENVIRONMENT").selectOption({ label: "alpha-service / production" });
+  await environmentSecretForm.getByLabel("SECRET NAME").fill("DEPLOY_TOKEN");
+  await environmentSecretForm.getByLabel("SECRET VALUE").fill("environment-e2e-secret");
+  await environmentSecretForm.getByRole("button", { name: /ENCRYPT \+ SCOPE/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "ENVIRONMENT SECRET STORED" })).toBeVisible();
+  await expect(page.locator(".secret-scope-grid")).toContainText("DEPLOY_TOKEN");
+  await expect(page.locator("body")).not.toContainText("environment-e2e-secret");
+
+  await page.getByRole("link", { name: "Workflows" }).click();
+  await page.locator("article.workflow-card", { hasText: "Alpha CI" }).getByRole("button", { name: /RUN NOW/ }).click();
+  await expect(page.locator(".run-detail-state")).toContainText("WAITING", { timeout: 15000 });
+  await page.getByRole("link", { name: "Deployments" }).click();
+  const approval = page.locator("article.approval-card").filter({ has: page.getByRole("heading", { name: "Deploy", exact: true }) });
+  await expect(approval).toBeVisible();
+  await approval.getByLabel("DECISION REASON").fill("e2e release window");
+  await approval.getByRole("button", { name: "APPROVE" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "DEPLOYMENT APPROVED" })).toBeVisible();
+  await expect(page.locator("article.approval-card")).toHaveCount(0);
+  const latestDeployment = page.locator(".deployment-table .data-row").first();
+  await expect(latestDeployment).toContainText("SUCCEEDED", { timeout: 15000 });
+  await latestDeployment.click();
+  await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED");
+  const deployLogs = page.getByLabel("Logs for Deploy production");
+  await deployLogs.scrollIntoViewIfNeeded();
+  await expect(deployLogs).toContainText("deployed ***");
+  await expect(deployLogs).not.toContainText("environment-e2e-secret");
 
   await page.getByRole("link", { name: "Schedules" }).click();
   await expect(page).toHaveURL(/\/app\/schedules$/);

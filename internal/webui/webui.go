@@ -20,27 +20,31 @@ import (
 var embedded embed.FS
 
 type PageData struct {
-	Page        string
-	Title       string
-	Kicker      string
-	Description string
-	Actor       string
-	CSRFToken   string
-	Version     string
-	Error       string
-	Notice      string
-	Projects    []store.Project
-	Candidates  []projects.Project
-	Workflows   []WorkflowView
-	Runs        []RunView
-	Jobs        []JobView
-	SelectedRun *RunDetailView
-	Secrets     []SecretView
-	Schedules   []ScheduleView
-	Deployments []DeploymentView
-	Webhooks    []WebhookView
-	RunFilter   RunFilterView
-	Telemetry   RunTelemetryView
+	Page               string
+	Title              string
+	Kicker             string
+	Description        string
+	Actor              string
+	CSRFToken          string
+	Version            string
+	Error              string
+	Notice             string
+	Projects           []store.Project
+	Candidates         []projects.Project
+	Workflows          []WorkflowView
+	Runs               []RunView
+	Jobs               []JobView
+	SelectedRun        *RunDetailView
+	Secrets            []SecretView
+	Schedules          []ScheduleView
+	Deployments        []DeploymentView
+	Environments       []EnvironmentView
+	EnvironmentSecrets []EnvironmentSecretView
+	Approvals          []ApprovalView
+	ActiveDeployments  bool
+	Webhooks           []WebhookView
+	RunFilter          RunFilterView
+	Telemetry          RunTelemetryView
 }
 
 type WorkflowView struct {
@@ -117,7 +121,19 @@ type ScheduleView struct {
 	ID, ProjectName, WorkflowName, Cron, Ref, Timezone, NextRunAt string
 	Enabled                                                       bool
 }
-type DeploymentView struct{ ID, RunID, ProjectName, Environment, Status, Dot, UpdatedAt string }
+type DeploymentView struct {
+	ID, RunID, JobID, JobName, ProjectName, Environment, DeploymentTier, Status, Dot, UpdatedAt string
+	Terminal                                                                                    bool
+}
+type EnvironmentView struct {
+	ID, ProjectID, ProjectName, Name, DeploymentTier, AllowedRefs, ConcurrencyMode, UpdatedAt string
+	Protected                                                                                 bool
+	RequiredApprovals, WaitTimerSeconds, SecretCount                                          int
+}
+type EnvironmentSecretView struct{ ID, ProjectName, EnvironmentName, Name, UpdatedAt string }
+type ApprovalView struct {
+	ID, RunID, JobID, ProjectName, EnvironmentName, DeploymentTier, JobName, Ref, CommitSHA, RequestedAt, CSRFToken string
+}
 type WebhookView struct {
 	ID, ProjectName, Name, Provider, URL string
 	Enabled                              bool

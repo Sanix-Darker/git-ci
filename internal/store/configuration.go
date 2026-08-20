@@ -15,7 +15,7 @@ const (
 	secretColumns          = `id, project_id, name, provider, key_reference, version, encryption_algorithm, created_at, updated_at`
 	webhookEndpointColumns = `id, project_id, name, provider, token_hash, metadata_json, enabled, created_at, updated_at`
 	webhookDeliveryColumns = `id, endpoint_id, provider_delivery_id, event_type, payload_sha256, status, error_message, received_at, processed_at, created_at, updated_at`
-	deploymentColumns      = `id, project_id, run_id, environment, status, created_at, updated_at, finished_at`
+	deploymentColumns      = `id, project_id, run_id, job_id, environment, deployment_tier, status, created_at, updated_at, finished_at`
 )
 
 // Secret is non-sensitive secret metadata. It intentionally cannot expose an
@@ -680,15 +680,17 @@ func (s *Store) ListWebhookDeliveries(ctx context.Context, endpointID string) ([
 }
 
 type Deployment struct {
-	ID          string            `json:"id"`
-	ProjectID   string            `json:"projectId"`
-	RunID       string            `json:"runId"`
-	Environment string            `json:"environment"`
-	Status      Status            `json:"status"`
-	CreatedAt   time.Time         `json:"createdAt"`
-	UpdatedAt   time.Time         `json:"updatedAt"`
-	FinishedAt  *time.Time        `json:"finishedAt,omitempty"`
-	History     []DeploymentEvent `json:"history,omitempty"`
+	ID             string            `json:"id"`
+	ProjectID      string            `json:"projectId"`
+	RunID          string            `json:"runId"`
+	JobID          *string           `json:"jobId,omitempty"`
+	Environment    string            `json:"environment"`
+	DeploymentTier DeploymentTier    `json:"deploymentTier"`
+	Status         Status            `json:"status"`
+	CreatedAt      time.Time         `json:"createdAt"`
+	UpdatedAt      time.Time         `json:"updatedAt"`
+	FinishedAt     *time.Time        `json:"finishedAt,omitempty"`
+	History        []DeploymentEvent `json:"history,omitempty"`
 }
 type DeploymentEvent struct {
 	ID           string    `json:"id"`
@@ -1170,11 +1172,13 @@ func scanWebhookDelivery(scanner configurationScanner) (WebhookDelivery, error) 
 }
 func scanDeployment(scanner configurationScanner) (Deployment, error) {
 	var item Deployment
+	var jobID sql.NullString
 	var finished sql.NullInt64
 	var created, updated int64
-	if err := scanner.Scan(&item.ID, &item.ProjectID, &item.RunID, &item.Environment, &item.Status, &created, &updated, &finished); err != nil {
+	if err := scanner.Scan(&item.ID, &item.ProjectID, &item.RunID, &jobID, &item.Environment, &item.DeploymentTier, &item.Status, &created, &updated, &finished); err != nil {
 		return Deployment{}, err
 	}
+	item.JobID = nullStringPointer(jobID)
 	item.CreatedAt, item.UpdatedAt = timeFromMillis(created), timeFromMillis(updated)
 	if finished.Valid {
 		value := timeFromMillis(finished.Int64)

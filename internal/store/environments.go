@@ -122,6 +122,28 @@ func (s *Store) GetEnvironment(ctx context.Context, projectID, name string) (Env
 	return environment, nil
 }
 
+func (s *Store) GetEnvironmentByID(ctx context.Context, environmentID string) (Environment, error) {
+	if err := validateConfigurationContext(ctx); err != nil {
+		return Environment{}, err
+	}
+	db, err := s.dbHandle()
+	if err != nil {
+		return Environment{}, err
+	}
+	environmentID, err = normalizeRequiredText("environment ID", environmentID)
+	if err != nil {
+		return Environment{}, err
+	}
+	environment, err := scanEnvironment(db.QueryRowContext(ctx, `SELECT `+environmentColumns+` FROM environments WHERE id = ?`, environmentID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Environment{}, &ErrNotFound{Resource: "environment", Key: environmentID}
+	}
+	if err != nil {
+		return Environment{}, fmt.Errorf("store: get environment by ID: %w", err)
+	}
+	return environment, nil
+}
+
 func (s *Store) ListEnvironments(ctx context.Context, projectID string) ([]Environment, error) {
 	if err := validateConfigurationContext(ctx); err != nil {
 		return nil, err
