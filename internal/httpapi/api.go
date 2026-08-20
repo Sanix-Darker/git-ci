@@ -18,6 +18,7 @@ import (
 	"github.com/sanix-darker/git-ci/internal/scheduler"
 	"github.com/sanix-darker/git-ci/internal/secrets"
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/triggers"
 	"github.com/sanix-darker/git-ci/internal/webhooks"
 	"github.com/sanix-darker/git-ci/internal/webui"
 	"github.com/sanix-darker/git-ci/site"
@@ -26,30 +27,32 @@ import (
 const DefaultMaxBodyBytes int64 = 1 << 20
 
 type Config struct {
-	Auth         *auth.Manager
-	Store        *store.Store
-	Projects     *projects.Registry
-	StaticDir    string
-	Version      string
-	MaxBodyBytes int64
-	Execution    *execution.Manager
-	Secrets      *secrets.Manager
-	Scheduler    *scheduler.Manager
-	Webhooks     *webhooks.Manager
+	Auth           *auth.Manager
+	Store          *store.Store
+	Projects       *projects.Registry
+	StaticDir      string
+	Version        string
+	MaxBodyBytes   int64
+	Execution      *execution.Manager
+	Secrets        *secrets.Manager
+	Scheduler      *scheduler.Manager
+	Webhooks       *webhooks.Manager
+	CommitTriggers *triggers.Manager
 }
 
 type API struct {
-	auth         *auth.Manager
-	store        *store.Store
-	projects     *projects.Registry
-	staticDir    string
-	version      string
-	maxBodyBytes int64
-	web          *webui.Renderer
-	execution    *execution.Manager
-	secrets      *secrets.Manager
-	scheduler    *scheduler.Manager
-	webhooks     *webhooks.Manager
+	auth           *auth.Manager
+	store          *store.Store
+	projects       *projects.Registry
+	staticDir      string
+	version        string
+	maxBodyBytes   int64
+	web            *webui.Renderer
+	execution      *execution.Manager
+	secrets        *secrets.Manager
+	scheduler      *scheduler.Manager
+	webhooks       *webhooks.Manager
+	commitTriggers *triggers.Manager
 }
 
 type principalContextKey struct{}
@@ -70,6 +73,13 @@ func New(config Config) (http.Handler, error) {
 	if config.Secrets == nil || config.Scheduler == nil || config.Webhooks == nil {
 		return nil, errors.New("httpapi: secrets, scheduler, and webhook managers are required")
 	}
+	if config.CommitTriggers == nil {
+		manager, managerErr := triggers.NewManager(config.Store, config.Execution)
+		if managerErr != nil {
+			return nil, fmt.Errorf("httpapi: commit trigger manager: %w", managerErr)
+		}
+		config.CommitTriggers = manager
+	}
 	if config.MaxBodyBytes <= 0 {
 		config.MaxBodyBytes = DefaultMaxBodyBytes
 	}
@@ -87,16 +97,17 @@ func New(config Config) (http.Handler, error) {
 	}
 
 	api := &API{
-		auth:         config.Auth,
-		store:        config.Store,
-		projects:     config.Projects,
-		staticDir:    config.StaticDir,
-		version:      config.Version,
-		maxBodyBytes: config.MaxBodyBytes,
-		execution:    config.Execution,
-		secrets:      config.Secrets,
-		scheduler:    config.Scheduler,
-		webhooks:     config.Webhooks,
+		auth:           config.Auth,
+		store:          config.Store,
+		projects:       config.Projects,
+		staticDir:      config.StaticDir,
+		version:        config.Version,
+		maxBodyBytes:   config.MaxBodyBytes,
+		execution:      config.Execution,
+		secrets:        config.Secrets,
+		scheduler:      config.Scheduler,
+		webhooks:       config.Webhooks,
+		commitTriggers: config.CommitTriggers,
 	}
 	renderer, err := webui.New()
 	if err != nil {
@@ -118,6 +129,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /app/{section}", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
 	mux.Handle("POST /app/projects", a.requireWebAuth(http.HandlerFunc(a.handleCreateProjectWeb)))
 	mux.Handle("POST /app/projects/{project}/workflows/sync", a.requireWebAuth(http.HandlerFunc(a.handleSyncWorkflowsWeb)))
+	mux.Handle("POST /app/projects/{project}/commit-trigger", a.requireWebAuth(http.HandlerFunc(a.handleProjectCommitTriggerWeb)))
 	mux.Handle("POST /app/workflows/{workflow}/runs", a.requireWebAuth(http.HandlerFunc(a.handleEnqueueRunWeb)))
 	mux.Handle("GET /app/runs/{run}", a.requireWebAuth(http.HandlerFunc(a.handleRunPageWeb)))
 	mux.Handle("GET /app/runs/{run}/panel", a.requireWebAuth(http.HandlerFunc(a.handleRunPanelWeb)))
@@ -146,6 +158,8 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /api/v1/projects/{project}", a.requireAuth(http.HandlerFunc(a.handleProject)))
 	mux.Handle("GET /api/v1/projects/{project}/workflows", a.requireAuth(http.HandlerFunc(a.handleProjectWorkflows)))
 	mux.Handle("POST /api/v1/projects/{project}/workflows/sync", a.requireAuth(http.HandlerFunc(a.handleSyncProjectWorkflows)))
+	mux.Handle("GET /api/v1/projects/{project}/commit-trigger", a.requireAuth(http.HandlerFunc(a.handleProjectCommitTrigger)))
+	mux.Handle("PUT /api/v1/projects/{project}/commit-trigger", a.requireAuth(http.HandlerFunc(a.handleProjectCommitTrigger)))
 	mux.Handle("GET /api/v1/workflows/{workflow}", a.requireAuth(http.HandlerFunc(a.handleWorkflow)))
 	mux.Handle("POST /api/v1/workflows/{workflow}/runs", a.requireAuth(http.HandlerFunc(a.handleEnqueueWorkflowRun)))
 	mux.Handle("GET /api/v1/projects/{project}/runs", a.requireAuth(http.HandlerFunc(a.handleProjectRuns)))

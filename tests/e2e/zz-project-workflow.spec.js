@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 
 const token = () => readFileSync("build/e2e-web/state/admin.token", "utf8").trim();
 
@@ -29,4 +30,20 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(pipeline.locator('input[name="ref"]')).toHaveValue("main");
   await expect(pipeline.locator('input[name="commitSha"]')).toBeVisible();
   await expect(pipeline.getByRole("button", { name: /RUN WORKFLOW/ })).toBeVisible();
+
+  await page.goto("/app/projects");
+  const projectCard = page.locator("details.resource-card").filter({ hasText: "alpha-service" });
+  await projectCard.locator("summary").click();
+  const watcher = projectCard.locator("form.commit-trigger");
+  await watcher.locator('input[name="enabled"]').check();
+  await watcher.getByRole("button", { name: /SAVE COMMIT WATCH/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "COMMIT WATCH ENABLED" })).toBeVisible();
+
+  const repository = `${process.cwd()}/build/e2e-web/projects/alpha-service`;
+  execFileSync("git", ["-C", repository, "commit", "--allow-empty", "-m", "E2E watched commit"]);
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/v1/projects/${project.id}/runs`, { headers: authorization });
+    const payload = await response.json();
+    return payload.items.filter((run) => run.triggerType === "commit").length;
+  }, { timeout: 15000 }).toBeGreaterThan(0);
 });

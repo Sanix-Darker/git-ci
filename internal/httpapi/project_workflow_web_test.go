@@ -67,4 +67,14 @@ jobs:
 			t.Fatalf("workflow page missing %q", expected)
 		}
 	}
+
+	request = httptest.NewRequest(http.MethodGet, "/app/projects", nil)
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	fixture.handler.ServeHTTP(response, request)
+	for _, expected := range []string{"LOCAL COMMIT WATCH", "SAVE COMMIT WATCH"} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("project page missing %q", expected)
+		}
+	}
 }

@@ -144,6 +144,16 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 		projectView := webui.ProjectView{
 			ID: project.ID, Name: project.Name, Slug: project.Slug, CanonicalPath: path,
 			Health: health, HealthDetail: healthDetail, Dot: dot,
+			CommitTrigger: webui.CommitTriggerView{Ref: project.DefaultBranch, Status: "OFF", Dot: "dot-blue"},
+		}
+		policy, policyErr := a.store.GetProjectCommitTrigger(ctx, project.ID)
+		if policyErr == nil {
+			projectView.CommitTrigger = commitTriggerView(policy)
+		} else {
+			var notFound *store.ErrNotFound
+			if !errors.As(policyErr, &notFound) {
+				return policyErr
+			}
 		}
 		workflows, err := a.store.ListWorkflows(ctx, project.ID)
 		if err != nil {
@@ -201,6 +211,26 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 		data.SelectedRun = &detail
 	}
 	return nil
+}
+
+func commitTriggerView(policy store.ProjectCommitTrigger) webui.CommitTriggerView {
+	view := webui.CommitTriggerView{Ref: policy.Ref, Enabled: policy.Enabled, Status: "OFF", Dot: "dot-blue"}
+	if policy.Enabled {
+		view.Status, view.Dot = "WATCHING", "dot-green"
+	}
+	if policy.LastCommitSHA != nil {
+		view.LastCommitSHA = *policy.LastCommitSHA
+	}
+	if policy.LastCheckedAt != nil {
+		view.LastCheckedAt = policy.LastCheckedAt.UTC().Format("2006-01-02 15:04:05Z")
+	}
+	if policy.LastTriggeredAt != nil {
+		view.LastTriggeredAt = policy.LastTriggeredAt.UTC().Format("2006-01-02 15:04:05Z")
+	}
+	if policy.LastError != nil {
+		view.LastError, view.Status, view.Dot = *policy.LastError, "ERROR", "dot-red"
+	}
+	return view
 }
 
 type workflowDefinitionDocument struct {

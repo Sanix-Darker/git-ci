@@ -52,6 +52,12 @@ type ProjectView struct {
 	ID, Name, Slug, CanonicalPath, Health, HealthDetail, Dot string
 	WorkflowCount                                            int
 	Workflows                                                []WorkflowView
+	CommitTrigger                                            CommitTriggerView
+}
+
+type CommitTriggerView struct {
+	Ref, Status, Dot, LastCommitSHA, LastCheckedAt, LastTriggeredAt, LastError string
+	Enabled                                                                    bool
 }
 
 type WorkflowView struct {
