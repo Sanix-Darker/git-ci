@@ -21,6 +21,15 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   expect(loginResponse.ok()).toBeTruthy();
 
   await page.goto("/app/workflows");
+  const skipLink = page.getByRole("link", { name: "Skip to workspace" });
+  const hiddenSkipBox = await skipLink.boundingBox();
+  expect(hiddenSkipBox.y + hiddenSkipBox.height).toBeLessThanOrEqual(0);
+  await page.keyboard.press("Tab");
+  await expect(skipLink).toBeFocused();
+  await expect(skipLink).toHaveCSS("top", "0px");
+  const focusedSkipBox = await skipLink.boundingBox();
+  expect(focusedSkipBox.y).toBeGreaterThanOrEqual(0);
+  await page.keyboard.press("Tab");
   const pipeline = page.locator("details.workflow-detail").filter({ hasText: "Alpha CI" });
   await pipeline.locator("summary").click();
   await expect(pipeline).toHaveAttribute("open", "");

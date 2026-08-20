@@ -27,8 +27,8 @@
 }
 
 ::selection { background: #fff; color: #080808; }
-.skip-link { position: fixed; z-index: 100; top: 0; left: 0; padding: .75rem 1rem; transform: translateY(-120%); background: #fff; color: #080808; font-size: .67rem; font-weight: 900; text-transform: uppercase; transition: transform 120ms steps(2, end); }
-.skip-link:focus { transform: translateY(0); }
+.skip-link { position: fixed; z-index: 100; top: -5rem; left: 0; padding: .75rem 1rem; background: #fff; color: #080808; font-size: .67rem; font-weight: 900; text-transform: uppercase; transition: top 120ms steps(2, end); }
+.skip-link:focus-visible { top: 0; }
 .dot { display: inline-block; width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: #727272; }
 .dot-green { background: #30d158; }
 .dot-red { background: #ff453a; }
