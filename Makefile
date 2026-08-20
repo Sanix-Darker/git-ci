@@ -252,7 +252,7 @@ docker-integration:
 	@echo "Running integration tests in Docker..."
 	@bash scripts/test-docker.sh integration
 
-## e2e-public: Exercise the static service and containment proxy in Docker
+## e2e-public: Exercise the authenticated service and Caddy edge in Docker
 e2e-public:
 	@bash scripts/e2e-public-surface.sh
 

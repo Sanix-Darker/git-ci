@@ -1,0 +1,26 @@
+[Unit]
+Description=git-ci CI/CD control service
+Documentation=https://github.com/sanix-darker/git-ci/blob/master/docs/SERVICE.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gci
+Group=gci
+EnvironmentFile=-/etc/gci/gci.env
+WorkingDirectory=/var/lib/gci
+ExecStart=/usr/local/bin/git-ci serve
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+StateDirectory=gci
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target
