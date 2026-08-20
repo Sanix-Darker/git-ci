@@ -157,14 +157,16 @@ func (m *Manager) EnqueueTriggered(ctx context.Context, workflowID, ref, commitS
 			})
 		}
 		jobs = append(jobs, store.EnqueueJob{
-			Key:            job.Key,
-			Name:           job.Name,
-			Runner:         job.RunnerHint,
-			Environment:    jobEnvironment,
-			DependencyKeys: dependencyJSON,
-			AllowFailure:   job.AllowFailure,
-			TimeoutMinutes: job.TimeoutMinutes,
-			Steps:          steps,
+			Key:             job.Key,
+			Name:            job.Name,
+			Runner:          job.RunnerHint,
+			EnvironmentName: job.EnvironmentName,
+			DeploymentTier:  job.DeploymentTier,
+			Environment:     jobEnvironment,
+			DependencyKeys:  dependencyJSON,
+			AllowFailure:    job.AllowFailure,
+			TimeoutMinutes:  job.TimeoutMinutes,
+			Steps:           steps,
 		})
 	}
 	run, err := m.store.EnqueueRun(ctx, store.EnqueueRunParams{
