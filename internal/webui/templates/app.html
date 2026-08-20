@@ -288,6 +288,10 @@
 {{end}}
 
 {{define "projects_panel"}}
+<section class="resource-head">
+  <div><p class="kicker">HOST REGISTRY</p><h2>VPS CHECKOUTS</h2><p>Approve a checkout once. Discovery only reads definitions; execution remains explicit.</p></div>
+  <span class="count-block"><b>{{len .ProjectViews}}</b> REGISTERED</span>
+</section>
 <section class="project-layout">
   <article class="surface-card">
     <div class="card-heading"><div><p class="kicker">APPROVED ROOTS</p><h2>DISCOVERED</h2></div><span>{{pad2 (len .Candidates)}}</span></div>
@@ -313,7 +317,18 @@
   </article>
   <article class="surface-card">
     <div class="card-heading"><div><p class="kicker">SQLITE REGISTRY</p><h2>ACTIVE</h2></div><span>{{pad2 (len .Projects)}}</span></div>
-    {{template "project_rows" .}}
+    <div class="resource-list project-rows">
+      {{range .ProjectViews}}
+      <details class="resource-card" id="project-{{.ID}}">
+        <summary><i class="dot {{.Dot}}"></i><span><strong>{{.Name}}</strong><small>{{.Slug}} / {{.CanonicalPath}}</small></span><span class="resource-stat"><b>{{.WorkflowCount}}</b> WORKFLOWS</span><span class="resource-open">OPEN</span></summary>
+        <div class="resource-body">
+          <div class="health-line"><i class="dot {{.Dot}}"></i><b>{{.Health}}</b><span>{{.HealthDetail}}</span></div>
+          <div class="resource-actions"><form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">SCAN WORKFLOWS</button></form></div>
+          <div class="project-workflows">{{range .Workflows}}<a href="/app/workflows#workflow-{{.ID}}"><span>{{.Name}}</span><small>{{.Provider}} / {{.JobCount}} JOBS</small></a>{{else}}<p class="empty-state">NO DEFINITIONS FOUND. SCAN AFTER ADDING A SUPPORTED WORKFLOW FILE.</p>{{end}}</div>
+        </div>
+      </details>
+      {{else}}<div class="empty-state"><i></i><p>NO PROJECTS REGISTERED</p></div>{{end}}
+    </div>
   </article>
 </section>
 {{end}}
@@ -330,6 +345,10 @@
 {{end}}
 
 {{define "workflows_panel"}}
+<section class="resource-head">
+  <div><p class="kicker">PIPELINE CATALOG</p><h2>WORKFLOWS BEFORE THEY RUN</h2><p>The visible graph and dispatch are built from the same normalized definition.</p></div>
+  <span class="count-block"><b>{{len .Workflows}}</b> DEFINITIONS</span>
+</section>
 <section class="action-strip">
   <div><p class="kicker">DISCOVERY</p><strong>READ PROVIDER FILES FROM REGISTERED CHECKOUTS</strong></div>
   <div class="action-strip-buttons">
@@ -340,18 +359,24 @@
     {{else}}<a href="/app/projects">REGISTER A PROJECT -></a>{{end}}
   </div>
 </section>
-<section class="workflow-grid">
+<section class="workflow-catalog">
   {{range .Workflows}}
-  <article class="workflow-card">
-    <header><span>{{upper .Provider}}</span><span>REV {{.Revision}}</span></header>
-    <div class="workflow-card-body">
-      <p class="kicker">{{upper .ProjectName}}</p><h2>{{.Name}}</h2><code>{{.File}}</code>
-      <dl><div><dt>JOBS</dt><dd>{{pad2 .JobCount}}</dd></div><div><dt>KEY</dt><dd>{{.Key}}</dd></div></dl>
+  <details class="workflow-detail" id="workflow-{{.ID}}">
+    <summary><span class="provider-block">{{upper .Provider}}</span><span><small>{{upper .ProjectName}} / REV {{.Revision}}</small><strong>{{.Name}}</strong><code>{{.File}}</code></span><span class="resource-stat"><b>{{.JobCount}}</b> JOBS</span><span class="resource-open">VIEW GRAPH</span></summary>
+    <div class="workflow-detail-body">
+      <div class="definition-facts"><div><span>KEY</span><code>{{.Key}}</code></div><div><span>TRIGGERS</span><p>{{range .Triggers}}<b class="definition-chip">{{upper .}}</b>{{else}}<b class="definition-chip">MANUAL</b>{{end}}</p></div><div><span>STAGES</span><p>{{range .Stages}}<b class="definition-chip">{{upper .}}</b>{{else}}<b class="definition-chip">DAG</b>{{end}}</p></div></div>
+      <div class="pipeline-graph workflow-graph" aria-label="Pipeline dependency graph">
+        {{range .GraphRows}}<section class="pipeline-stage"><header><span>LEVEL {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>READY</span></header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}</div></section>{{else}}<p class="empty-state">NO EXECUTABLE JOBS WERE NORMALIZED.</p>{{end}}
+      </div>
+      <div class="workflow-job-list">{{range .Jobs}}<article><header><span><b>{{.Name}}</b><small>{{if .Stage}}{{upper .Stage}}{{else}}DAG{{end}}{{if .Dependencies}} / NEEDS {{upper .Dependencies}}{{end}}</small></span><span>{{len .Steps}} STEPS</span></header>{{range .Steps}}<div class="workflow-step"><span>{{if .Action}}ACTION{{else}}RUN{{end}}</span><b>{{.Name}}</b><code>{{if .Command}}{{.Command}}{{else}}{{.Action}}{{end}}</code></div>{{end}}</article>{{end}}</div>
+      <form class="manual-dispatch" method="post" action="/app/workflows/{{.ID}}/runs" hx-post="/app/workflows/{{.ID}}/runs" hx-disabled-elt="button" hx-indicator="#global-indicator">
+        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+        <label><span>REF</span><input name="ref" value="{{.DefaultRef}}" autocomplete="off" required></label>
+        <label><span>COMMIT SHA <small>OPTIONAL PIN</small></span><input name="commitSha" placeholder="RESOLVE REF AT DISPATCH" autocomplete="off"></label>
+        <button type="submit"><i class="dot dot-green"></i> RUN WORKFLOW -></button>
+      </form>
     </div>
-    <form method="post" action="/app/workflows/{{.ID}}/runs" hx-post="/app/workflows/{{.ID}}/runs" hx-disabled-elt="button" hx-indicator="#global-indicator">
-      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">RUN NOW <span>-></span></button>
-    </form>
-  </article>
+  </details>
   {{else}}<div class="empty-state empty-state-bordered"><i></i><p>NO WORKFLOWS SYNCED. REGISTER A PROJECT, THEN SYNC ITS PROVIDER FILES.</p></div>{{end}}
 </section>
 {{end}}

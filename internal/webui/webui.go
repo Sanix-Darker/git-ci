@@ -30,6 +30,7 @@ type PageData struct {
 	Error              string
 	Notice             string
 	Projects           []store.Project
+	ProjectViews       []ProjectView
 	Candidates         []projects.Project
 	Workflows          []WorkflowView
 	Runs               []RunView
@@ -47,9 +48,30 @@ type PageData struct {
 	Telemetry          RunTelemetryView
 }
 
+type ProjectView struct {
+	ID, Name, Slug, CanonicalPath, Health, HealthDetail, Dot string
+	WorkflowCount                                            int
+	Workflows                                                []WorkflowView
+}
+
 type WorkflowView struct {
 	ID, ProjectID, ProjectName, Name, Key, Provider, File string
 	Revision, JobCount                                    int
+	DefaultRef                                            string
+	Triggers                                              []string
+	Stages                                                []string
+	Jobs                                                  []WorkflowJobView
+	GraphRows                                             []RunGraphRowView
+}
+
+type WorkflowJobView struct {
+	Key, Name, Stage, Runner, Dependencies string
+	AllowFailure                           bool
+	Steps                                  []WorkflowStepView
+}
+
+type WorkflowStepView struct {
+	Name, Command, Action string
 }
 
 type RunView struct {
