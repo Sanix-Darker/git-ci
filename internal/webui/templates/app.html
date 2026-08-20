@@ -324,6 +324,15 @@
         <div class="resource-body">
           <div class="health-line"><i class="dot {{.Dot}}"></i><b>{{.Health}}</b><span>{{.HealthDetail}}</span></div>
           <div class="resource-actions"><form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">SCAN WORKFLOWS</button></form></div>
+          <form class="commit-trigger" method="post" action="/app/projects/{{.ID}}/commit-trigger" hx-post="/app/projects/{{.ID}}/commit-trigger" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator">
+            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+            <header><span><i class="dot {{.CommitTrigger.Dot}}"></i><b>LOCAL COMMIT WATCH</b></span><strong>{{.CommitTrigger.Status}}</strong></header>
+            <label><span>BRANCH</span><input name="ref" value="{{.CommitTrigger.Ref}}" autocomplete="off" required></label>
+            <label class="commit-trigger-toggle"><input type="checkbox" name="enabled" value="true" {{if .CommitTrigger.Enabled}}checked{{end}}><span>TRIGGER PUSH-CAPABLE WORKFLOWS ON NEW LOCAL COMMITS</span></label>
+            <dl><div><dt>BASELINE</dt><dd>{{if .CommitTrigger.LastCommitSHA}}<code>{{short .CommitTrigger.LastCommitSHA}}</code>{{else}}NOT SET{{end}}</dd></div><div><dt>LAST CHECK</dt><dd>{{if .CommitTrigger.LastCheckedAt}}{{.CommitTrigger.LastCheckedAt}}{{else}}NEVER{{end}}</dd></div></dl>
+            {{if .CommitTrigger.LastError}}<p class="commit-trigger-error">{{.CommitTrigger.LastError}}</p>{{end}}
+            <button type="submit">SAVE COMMIT WATCH -></button>
+          </form>
           <div class="project-workflows">{{range .Workflows}}<a href="/app/workflows#workflow-{{.ID}}"><span>{{.Name}}</span><small>{{.Provider}} / {{.JobCount}} JOBS</small></a>{{else}}<p class="empty-state">NO DEFINITIONS FOUND. SCAN AFTER ADDING A SUPPORTED WORKFLOW FILE.</p>{{end}}</div>
         </div>
       </details>

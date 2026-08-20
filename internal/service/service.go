@@ -20,6 +20,7 @@ import (
 	"github.com/sanix-darker/git-ci/internal/scheduler"
 	"github.com/sanix-darker/git-ci/internal/secrets"
 	"github.com/sanix-darker/git-ci/internal/store"
+	"github.com/sanix-darker/git-ci/internal/triggers"
 	"github.com/sanix-darker/git-ci/internal/webhooks"
 )
 
@@ -42,6 +43,7 @@ type Service struct {
 	store          *store.Store
 	execution      *execution.Manager
 	scheduler      *scheduler.Manager
+	commitTriggers *triggers.Manager
 	handler        http.Handler
 	bootstrapToken string
 	closeOnce      sync.Once
@@ -99,17 +101,23 @@ func New(ctx context.Context, config Config) (*Service, error) {
 		_ = database.Close()
 		return nil, fmt.Errorf("service: webhook manager: %w", err)
 	}
+	commitTriggerManager, err := triggers.NewManager(database, executionManager)
+	if err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("service: commit trigger manager: %w", err)
+	}
 	handler, err := httpapi.New(httpapi.Config{
-		Auth:         manager,
-		Store:        database,
-		Projects:     registry,
-		StaticDir:    config.StaticDir,
-		Version:      config.Version,
-		MaxBodyBytes: config.MaxBodyBytes,
-		Execution:    executionManager,
-		Secrets:      secretManager,
-		Scheduler:    scheduleManager,
-		Webhooks:     webhookManager,
+		Auth:           manager,
+		Store:          database,
+		Projects:       registry,
+		StaticDir:      config.StaticDir,
+		Version:        config.Version,
+		MaxBodyBytes:   config.MaxBodyBytes,
+		Execution:      executionManager,
+		Secrets:        secretManager,
+		Scheduler:      scheduleManager,
+		Webhooks:       webhookManager,
+		CommitTriggers: commitTriggerManager,
 	})
 	if err != nil {
 		_ = database.Close()
@@ -120,6 +128,7 @@ func New(ctx context.Context, config Config) (*Service, error) {
 		store:          database,
 		execution:      executionManager,
 		scheduler:      scheduleManager,
+		commitTriggers: commitTriggerManager,
 		handler:        handler,
 		bootstrapToken: bootstrapToken,
 	}, nil
@@ -150,7 +159,7 @@ func (s *Service) Run(ctx context.Context) error {
 		MaxHeaderBytes:    1 << 20,
 	}
 	serveErrors := make(chan error, 1)
-	workerErrors := make(chan error, 2)
+	workerErrors := make(chan error, 3)
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	defer stopWorker()
 	go func() {
@@ -161,6 +170,9 @@ func (s *Service) Run(ctx context.Context) error {
 	}()
 	go func() {
 		workerErrors <- s.scheduler.Run(workerCtx)
+	}()
+	go func() {
+		workerErrors <- s.commitTriggers.Run(workerCtx)
 	}()
 
 	select {

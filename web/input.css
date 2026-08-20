@@ -781,6 +781,20 @@
 .project-workflows a { display: flex; justify-content: space-between; gap: 1rem; padding: 0.7rem; border: 1px solid #333; color: #eee; text-decoration: none; transition: transform 120ms steps(2, end); }
 .project-workflows a:hover, .project-workflows a:focus-visible { border-color: #eee; transform: translateX(3px); }
 .project-workflows small { color: #888; }
+.commit-trigger { display: grid; grid-template-columns: minmax(10rem, 0.55fr) minmax(15rem, 1fr) auto; gap: 0.65rem; align-items: end; margin-top: 0.65rem; padding: 0.75rem; border: 1px solid #444; background: #070707; }
+.commit-trigger header { grid-column: 1 / -1; display: flex; justify-content: space-between; padding-bottom: 0.55rem; border-bottom: 1px solid #333; }
+.commit-trigger header span { display: flex; align-items: center; gap: 0.45rem; }
+.commit-trigger header strong { color: #aaa; font-size: 0.62rem; }
+.commit-trigger label > span { display: block; margin-bottom: 0.35rem; color: #999; font-size: 0.58rem; }
+.commit-trigger input[type="text"], .commit-trigger input[name="ref"] { width: 100%; border: 1px solid #555; background: #111; color: #eee; padding: 0.65rem; font: inherit; }
+.commit-trigger-toggle { display: flex; align-items: center; gap: 0.55rem; min-height: 2.5rem; padding: 0.55rem; border: 1px solid #333; }
+.commit-trigger-toggle > span { margin: 0 !important; }
+.commit-trigger-toggle input { accent-color: #ddd; }
+.commit-trigger dl { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; margin: 0; }
+.commit-trigger dl > div { padding: 0.55rem; border: 1px solid #2e2e2e; }
+.commit-trigger dt { color: #777; font-size: 0.55rem; }
+.commit-trigger dd { margin: 0.25rem 0 0; color: #bbb; font-size: 0.62rem; }
+.commit-trigger-error { grid-column: 1 / -1; margin: 0; padding: 0.55rem; border: 1px solid #a33; color: #e06d6d; }
 .provider-block { min-width: 4.5rem; padding: 0.55rem; border: 1px solid #555; text-align: center; font-size: 0.6rem; }
 .definition-facts { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; }
 .definition-facts > div { min-width: 0; padding: 0.65rem; border: 1px solid #333; }
@@ -806,6 +820,9 @@
   .resource-card > summary, .workflow-detail > summary { grid-template-columns: auto minmax(0, 1fr); }
   .resource-stat, .resource-open { grid-column: 2; justify-self: start; text-align: left; }
   .definition-facts, .manual-dispatch { grid-template-columns: 1fr; }
+  .commit-trigger { grid-template-columns: 1fr; }
+  .commit-trigger header, .commit-trigger dl, .commit-trigger-error { grid-column: 1; }
+  .commit-trigger dl { grid-template-columns: 1fr; }
   .workflow-step { grid-template-columns: 3.5rem minmax(0, 1fr); }
   .workflow-step code { grid-column: 1 / -1; white-space: normal; }
 }
