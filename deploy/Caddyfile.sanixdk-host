@@ -1,4 +1,4 @@
-# Shared-host-ready containment snippet for gci.sanixdk.xyz.
+# Shared-host-ready service snippet for gci.sanixdk.xyz.
 # Copy this block into your host's /etc/caddy/Caddyfile and reload Caddy.
 # Keep this block above any sanixdk.xyz catch-all route.
 gci.sanixdk.xyz {
@@ -13,21 +13,7 @@ gci.sanixdk.xyz {
         -Server
     }
 
-    @privileged path /api /api/* /app /app/*
-    respond @privileged 404
-
-    handle /health {
-        rewrite * /healthz
-        reverse_proxy 127.0.0.1:8087
-    }
-
-    handle /healthz {
-        reverse_proxy 127.0.0.1:8087
-    }
-
-    handle {
-        reverse_proxy 127.0.0.1:8087
-    }
+    reverse_proxy 127.0.0.1:8087
 }
 
 git-ci.sanixdk.xyz, www.gci.sanixdk.xyz, www.git-ci.sanixdk.xyz {

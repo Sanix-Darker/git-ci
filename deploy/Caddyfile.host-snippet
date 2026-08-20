@@ -1,4 +1,4 @@
-# Snippet for a shared host Caddyfile (e.g. same machine as s2c).
+# Snippet for a shared host Caddyfile.
 # Replace `gci.example.com` with the real domain.
 # Keep this as a snippet and paste it inside the host's main /etc/caddy/Caddyfile.
 
@@ -8,22 +8,7 @@ gci.example.com {
     # - If this host already manages public ACME certs, remove `tls internal`.
     tls internal
 
-    @privileged path /api /api/* /app /app/*
-    respond @privileged 404
-
-    handle /health {
-        rewrite * /healthz
-        reverse_proxy 127.0.0.1:8087
-    }
-
-    handle /healthz {
-        reverse_proxy 127.0.0.1:8087
-    }
-
-    # Route public site traffic through the local service at 127.0.0.1:8087.
-    handle {
-        reverse_proxy 127.0.0.1:8087
-    }
+    reverse_proxy 127.0.0.1:8087
 }
 
 # Optional: keep canonical host, if DNS points to both hostnames.

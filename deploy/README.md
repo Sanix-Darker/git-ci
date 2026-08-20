@@ -1,121 +1,86 @@
-# git-ci web deployment
+# git-ci service deployment
 
-This folder contains sample deployment configuration for the `git-ci` web landing page (`site/`).
-All files are deployment *examples* only. Replace placeholder values locally before deploying.
+These examples run the authenticated `git-ci serve` control plane. The landing
+page, operator console, API, scheduler, worker, and SQLite persistence all come
+from the same binary.
 
-## Files
+The service intentionally rejects public listen addresses. Keep it on
+`127.0.0.1:8087` and terminate HTTPS with a trusted reverse proxy.
 
-- `docker-compose.yml` – containerized deployment using a dedicated static web service + Caddy.
-- `Dockerfile` – builds a small static image for `site/` using `caddy file-server`.
-- `Caddyfile` – production compose variant (reverse-proxies to `git-ci-site:8087`).
-- `Caddyfile.example` – local/systemd variant example (reverse-proxies to `127.0.0.1:8087`).
-- `git-ci-site.service` – bare-metal/systemd sample service for the static site.
-- `.env.example` – optional local override for the compose image name.
-- `/healthz` and `/health` probe the real upstream static service.
-- `/api`, `/api/*`, `/app`, and `/app/*` return `404` during the containment phase.
+## Bare-metal systemd
 
-## Option A: Docker Compose (recommended on a fresh host)
+This is the recommended VPS topology because it has one application process and
+one state directory.
+
+```bash
+sudo useradd --system --home-dir /var/lib/gci --shell /usr/sbin/nologin gci
+sudo install -d -o gci -g gci -m 0700 /var/lib/gci
+sudo install -d -m 0755 /etc/gci
+sudo install -m 0755 git-ci /usr/local/bin/git-ci
+sudo install -m 0644 deploy/git-ci.service /etc/systemd/system/git-ci.service
+sudo install -m 0600 deploy/git-ci.env.example /etc/gci/gci.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now git-ci
+```
+
+Edit `/etc/gci/gci.env` first. Every `GIT_CI_PROJECTS_ROOT` path is an allowlist
+boundary for projects selectable in the console. Give the `gci` user read access
+to source repositories and the deployment permissions required by trusted jobs.
+
+Install `Caddyfile.example` as a host block or merge
+`Caddyfile.host-snippet` into an existing Caddy configuration. Do not publish
+port `8087` through a firewall.
+
+```bash
+curl -fsS http://127.0.0.1:8087/healthz
+sudo cat /var/lib/gci/admin.token
+```
+
+The bootstrap token is printed only on first startup and remains in the
+mode-`0600` token file.
+
+## Docker Compose
+
+Compose builds the binary image, persists `/var/lib/gci`, and mounts a host
+project root at `/projects` read-only. On a Linux VPS, both containers use host
+networking: git-ci remains on loopback while Caddy owns ports `80/443`. The two
+processes can restart independently without publishing the service port.
 
 ```bash
 cd deploy
-cp .env.example .env   # optional, if you want to pin image name
+cp .env.example .env
+# Edit GCI_ADDRESS and GCI_HOST_PROJECTS_ROOT.
 docker compose up -d --build
+docker compose exec git-ci cat /var/lib/gci/admin.token
 ```
 
-By default this exposes HTTPS on ports `80/443` via Caddy and serves `site/` through
-`git-ci-site:8087`.
+The minimal image contains `bash`, `git`, and CA certificates. Prefer the
+bare-metal binary or build a derived image when workflows require additional
+toolchains. Mounting `/var/run/docker.sock` grants host-level control and is not
+part of this safe default.
 
-Before going online:
+This Compose file targets Linux hosts. Docker Desktop's host-network behavior is
+different; use the native binary deployment there instead.
 
-1. Set `GCI_SITE_ADDRESS` or edit `deploy/Caddyfile` and replace `gci.example.com` with your real domain.
-2. Ensure DNS points to this host and port 80/443 are reachable.
-3. Confirm:
-   ```bash
-   curl -I http://127.0.0.1
-   curl -kI https://127.0.0.1
-   ```
-4. Check in browser using the real domain.
+## Production host
 
-5. Keep public route and health probe in sync:
-   - DNS/edge should point this domain to the target host running this deployment.
-   - If your origin is proxied (Cloudflare), ensure origin TLS mode and certificate strategy match your Caddy setup.
-   - Quick probe:
-     ```bash
-     curl -s -I https://gci.example.com/healthz
-     ```
+`Caddyfile.sanixdk-host` is the concrete shared-host block for
+`gci.sanixdk.xyz`. It proxies the entire service, including authenticated
+`/app` and `/api/v1`; the application enforces access control and CSRF.
+`git-ci.sanixdk.xyz` remains a canonical redirect only.
 
-You should see:
-
-```
-HTTP/2 200
-```
-
-## Option B: Bare-metal with systemd + existing Caddy
-
-Use when you already have a shared host Caddy and only want this service on localhost.
-
-1. Copy and edit the service file:
-   ```bash
-   sudo cp deploy/git-ci-site.service /etc/systemd/system/git-ci-site.service
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now git-ci-site
-   ```
-2. Build/install the site from this repo under `/opt/git-ci` (or adjust `WorkingDirectory`/`GIT_CI_SITE_ROOT`).
-3. Add a local reverse-proxy block for this site:
-   - map `gci.example.com` to `127.0.0.1:8087`
-   - keep `/healthz` routed to the upstream (copy from `Caddyfile.example`)
-   - if you already have a shared host Caddyfile, you can copy `Caddyfile.host-snippet`
-     and paste it there.
-4. Validate:
-   ```bash
-   systemctl is-active git-ci-site
-   curl -fsS http://127.0.0.1:8087/ >/dev/null
-   ```
-
-### Quick 525 troubleshooting
-
-Cloudflare `525` usually means origin TLS/HTTPS handshake failure.
-
-From the server (or another host inside your network), run:
+## Verification
 
 ```bash
-openssl s_client -connect <origin-ip>:443 -servername git-ci.example.com < /dev/null
+systemctl is-active git-ci
+curl -fsS http://127.0.0.1:8087/healthz
+curl -fsS https://gci.example.com/healthz
+curl -o /dev/null -sS -w '%{http_code}\n' https://gci.example.com/api/v1
 ```
 
-If the output includes `no peer certificate available`, the host Caddy config is
-missing a matching TLS cert for that hostname or is not matching it on that host
-block.
+The last request must return `401` without credentials. Run
+`make e2e-public` to exercise the binary plus Caddy topology in Docker.
 
-For this project on `gci.sanixdk.xyz`, the quickest fix is to add the concrete
-block from `deploy/Caddyfile.sanixdk-host` to your shared host `/etc/caddy/Caddyfile`
-and reload Caddy:
-
-```bash
-scp deploy/Caddyfile.sanixdk-host root@178.105.18.9:/etc/caddy/git-ci-host-snippet
-ssh root@178.105.18.9 "printf '\nimport /etc/caddy/git-ci-host-snippet\n' >> /etc/caddy/Caddyfile && caddy reload --config /etc/caddy/Caddyfile"
-```
-
-Then verify on origin and edge:
-
-```bash
-openssl s_client -connect 178.105.18.9:443 -servername gci.sanixdk.xyz < /dev/null
-curl -ksI https://gci.sanixdk.xyz/healthz
-```
-
-You should see a certificate presented and `HTTP/2 200` for `/healthz`.
-
-## Containment E2E
-
-Run the real static-service and edge-proxy topology in Docker, then verify the
-public and denied route contracts:
-
-```bash
-make e2e-public
-```
-
-Add the block from `deploy/Caddyfile.host-snippet` (or `deploy/Caddyfile.sanixdk-host` for this host) and reload/restart Caddy.
-
-## Safety / hygiene
-
-- This repo is public. Do not store credentials, API keys, tokens, real host credentials, or TLS material here.
-- Use `Caddyfile.example` only as a template; keep real values local when deploying.
+Operational backup, restore, upgrade, and failure procedures are in
+[`docs/SERVICE.md`](../docs/SERVICE.md). API examples are in
+[`docs/API_V1.md`](../docs/API_V1.md).

@@ -1,10 +1,10 @@
-# Docker Compose deployment variant.
-# For production, replace `gci.example.com` with your domain.
+# Linux VPS Docker Compose deployment. Both containers use host networking;
+# git-ci remains on loopback while Caddy owns the public HTTP(S) ports.
 {
     email security@example.com
 }
 
-{$GCI_SITE_ADDRESS:gci.example.com} {
+{$GCI_ADDRESS:gci.example.com} {
     encode zstd gzip
 
     header {
@@ -16,19 +16,5 @@
         -Server
     }
 
-    @privileged path /api /api/* /app /app/*
-    respond @privileged 404
-
-    handle /health {
-        rewrite * /healthz
-        reverse_proxy {$GCI_UPSTREAM:git-ci-site:8087}
-    }
-
-    handle /healthz {
-        reverse_proxy {$GCI_UPSTREAM:git-ci-site:8087}
-    }
-
-    handle {
-        reverse_proxy {$GCI_UPSTREAM:git-ci-site:8087}
-    }
+    reverse_proxy {$GCI_UPSTREAM:127.0.0.1:8087}
 }

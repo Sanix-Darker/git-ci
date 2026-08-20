@@ -1,29 +1,46 @@
 services:
-  git-ci-site:
+  git-ci:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    image: ${GIT_CI_SITE_IMAGE:-git-ci-site:local}
+      args:
+        VERSION: ${GCI_VERSION:-dev}
+        COMMIT: ${GCI_COMMIT:-unknown}
+        BUILD_TIME: ${GCI_BUILD_TIME:-unknown}
+        BRANCH: ${GCI_BRANCH:-unknown}
+    image: ${GCI_IMAGE:-git-ci:local}
     restart: unless-stopped
-    expose:
-      - "8087"
+    network_mode: host
+    environment:
+      GIT_CI_LISTEN: 127.0.0.1:8087
+      GIT_CI_STATE_DIR: /var/lib/gci
+      GIT_CI_PROJECTS_ROOT: /projects
+    volumes:
+      - gci_state:/var/lib/gci
+      - ${GCI_HOST_PROJECTS_ROOT:-/srv}:/projects:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8087/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
   caddy:
     image: caddy:2-alpine
     depends_on:
-      - git-ci-site
-    ports:
-      - "80:80"
-      - "443:443"
+      git-ci:
+        condition: service_healthy
+    network_mode: host
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:
-      GCI_SITE_ADDRESS: ${GCI_SITE_ADDRESS:-gci.example.com}
-      GCI_UPSTREAM: git-ci-site:8087
+      GCI_ADDRESS: ${GCI_ADDRESS:-gci.example.com}
+      GCI_UPSTREAM: 127.0.0.1:8087
     restart: unless-stopped
 
 volumes:
+  gci_state:
   caddy_data:
   caddy_config:
