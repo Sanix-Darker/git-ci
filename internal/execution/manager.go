@@ -246,6 +246,36 @@ func (m *Manager) EnqueueDeploymentRollback(ctx context.Context, params store.En
 	return run, nil
 }
 
+func (m *Manager) EnqueueRunReplay(ctx context.Context, params store.EnqueueReplayParams) (store.Run, error) {
+	if strings.TrimSpace(params.Actor) != "" && strings.TrimSpace(params.IdempotencyKey) != "" {
+		if _, err := m.store.GetRunLineageByIdempotency(ctx, params.Actor, params.IdempotencyKey); err == nil {
+			return m.store.EnqueueRunReplay(ctx, params)
+		} else {
+			var notFound *store.ErrNotFound
+			if !errors.As(err, &notFound) {
+				return store.Run{}, err
+			}
+		}
+	}
+	source, err := m.store.GetReplaySourceRun(ctx, params)
+	if err != nil {
+		return store.Run{}, err
+	}
+	if source.CommitSHA == nil {
+		return store.Run{}, &store.ErrReplayEligibility{Code: "source_commit_missing", Message: "replay source has no pinned commit"}
+	}
+	resolved, err := resolveGitCommit(ctx, source.SourcePath, "", *source.CommitSHA)
+	if err != nil || resolved != *source.CommitSHA {
+		return store.Run{}, &store.ErrReplayEligibility{Code: "source_commit_unavailable", Message: "replay source commit is unavailable in the registered repository"}
+	}
+	run, err := m.store.EnqueueRunReplay(ctx, params)
+	if err != nil {
+		return store.Run{}, err
+	}
+	m.Notify()
+	return run, nil
+}
+
 func uniqueStrings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	result := make([]string, 0, len(values))

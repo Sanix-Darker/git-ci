@@ -179,7 +179,7 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 		}
 	}
 	if selectedRunID != "" {
-		detail, err := a.runDetail(ctx, selectedRunID, projectNames, workflowNames)
+		detail, err := a.runDetail(ctx, selectedRunID, projectNames, workflowNames, data.CSRFToken)
 		if err != nil {
 			return err
 		}
@@ -188,7 +188,7 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 	return nil
 }
 
-func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflowNames map[string]string) (webui.RunDetailView, error) {
+func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflowNames map[string]string, csrfToken string) (webui.RunDetailView, error) {
 	graph, err := a.store.GetRunGraph(ctx, runID)
 	if err != nil {
 		return webui.RunDetailView{}, err
@@ -198,16 +198,32 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 		Terminal: terminalStatus(graph.Run.Status),
 	}
 	for _, item := range graph.Jobs {
+		jobEligibility, err := a.store.EvaluateJobReplay(ctx, item.Job.ID)
+		if err != nil {
+			return webui.RunDetailView{}, err
+		}
+		jobReplay, err := replayControl(store.RunLineageJobReplay, item.Job.ID, runID, csrfToken, jobEligibility.Eligible, jobEligibility.Message)
+		if err != nil {
+			return webui.RunDetailView{}, err
+		}
 		job := webui.RunJobView{
 			ID: item.Job.ID, Key: stringValue(item.Job.Key), Name: item.Job.Name,
 			Status: strings.ToUpper(string(item.Job.Status)), Dot: statusDot(item.Job.Status),
 			Runner: stringValue(item.Job.Runner), Dependencies: strings.Join(decodeDependencies(item.Job.DependencyKeys), ", "),
-			AllowFailure: item.Job.AllowFailure,
+			AllowFailure: item.Job.AllowFailure, Replay: jobReplay,
 		}
 		for _, step := range item.Steps {
+			stepEligibility, err := a.store.EvaluateStepReplay(ctx, step.ID)
+			if err != nil {
+				return webui.RunDetailView{}, err
+			}
+			stepReplay, err := replayControl(store.RunLineageStepReplay, step.ID, runID, csrfToken, stepEligibility.Eligible, stepEligibility.Message)
+			if err != nil {
+				return webui.RunDetailView{}, err
+			}
 			view := webui.RunStepView{
 				ID: step.ID, RunID: runID, Name: step.Name, Status: strings.ToUpper(string(step.Status)),
-				Dot: statusDot(step.Status), Command: stringValue(step.Command), Terminal: detail.Terminal,
+				Dot: statusDot(step.Status), Command: stringValue(step.Command), Terminal: detail.Terminal, Replay: stepReplay,
 			}
 			job.Steps = append(job.Steps, view)
 		}
@@ -216,6 +232,24 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 	}
 	detail.GraphRows = buildGraphRows(detail.Jobs)
 	return detail, nil
+}
+
+func replayControl(kind store.RunLineageKind, sourceID, runID, csrfToken string, enabled bool, hint string) (webui.ReplayControlView, error) {
+	control := webui.ReplayControlView{CSRFToken: csrfToken, SourceRunID: runID, Enabled: enabled, Hint: hint}
+	if kind == store.RunLineageJobReplay {
+		control.Action, control.Label = "/app/jobs/"+sourceID+"/replay", "PLAY JOB"
+	} else {
+		control.Action, control.Label = "/app/steps/"+sourceID+"/replay", "PLAY STEP"
+	}
+	if !enabled {
+		return control, nil
+	}
+	key, err := newReplayIdempotencyKey(kind)
+	if err != nil {
+		return webui.ReplayControlView{}, err
+	}
+	control.IdempotencyKey = key
+	return control, nil
 }
 
 func runView(run store.Run, projectName string, workflowNames map[string]string) webui.RunView {

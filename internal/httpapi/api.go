@@ -134,6 +134,8 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /app/environment-secrets/{secret}/delete", a.requireWebAuth(http.HandlerFunc(a.handleDeleteEnvironmentSecretWeb)))
 	mux.Handle("POST /app/approvals/{approval}/decision", a.requireWebAuth(http.HandlerFunc(a.handleApprovalDecisionWeb)))
 	mux.Handle("POST /app/deployments/{deployment}/rollback", a.requireWebAuth(http.HandlerFunc(a.handleDeploymentRollbackWeb)))
+	mux.Handle("POST /app/jobs/{job}/replay", a.requireWebAuth(http.HandlerFunc(a.handleJobReplayWeb)))
+	mux.Handle("POST /app/steps/{step}/replay", a.requireWebAuth(http.HandlerFunc(a.handleStepReplayWeb)))
 	mux.HandleFunc("POST /api/v1/session/login", a.handleLogin)
 	mux.Handle("GET /api/v1", a.requireAuth(http.HandlerFunc(a.handleAPIRoot)))
 	mux.Handle("GET /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleSession)))
@@ -165,6 +167,10 @@ func (a *API) routes() http.Handler {
 	mux.Handle("PATCH /api/v1/deployments/{deployment}", a.requireAuth(http.HandlerFunc(a.handleDeployment)))
 	mux.Handle("GET /api/v1/deployments/{deployment}/rollback-options", a.requireAuth(http.HandlerFunc(a.handleDeploymentRollbackOptions)))
 	mux.Handle("POST /api/v1/deployments/{deployment}/rollback", a.requireAuth(http.HandlerFunc(a.handleDeploymentRollback)))
+	mux.Handle("GET /api/v1/jobs/{job}/replay-options", a.requireAuth(http.HandlerFunc(a.handleJobReplayOptions)))
+	mux.Handle("POST /api/v1/jobs/{job}/replay", a.requireAuth(http.HandlerFunc(a.handleJobReplay)))
+	mux.Handle("GET /api/v1/steps/{step}/replay-options", a.requireAuth(http.HandlerFunc(a.handleStepReplayOptions)))
+	mux.Handle("POST /api/v1/steps/{step}/replay", a.requireAuth(http.HandlerFunc(a.handleStepReplay)))
 	mux.Handle("GET /api/v1/projects/{project}/environments", a.requireAuth(http.HandlerFunc(a.handleProjectEnvironments)))
 	mux.Handle("POST /api/v1/projects/{project}/environments", a.requireAuth(http.HandlerFunc(a.handleProjectEnvironments)))
 	mux.Handle("GET /api/v1/environments/{environment}", a.requireAuth(http.HandlerFunc(a.handleEnvironment)))
@@ -225,7 +231,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "audit"},
+		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
 	})
 }
 

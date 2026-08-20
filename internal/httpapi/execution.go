@@ -109,6 +109,7 @@ func (a *API) writeStoreError(writer http.ResponseWriter, err error, message str
 	var notFound *store.ErrNotFound
 	var conflict *store.ErrConflict
 	var rollback *store.ErrRollbackEligibility
+	var replay *store.ErrReplayEligibility
 	switch {
 	case errors.As(err, &notFound):
 		writeError(writer, http.StatusNotFound, "not_found", message)
@@ -116,6 +117,8 @@ func (a *API) writeStoreError(writer http.ResponseWriter, err error, message str
 		writeError(writer, http.StatusConflict, "conflict", message)
 	case errors.As(err, &rollback):
 		writeError(writer, http.StatusUnprocessableEntity, rollback.Code, rollback.Message)
+	case errors.As(err, &replay):
+		writeError(writer, http.StatusUnprocessableEntity, replay.Code, replay.Message)
 	default:
 		writeError(writer, http.StatusUnprocessableEntity, "execution_failed", message)
 	}

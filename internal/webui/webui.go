@@ -76,11 +76,18 @@ type RunJobView struct {
 	AllowFailure                                     bool
 	DependencyKeys                                   []string
 	Steps                                            []RunStepView
+	Replay                                           ReplayControlView
 }
 
 type RunStepView struct {
 	ID, RunID, Name, Status, Dot, Command string
 	Terminal                              bool
+	Replay                                ReplayControlView
+}
+
+type ReplayControlView struct {
+	Action, CSRFToken, IdempotencyKey, SourceRunID, Label, Hint string
+	Enabled                                                     bool
 }
 
 type LogView struct {

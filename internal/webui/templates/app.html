@@ -126,6 +126,13 @@
 </form>{{else if .Terminal}}<p class="rollback-unavailable">{{upper .RollbackHint}}</p>{{end}}
 {{end}}
 
+{{define "play_control"}}
+{{if .Enabled}}<form class="play-control" method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+  <input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="idempotencyKey" value="{{.IdempotencyKey}}"><input type="hidden" name="sourceRunId" value="{{.SourceRunID}}">
+  <button type="submit" aria-label="{{.Label}}" title="{{upper .Hint}}"><span>&gt;</span></button>
+</form>{{else}}<span class="play-control is-disabled"><button type="button" aria-label="{{.Label}}" title="{{upper .Hint}}" disabled><span>&gt;</span></button></span>{{end}}
+{{end}}
+
 {{define "deployments_panel"}}
 <section class="delivery-stack">
   <section class="surface-card approval-surface">
@@ -382,16 +389,16 @@
   </header>
   <dl class="run-facts"><div><dt>PROJECT</dt><dd>{{.Run.ProjectName}}</dd></div><div><dt>REF</dt><dd>{{.Run.Ref}}</dd></div><div><dt>COMMIT</dt><dd>{{if .Run.CommitSHA}}{{short .Run.CommitSHA}}{{else}}LOCAL{{end}}</dd></div><div><dt>CREATED</dt><dd>{{.Run.CreatedAt}}</dd></div></dl>
   <div class="pipeline-graph" aria-label="Pipeline dependency graph">
-    {{range .GraphRows}}<section class="pipeline-stage"><header><span>STAGE {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><i class="dot {{.Dot}}"></i><span>{{.Status}}</span></header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}</div></section>{{end}}
+    {{range .GraphRows}}<section class="pipeline-stage"><header><span>STAGE {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>{{.Status}}</span>{{template "play_control" .Replay}}</header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}</div></section>{{end}}
   </div>
   <div class="job-details">
     {{range .Jobs}}
     <article class="job-detail">
-      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3></div><div>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowFailure}} / ALLOW FAILURE{{end}}</div></header>
+      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3></div><div class="job-meta"><span>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowFailure}} / ALLOW FAILURE{{end}}</span>{{template "play_control" .Replay}}</div></header>
       <div class="step-list">
         {{range .Steps}}
         <section class="step-detail">
-          <header><span><i class="dot {{.Dot}}"></i>{{.Name}}</span><b>{{.Status}}</b></header>
+          <header><span><i class="dot {{.Dot}}"></i>{{.Name}}</span><span class="step-actions"><b>{{.Status}}</b>{{template "play_control" .Replay}}</span></header>
           {{if .Command}}<code class="step-command">$ {{.Command}}</code>{{end}}
           <div class="log-console log-console-lazy" aria-label="Logs for {{.Name}}" aria-busy="true" hx-get="/app/runs/{{.RunID}}/steps/{{.ID}}/logs" hx-trigger="revealed" hx-swap="outerHTML">
             <div class="log-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
