@@ -474,13 +474,15 @@ func (p *GitlabParser) convertToPipeline(ci *GitlabCI) *types.Pipeline {
 	}
 
 	// Set global defaults
-	var globalImage string
+	var globalImage interface{}
+	var globalServices []interface{}
 	var globalBeforeScript []string
 	var globalAfterScript []string
 
 	if ci.Image != nil {
-		globalImage = p.parseImage(ci.Image)
+		globalImage = ci.Image
 	}
+	globalServices = ci.Services
 
 	if ci.BeforeScript != nil {
 		globalBeforeScript = p.convertScriptToStrings(ci.BeforeScript)
@@ -493,7 +495,10 @@ func (p *GitlabParser) convertToPipeline(ci *GitlabCI) *types.Pipeline {
 	// Apply defaults if specified
 	if ci.Default != nil {
 		if ci.Default.Image != nil {
-			globalImage = p.parseImage(ci.Default.Image)
+			globalImage = ci.Default.Image
+		}
+		if ci.Default.Services != nil {
+			globalServices = ci.Default.Services
 		}
 		if ci.Default.BeforeScript != nil {
 			globalBeforeScript = p.convertScriptToStrings(ci.Default.BeforeScript)
@@ -505,7 +510,7 @@ func (p *GitlabParser) convertToPipeline(ci *GitlabCI) *types.Pipeline {
 
 	// Process jobs
 	for jobName, glJob := range ci.Jobs {
-		job := p.convertJob(jobName, glJob, globalImage, globalBeforeScript, globalAfterScript)
+		job := p.convertJob(jobName, glJob, globalImage, globalServices, globalBeforeScript, globalAfterScript)
 		pipeline.Jobs[jobName] = job
 	}
 
@@ -521,7 +526,8 @@ func (p *GitlabParser) convertToPipeline(ci *GitlabCI) *types.Pipeline {
 func (p *GitlabParser) convertJob(
 	jobName string,
 	glJob *GitlabJob,
-	globalImage string,
+	globalImage interface{},
+	globalServices []interface{},
 	globalBeforeScript []string,
 	globalAfterScript []string,
 ) *types.Job {
@@ -540,12 +546,13 @@ func (p *GitlabParser) convertJob(
 	}
 
 	// Set image/runs-on
-	if glJob.Image != nil {
-		job.Image = p.parseImage(glJob.Image)
+	imageConfig := glJob.Image
+	if imageConfig == nil {
+		imageConfig = globalImage
+	}
+	if imageConfig != nil {
+		job.Image = p.parseImage(imageConfig)
 		job.RunsOn = job.Image
-	} else if globalImage != "" {
-		job.Image = globalImage
-		job.RunsOn = globalImage
 	} else if len(glJob.Tags) > 0 {
 		job.RunsOn = glJob.Tags[0]
 	} else {
@@ -553,14 +560,14 @@ func (p *GitlabParser) convertJob(
 	}
 
 	// Parse container configuration
-	if glJob.Image != nil || glJob.Services != nil {
-		job.Container = &types.Container{
-			Image: job.Image,
-		}
-
-		// Add services
-		if glJob.Services != nil {
-			job.Services = p.convertServices(glJob.Services)
+	effectiveServices := glJob.Services
+	if len(effectiveServices) == 0 {
+		effectiveServices = globalServices
+	}
+	if imageConfig != nil || len(effectiveServices) > 0 {
+		job.Container = p.convertImageContainer(imageConfig)
+		if len(effectiveServices) > 0 {
+			job.Services = p.convertServices(effectiveServices)
 		}
 	}
 
@@ -772,14 +779,16 @@ func (p *GitlabParser) convertServices(services []interface{}) map[string]*types
 			}
 		case map[string]interface{}:
 			svc := &types.Service{}
-			if name, ok := v["name"].(string); ok {
-				serviceName = name
-			}
-			if image, ok := v["image"].(string); ok {
+			if image, ok := v["name"].(string); ok {
+				svc.Image = image
+			} else if image, ok := v["image"].(string); ok {
 				svc.Image = image
 			}
 			if alias, ok := v["alias"].(string); ok {
 				svc.Alias = alias
+				if fields := strings.Fields(strings.ReplaceAll(alias, ",", " ")); len(fields) > 0 {
+					serviceName = fields[0]
+				}
 			}
 			if command, ok := v["command"].([]interface{}); ok {
 				svc.Command = p.parseStringArray(command)
@@ -792,6 +801,23 @@ func (p *GitlabParser) convertServices(services []interface{}) map[string]*types
 	}
 
 	return result
+}
+
+func (p *GitlabParser) convertImageContainer(data interface{}) *types.Container {
+	container := &types.Container{Image: p.parseImage(data)}
+	configuration, ok := data.(map[string]interface{})
+	if !ok {
+		return container
+	}
+	if entrypoint, ok := configuration["entrypoint"].([]interface{}); ok {
+		container.Entrypoint = p.parseStringArray(entrypoint)
+	}
+	if docker, ok := configuration["docker"].(map[string]interface{}); ok {
+		if user, ok := docker["user"].(string); ok {
+			container.User = user
+		}
+	}
+	return container
 }
 
 func (p *GitlabParser) parseImage(data interface{}) string {

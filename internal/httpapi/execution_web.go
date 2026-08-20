@@ -255,28 +255,39 @@ type workflowDefinitionDocument struct {
 }
 
 type workflowDefinitionJobDocument struct {
-	Key           string                           `json:"key"`
-	SourceKey     string                           `json:"sourceKey"`
-	Name          string                           `json:"name"`
-	Stage         string                           `json:"stage"`
-	RunnerHint    string                           `json:"runnerHint"`
-	Needs         []string                         `json:"needs"`
-	Requires      []string                         `json:"requires"`
-	AllowFailure  bool                             `json:"allowFailure"`
-	Matrix        map[string]string                `json:"matrix"`
-	MatrixIndex   int                              `json:"matrixIndex"`
-	MatrixTotal   int                              `json:"matrixTotal"`
-	MatrixLabel   string                           `json:"matrixLabel"`
-	Condition     conditionDocument                `json:"condition"`
-	Rules         []json.RawMessage                `json:"rules"`
-	When          string                           `json:"when"`
-	Concurrency   *concurrencyDocument             `json:"concurrency"`
-	Interruptible bool                             `json:"interruptible"`
-	FailFast      bool                             `json:"failFast"`
-	MaxParallel   int                              `json:"maxParallel"`
-	Artifacts     *artifactDefinitionDocument      `json:"artifacts"`
-	Cache         *cacheDefinitionDocument         `json:"cache"`
-	Steps         []workflowDefinitionStepDocument `json:"steps"`
+	Key           string                               `json:"key"`
+	SourceKey     string                               `json:"sourceKey"`
+	Name          string                               `json:"name"`
+	Stage         string                               `json:"stage"`
+	RunnerHint    string                               `json:"runnerHint"`
+	Needs         []string                             `json:"needs"`
+	Requires      []string                             `json:"requires"`
+	AllowFailure  bool                                 `json:"allowFailure"`
+	Matrix        map[string]string                    `json:"matrix"`
+	MatrixIndex   int                                  `json:"matrixIndex"`
+	MatrixTotal   int                                  `json:"matrixTotal"`
+	MatrixLabel   string                               `json:"matrixLabel"`
+	Condition     conditionDocument                    `json:"condition"`
+	Rules         []json.RawMessage                    `json:"rules"`
+	When          string                               `json:"when"`
+	Concurrency   *concurrencyDocument                 `json:"concurrency"`
+	Interruptible bool                                 `json:"interruptible"`
+	FailFast      bool                                 `json:"failFast"`
+	MaxParallel   int                                  `json:"maxParallel"`
+	Container     *containerDefinitionDocument         `json:"container"`
+	Services      map[string]serviceDefinitionDocument `json:"services"`
+	Artifacts     *artifactDefinitionDocument          `json:"artifacts"`
+	Cache         *cacheDefinitionDocument             `json:"cache"`
+	Steps         []workflowDefinitionStepDocument     `json:"steps"`
+}
+
+type containerDefinitionDocument struct {
+	Image string `json:"image"`
+}
+
+type serviceDefinitionDocument struct {
+	Image string `json:"image"`
+	Alias string `json:"alias"`
 }
 
 type artifactDefinitionDocument struct {
@@ -500,6 +511,22 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 
 func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
 	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if job.Container != nil && job.Container.Image != "" {
+		badges = append(badges, webui.SemanticBadgeView{Label: "CONTAINER " + job.Container.Image, Tone: "runtime", Hint: "Steps execute in one persistent job container"})
+	}
+	serviceKeys := make([]string, 0, len(job.Services))
+	for key := range job.Services {
+		serviceKeys = append(serviceKeys, key)
+	}
+	sort.Strings(serviceKeys)
+	for _, key := range serviceKeys {
+		service := job.Services[key]
+		label := "SERVICE " + key + " = " + service.Image
+		if service.Alias != "" && service.Alias != key {
+			label += " / " + service.Alias
+		}
+		badges = append(badges, webui.SemanticBadgeView{Label: label, Tone: "runtime", Hint: "Health-gated sidecar on the job network"})
+	}
 	if job.MatrixTotal > 1 {
 		badges = append(badges, webui.SemanticBadgeView{
 			Label: fmt.Sprintf("MATRIX %02d/%02d", job.MatrixIndex, job.MatrixTotal), Hint: job.MatrixLabel,

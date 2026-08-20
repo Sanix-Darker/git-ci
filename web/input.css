@@ -842,6 +842,7 @@
 .semantic-badges { display: flex; min-width: 0; flex-wrap: wrap; gap: .3rem; margin-top: .55rem; }
 .semantic-chip { display: inline-block; max-width: 100%; overflow: hidden; border: 1px solid #555; padding: .25rem .35rem; color: #bdbdbd; font-size: .49rem; font-weight: 800; letter-spacing: .035em; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; transition: border-color 120ms steps(2, end), color 120ms steps(2, end), transform 120ms steps(2, end); }
 .semantic-chip:hover { border-color: #f0f0f0; color: #fff; transform: translateY(-1px); }
+.semantic-chip.runtime { border-color: #8a8a8a; border-style: dashed; color: #e8e8e8; }
 .semantic-chip.danger { border-color: #8c3434; color: #e06d6d; }
 .run-node > .semantic-badges { align-self: end; }
 .workflow-step > .semantic-badges { grid-column: 2 / -1; margin-top: 0; }

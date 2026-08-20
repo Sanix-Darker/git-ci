@@ -108,8 +108,31 @@ jobs:
       - name: Expected failure
         run: printf 'expected failure\n'; exit 9
 YAML
+cat >"$project_root/alpha-service/.github/workflows/runtime.yml" <<'YAML'
+name: Runtime Topology
+on: workflow_dispatch
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:3.20
+      options: --cpus 1 --memory 256m --pids-limit 128
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: [6379]
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 1s --health-retries 20
+    steps:
+      - name: Probe service
+        run: printf 'runtime topology\n'
+YAML
 cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
 stages: [test]
+default:
+  image: alpine:3.20
+  services:
+    - name: redis:7-alpine
+      alias: cache
 worker-test:
   stage: test
   script:

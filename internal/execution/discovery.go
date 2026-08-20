@@ -82,6 +82,8 @@ type JobDefinition struct {
 	Interruptible   bool                                 `json:"interruptible,omitempty"`
 	FailFast        bool                                 `json:"failFast,omitempty"`
 	MaxParallel     int                                  `json:"maxParallel,omitempty"`
+	Container       *types.Container                     `json:"container,omitempty"`
+	Services        map[string]*types.Service            `json:"services,omitempty"`
 	Artifacts       *types.ArtifactConfig                `json:"artifacts,omitempty"`
 	Cache           *types.CacheConfig                   `json:"cache,omitempty"`
 	Steps           []StepDefinition                     `json:"steps"`
@@ -673,6 +675,8 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		When:            job.When,
 		Concurrency:     normalizeConcurrency(job.Concurrency),
 		Interruptible:   job.Interruptible,
+		Container:       copyContainer(job.Container),
+		Services:        copyServices(job.Services),
 		Artifacts:       copyArtifactConfig(job.Artifacts),
 		Cache:           copyCacheConfig(job.Cache),
 		Steps:           normalizeSteps(key, job.Steps),
@@ -726,6 +730,19 @@ func applyMatrixVariant(job *JobDefinition, variant executionsemantics.MatrixVar
 	}
 	if err := resolveMatrixCacheConfig(job.Cache, variant.Values); err != nil {
 		return err
+	}
+	if err := resolveMatrixContainer(job.Container, variant.Values); err != nil {
+		return err
+	}
+	serviceKeys := make([]string, 0, len(job.Services))
+	for key := range job.Services {
+		serviceKeys = append(serviceKeys, key)
+	}
+	sort.Strings(serviceKeys)
+	for _, key := range serviceKeys {
+		if err := resolveMatrixService(job.Services[key], variant.Values); err != nil {
+			return fmt.Errorf("service %q: %w", key, err)
+		}
 	}
 	for index := range job.Steps {
 		step := &job.Steps[index]
@@ -808,6 +825,7 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 		"rules": job.Rules, "only": job.Only, "except": job.Except, "when": job.When,
 		"concurrency": job.Concurrency, "interruptible": job.Interruptible,
 		"failFast": job.FailFast, "maxParallel": job.MaxParallel,
+		"container": job.Container, "services": job.Services,
 		"artifacts": job.Artifacts, "cache": job.Cache,
 	}
 	encoded, err := json.Marshal(metadata)
@@ -989,6 +1007,109 @@ func copyCacheConfig(value *types.CacheConfig) *types.CacheConfig {
 	copy.Paths = copyStringSlice(value.Paths)
 	copy.Fallback = copyStringSlice(value.Fallback)
 	return &copy
+}
+
+func copyContainer(value *types.Container) *types.Container {
+	if value == nil {
+		return nil
+	}
+	clone := *value
+	clone.Env = copyStringMap(value.Env)
+	clone.Volumes = copyStringSlice(value.Volumes)
+	clone.Ports = copyStringSlice(value.Ports)
+	clone.Command = copyStringSlice(value.Command)
+	clone.Entrypoint = copyStringSlice(value.Entrypoint)
+	clone.Credentials = copyStringMap(value.Credentials)
+	clone.CapAdd = copyStringSlice(value.CapAdd)
+	clone.CapDrop = copyStringSlice(value.CapDrop)
+	clone.SecurityOpt = copyStringSlice(value.SecurityOpt)
+	if value.Auth != nil {
+		auth := *value.Auth
+		clone.Auth = &auth
+	}
+	if value.HealthCheck != nil {
+		health := *value.HealthCheck
+		health.Test = copyStringSlice(value.HealthCheck.Test)
+		clone.HealthCheck = &health
+	}
+	return &clone
+}
+
+func copyServices(values map[string]*types.Service) map[string]*types.Service {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]*types.Service, len(values))
+	for key, value := range values {
+		if value == nil {
+			continue
+		}
+		clone := *value
+		clone.Command = copyStringSlice(value.Command)
+		clone.Entrypoint = copyStringSlice(value.Entrypoint)
+		clone.Env = copyStringMap(value.Env)
+		clone.Ports = copyStringSlice(value.Ports)
+		clone.Volumes = copyStringSlice(value.Volumes)
+		clone.Networks = copyStringSlice(value.Networks)
+		clone.DependsOn = copyStringSlice(value.DependsOn)
+		if value.HealthCheck != nil {
+			health := *value.HealthCheck
+			health.Test = copyStringSlice(value.HealthCheck.Test)
+			clone.HealthCheck = &health
+		}
+		result[key] = &clone
+	}
+	return result
+}
+
+func resolveMatrixContainer(value *types.Container, matrix map[string]string) error {
+	if value == nil {
+		return nil
+	}
+	fields := []*string{&value.Image, &value.Name, &value.Options, &value.User, &value.CPUs, &value.Memory}
+	for _, field := range fields {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(*field, matrix)
+		if err != nil {
+			return err
+		}
+		*field = resolved
+	}
+	return resolveMatrixRuntimeValues(value.Env, value.Volumes, value.Ports, value.Command, value.Entrypoint, matrix)
+}
+
+func resolveMatrixService(value *types.Service, matrix map[string]string) error {
+	if value == nil {
+		return nil
+	}
+	fields := []*string{&value.Image, &value.Name, &value.Alias, &value.Options}
+	for _, field := range fields {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(*field, matrix)
+		if err != nil {
+			return err
+		}
+		*field = resolved
+	}
+	return resolveMatrixRuntimeValues(value.Env, value.Volumes, value.Ports, value.Command, value.Entrypoint, matrix)
+}
+
+func resolveMatrixRuntimeValues(environment map[string]string, volumes, ports, command, entrypoint []string, matrix map[string]string) error {
+	for key, value := range environment {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(value, matrix)
+		if err != nil {
+			return err
+		}
+		environment[key] = resolved
+	}
+	for _, values := range [][]string{volumes, ports, command, entrypoint} {
+		for index := range values {
+			resolved, err := executionsemantics.ResolveMatrixTemplate(values[index], matrix)
+			if err != nil {
+				return err
+			}
+			values[index] = resolved
+		}
+	}
+	return nil
 }
 
 func resolveMatrixArtifactConfig(value *types.ArtifactConfig, matrix map[string]string) error {
