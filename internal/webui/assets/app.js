@@ -4,6 +4,10 @@
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   const loadingTimers = new WeakMap();
 
+  document.addEventListener("htmx:beforeTransition", (event) => {
+    if (reducedMotion.matches || document.visibilityState !== "visible") event.preventDefault();
+  });
+
   function startLoading(target) {
     if (!(target instanceof HTMLElement) || target.id !== "app-frame") return;
     target.setAttribute("aria-busy", "true");

@@ -25,7 +25,7 @@ func TestRendererBuildsComponentPagesAndEscapesData(t *testing.T) {
 		t.Fatalf("status = %d, body=%s", recorder.Code, recorder.Body.String())
 	}
 	body := recorder.Body.String()
-	for _, expected := range []string{"app-frame", "Workflows", "csrf-token", "route-skeleton", "app.js", "&lt;script&gt;unsafe&lt;/script&gt;"} {
+	for _, expected := range []string{"app-frame", "Workflows", "csrf-token", "route-skeleton", "app.js", "includeIndicatorStyles", "&lt;script&gt;unsafe&lt;/script&gt;"} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("body missing %q", expected)
 		}
