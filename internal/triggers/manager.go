@@ -201,7 +201,7 @@ func normalizeBranch(ref, fallback string) (string, error) {
 
 func resolveBranchCommit(ctx context.Context, path, branch string) (string, error) {
 	ref := "refs/heads/" + branch + "^{commit}"
-	command := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--verify", "--end-of-options", ref)
+	command := exec.CommandContext(ctx, "git", "-c", "safe.directory="+path, "-C", path, "rev-parse", "--verify", "--end-of-options", ref)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("triggers: resolve branch %q: %s", branch, strings.TrimSpace(string(output)))
