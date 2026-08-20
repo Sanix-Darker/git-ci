@@ -13,7 +13,7 @@ import (
 
 func TestManagerPausesProtectedDeploymentThenResumesWithEnvironmentSecrets(t *testing.T) {
 	ctx, database, _, project, root := newManagerTestFixture(t)
-	marker := filepath.Join(root, "deployment-secret")
+	marker := filepath.Join(t.TempDir(), "deployment-secret")
 	writeManagerWorkflow(t, filepath.Join(root, ".github", "workflows", "deploy.yml"), strings.Join([]string{
 		"name: Protected deployment",
 		"on: workflow_dispatch",
@@ -24,18 +24,22 @@ func TestManagerPausesProtectedDeploymentThenResumesWithEnvironmentSecrets(t *te
 		"    env:",
 		"      DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}",
 		"    steps:",
-		`      - run: printf '%s' "$DEPLOY_TOKEN" > deployment-secret`,
+		`      - run: printf '%s' "$DEPLOY_TOKEN" > ` + shellTestPath(marker),
 	}, "\n"))
 	secrets, err := secretmanager.NewManager(database, filepath.Join(t.TempDir(), "secret.key"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := NewManager(database, WithSecretResolver(secrets))
+	manager, err := NewManager(database, WithSecretResolver(secrets), WithWorkspaceRoot(filepath.Join(t.TempDir(), "workspaces")))
 	if err != nil {
 		t.Fatal(err)
 	}
 	workflow := syncManagerWorkflow(t, ctx, manager, project.ID)
-	run, err := manager.EnqueueWorkflow(ctx, workflow.ID, "refs/heads/main", "deploy-sha")
+	run, err := manager.EnqueueWorkflow(ctx, workflow.ID, "refs/heads/main", managerRepositoryHead(t, root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspacePath, err := manager.workspaces.SourcePath(run.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +77,9 @@ func TestManagerPausesProtectedDeploymentThenResumesWithEnvironmentSecrets(t *te
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("protected command ran before approval: %v", err)
 	}
+	if info, err := os.Stat(workspacePath); err != nil || !info.IsDir() {
+		t.Fatalf("waiting workspace = %#v, %v", info, err)
+	}
 	request, err := database.RequestEnvironmentApproval(ctx, store.RequestEnvironmentApprovalParams{JobID: deploy.Job.ID, RequestedBy: "test"})
 	if err != nil || request.Status != store.EnvironmentApprovalPending {
 		t.Fatalf("approval request = %#v, %v", request, err)
@@ -95,6 +102,9 @@ func TestManagerPausesProtectedDeploymentThenResumesWithEnvironmentSecrets(t *te
 	if err != nil || string(contents) != "environment-value" {
 		t.Fatalf("deployment secret = %q, %v", contents, err)
 	}
+	if _, err := os.Stat(workspacePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("terminal workspace still exists: %v", err)
+	}
 	waits, err := database.ListJobWaits(ctx)
 	if err != nil || len(waits) != 0 {
 		t.Fatalf("remaining waits = %#v, %v", waits, err)
@@ -107,7 +117,7 @@ func TestManagerPausesProtectedDeploymentThenResumesWithEnvironmentSecrets(t *te
 
 func TestManagerRejectsProtectedDeploymentFromDisallowedRef(t *testing.T) {
 	ctx, database, manager, project, root := newManagerTestFixture(t)
-	marker := filepath.Join(root, "disallowed-ran")
+	marker := filepath.Join(t.TempDir(), "disallowed-ran")
 	writeManagerWorkflow(t, filepath.Join(root, ".github", "workflows", "deploy.yml"), strings.Join([]string{
 		"name: Ref protected deployment",
 		"on: workflow_dispatch",
@@ -116,10 +126,10 @@ func TestManagerRejectsProtectedDeploymentFromDisallowedRef(t *testing.T) {
 		"    runs-on: ubuntu-latest",
 		"    environment: production",
 		"    steps:",
-		"      - run: printf unsafe > disallowed-ran",
+		"      - run: printf unsafe > " + shellTestPath(marker),
 	}, "\n"))
 	workflow := syncManagerWorkflow(t, ctx, manager, project.ID)
-	run, err := manager.EnqueueWorkflow(ctx, workflow.ID, "refs/heads/feature", "feature-sha")
+	run, err := manager.EnqueueWorkflow(ctx, workflow.ID, "refs/heads/feature", managerRepositoryHead(t, root))
 	if err != nil {
 		t.Fatal(err)
 	}
