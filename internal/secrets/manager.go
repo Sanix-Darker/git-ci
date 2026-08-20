@@ -70,12 +70,39 @@ func (m *Manager) Upsert(ctx context.Context, projectID, name, value string) (st
 	})
 }
 
+func (m *Manager) UpsertEnvironment(ctx context.Context, environmentID, name, value string) (store.EnvironmentSecret, error) {
+	name = strings.TrimSpace(name)
+	if !secretName.MatchString(name) {
+		return store.EnvironmentSecret{}, errors.New("secrets: name must match [A-Z_][A-Z0-9_]*")
+	}
+	if value == "" {
+		return store.EnvironmentSecret{}, errors.New("secrets: value must not be empty")
+	}
+	nonce := make([]byte, m.aead.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return store.EnvironmentSecret{}, fmt.Errorf("secrets: generate environment nonce: %w", err)
+	}
+	plaintext := []byte(value)
+	ciphertext := m.aead.Seal(nil, nonce, plaintext, environmentAssociatedData(environmentID, name))
+	clear(plaintext)
+	provider := "local"
+	version := time.Now().UTC().Format(time.RFC3339Nano)
+	return m.store.UpsertEnvironmentSecret(ctx, store.UpsertEnvironmentSecretParams{
+		EnvironmentID: environmentID, Name: name, Provider: &provider, Version: &version,
+		EncryptionAlgorithm: algorithm, Nonce: nonce, Ciphertext: ciphertext,
+	})
+}
+
 func (m *Manager) List(ctx context.Context, projectID string) ([]store.Secret, error) {
 	return m.store.ListSecrets(ctx, projectID)
 }
 
 func (m *Manager) Delete(ctx context.Context, secretID string) error {
 	return m.store.DeleteSecret(ctx, secretID)
+}
+
+func (m *Manager) DeleteEnvironment(ctx context.Context, secretID string) error {
+	return m.store.DeleteEnvironmentSecret(ctx, secretID)
 }
 
 // ResolveProject decrypts values only for the worker process. Callers must not
@@ -104,8 +131,62 @@ func (m *Manager) ResolveProject(ctx context.Context, projectID string) (map[str
 	return values, nil
 }
 
+// ResolveEnvironment decrypts only environment-scoped values. The resumable
+// worker must call it after protection approval, never while a job is waiting.
+func (m *Manager) resolveEnvironment(ctx context.Context, environmentID string) (map[string]string, error) {
+	metadata, err := m.store.ListEnvironmentSecrets(ctx, environmentID)
+	if err != nil {
+		return nil, err
+	}
+	values := make(map[string]string, len(metadata))
+	for _, secret := range metadata {
+		envelope, err := m.store.GetEnvironmentSecretEnvelope(ctx, secret.ID)
+		if err != nil {
+			return nil, err
+		}
+		if envelope.EncryptionAlgorithm != algorithm {
+			return nil, fmt.Errorf("secrets: unsupported encryption algorithm %q", envelope.EncryptionAlgorithm)
+		}
+		plaintext, err := m.aead.Open(nil, envelope.Nonce, envelope.Ciphertext, environmentAssociatedData(envelope.EnvironmentID, envelope.Name))
+		if err != nil {
+			return nil, fmt.Errorf("secrets: decrypt environment %s: %w", envelope.Name, err)
+		}
+		values[envelope.Name] = string(plaintext)
+		clear(plaintext)
+	}
+	return values, nil
+}
+
+// ResolveForEnvironment merges project values with approved environment
+// values. The narrower environment scope deliberately wins on duplicate names.
+func (m *Manager) ResolveForJob(ctx context.Context, jobID string) (map[string]string, error) {
+	access, err := m.store.EvaluateEnvironmentAccess(ctx, jobID, time.Now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if !access.Ready {
+		return nil, fmt.Errorf("secrets: environment protection is not satisfied: %s", access.Reason)
+	}
+	values, err := m.ResolveProject(ctx, access.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	environmentValues, err := m.resolveEnvironment(ctx, access.Environment.ID)
+	if err != nil {
+		return nil, err
+	}
+	for name, value := range environmentValues {
+		values[name] = value
+	}
+	return values, nil
+}
+
 func associatedData(projectID, name string) []byte {
 	return []byte(projectID + "\x00" + name)
+}
+
+func environmentAssociatedData(environmentID, name string) []byte {
+	return []byte("environment\x00" + environmentID + "\x00" + name)
 }
 
 func loadOrCreateKey(path string) ([]byte, error) {

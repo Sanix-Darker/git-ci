@@ -2,6 +2,7 @@ package secrets
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,31 @@ func TestManagerEncryptsResolvesRotatesAndRestarts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	environment, err := database.UpsertEnvironment(ctx, store.UpsertEnvironmentParams{
+		ProjectID: project.ID, Name: "production", DeploymentTier: store.DeploymentTierProduction,
+		Protected: true, RequiredApprovals: 1, ConcurrencyMode: store.EnvironmentConcurrencyQueue,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow, err := database.UpsertWorkflow(ctx, store.UpsertWorkflowParams{
+		ProjectID: project.ID, Key: "deploy", Name: "Deploy", Definition: json.RawMessage(`{"jobs":{"deploy":{}}}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := database.EnqueueRun(ctx, store.EnqueueRunParams{
+		ProjectID: project.ID, WorkflowID: workflow.ID, TriggerType: "manual", SourcePath: base,
+		Jobs: []store.EnqueueJob{{Key: "deploy", Name: "Deploy", EnvironmentName: "production", DeploymentTier: "production",
+			DependencyKeys: json.RawMessage(`[]`), Steps: []store.EnqueueStep{{Key: "ship", Name: "Ship", Command: "true"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets, err := database.ListDeploymentTargets(ctx, run.ID)
+	if err != nil || len(targets) != 1 {
+		t.Fatalf("deployment targets = %#v, %v", targets, err)
+	}
 	metadata, err := manager.Upsert(ctx, project.ID, "DEPLOY_TOKEN", "first-value")
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +71,29 @@ func TestManagerEncryptsResolvesRotatesAndRestarts(t *testing.T) {
 	if _, err := manager.Upsert(ctx, project.ID, "DEPLOY_TOKEN", "rotated-value"); err != nil {
 		t.Fatal(err)
 	}
+	environmentMetadata, err := manager.UpsertEnvironment(ctx, environment.ID, "DEPLOY_TOKEN", "production-value")
+	if err != nil {
+		t.Fatal(err)
+	}
+	environmentEnvelope, err := database.GetEnvironmentSecretEnvelope(ctx, environmentMetadata.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(environmentEnvelope.Ciphertext), "production-value") {
+		t.Fatal("environment ciphertext contains plaintext")
+	}
+	if _, err := manager.ResolveForJob(ctx, targets[0].JobID); err == nil {
+		t.Fatal("environment secret resolved before approval")
+	}
+	request, err := database.RequestEnvironmentApproval(ctx, store.RequestEnvironmentApprovalParams{JobID: targets[0].JobID, RequestedBy: "operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.DecideEnvironmentApproval(ctx, store.DecideEnvironmentApprovalParams{
+		RequestID: request.ID, Decision: store.EnvironmentApprovalApproved, Actor: "operator",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	restarted, err := NewManager(database, keyPath)
 	if err != nil {
 		t.Fatal(err)
@@ -52,6 +101,10 @@ func TestManagerEncryptsResolvesRotatesAndRestarts(t *testing.T) {
 	resolved, err = restarted.ResolveProject(ctx, project.ID)
 	if err != nil || resolved["DEPLOY_TOKEN"] != "rotated-value" {
 		t.Fatalf("restarted = %#v, %v", resolved, err)
+	}
+	resolved, err = restarted.ResolveForJob(ctx, targets[0].JobID)
+	if err != nil || resolved["DEPLOY_TOKEN"] != "production-value" {
+		t.Fatalf("environment-resolved = %#v, %v", resolved, err)
 	}
 	info, err := os.Stat(keyPath)
 	if err != nil || info.Mode().Perm() != 0o600 {
