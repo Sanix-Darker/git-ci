@@ -331,6 +331,48 @@
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
 
+.delivery-stack { display: grid; gap: 1rem; margin-bottom: 1rem; }
+.approval-surface { overflow: hidden; }
+.approval-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); background: #383838; gap: 1px; }
+.approval-card { display: grid; gap: 1rem; min-width: 0; padding: 1.2rem; background: #080808; transition: transform .12s steps(2, end), background-color .12s steps(2, end); }
+.approval-card:hover { z-index: 1; background: #0d0d0d; transform: translateY(-2px); }
+.approval-card > header, .environment-cards article > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.approval-card h3 { margin: .3rem 0; font-family: var(--font-display); font-size: 1.45rem; }
+.approval-card a { color: #9d9d9d; font-size: .58rem; font-weight: 900; text-decoration: none; }
+.approval-card dl, .environment-cards dl { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; border: 1px solid #2b2b2b; }
+.approval-card dl div, .environment-cards dl div { display: grid; gap: .35rem; min-width: 0; padding: .7rem; }
+.approval-card dl div + div, .environment-cards dl div + div { border-left: 1px solid #2b2b2b; }
+.approval-card dt, .environment-cards dt { color: #666; font-size: .48rem; font-weight: 900; }
+.approval-card dd, .environment-cards dd { overflow: hidden; margin: 0; color: #b8b8b8; font-size: .56rem; text-overflow: ellipsis; white-space: nowrap; }
+.approval-card form { display: grid; gap: .55rem; }
+.approval-card form label { display: grid; gap: .35rem; color: #727272; font-size: .5rem; font-weight: 900; }
+.approval-card form input { width: 100%; min-width: 0; border: 1px solid #383838; background: #080808; color: #fff; padding: .7rem; font: inherit; }
+.approval-card form > div { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+.approval-card button { min-height: 38px; border: 1px solid #d8d8d8; background: #d8d8d8; color: #080808; cursor: pointer; font-size: .56rem; font-weight: 900; }
+.approval-card .danger-button { border-color: #6f2929; background: #180909; color: #e34a4a; }
+.delivery-config-grid { display: grid; grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr); gap: 1rem; }
+.environment-policy-form textarea { width: 100%; resize: vertical; border: 1px solid #383838; background: #080808; color: #fff; padding: .75rem; font: inherit; font-size: .65rem; }
+.check-field { display: flex !important; grid-template-columns: auto 1fr; align-items: center; min-height: 42px; border: 1px solid #383838; padding: 0 .75rem; color: #b8b8b8 !important; }
+.check-field input { width: auto; height: auto; accent-color: #d8d8d8; }
+.environment-ledger { overflow: hidden; }
+.environment-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); background: #2b2b2b; gap: 1px; }
+.environment-cards article { display: grid; gap: .85rem; min-width: 0; padding: 1rem; background: #080808; }
+.environment-cards article > strong { color: #727272; font-size: .56rem; }
+.environment-cards dl { grid-template-columns: 1fr 1fr; }
+.environment-cards dl div:nth-child(3) { border-left: 0; border-top: 1px solid #2b2b2b; }
+.environment-cards dl div:nth-child(4) { border-top: 1px solid #2b2b2b; }
+.secret-scope-grid { margin-top: 0; }
+.deployment-table .data-head, .deployment-table .data-row { grid-template-columns: .8fr 1fr .65fr .9fr 1fr .7fr 1.15fr 24px; }
+
+@media (max-width: 900px) { .delivery-config-grid { grid-template-columns: 1fr; } }
+@media (max-width: 720px) {
+  .approval-grid, .environment-cards { grid-template-columns: 1fr; }
+  .approval-card dl { grid-template-columns: 1fr; }
+  .approval-card dl div + div { border-top: 1px solid #2b2b2b; border-left: 0; }
+  .deployment-table .data-row { width: 900px; }
+}
+@media (prefers-reduced-motion: reduce) { .approval-card, .approval-card:hover { transition: none !important; transform: none !important; } }
+
 /* Operator motion, telemetry, and loading atoms */
 .workspace { position: relative; }
 .route-skeleton { position: absolute; z-index: 20; inset: 0; display: grid; align-content: start; gap: 1rem; padding: 3.6rem; background: #080808; opacity: 0; pointer-events: none; transition: opacity 80ms steps(2, end); }

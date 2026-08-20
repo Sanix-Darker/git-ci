@@ -33,6 +33,15 @@ jobs:
         env:
           TOKEN: "${{ secrets.DEPLOY_TOKEN }}"
         run: printf '%s\n' "$TOKEN"
+  deploy:
+    needs: [test]
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_TOKEN: "${{ secrets.DEPLOY_TOKEN }}"
+    steps:
+      - name: Deploy production
+        run: printf 'deployed %s\n' "$DEPLOY_TOKEN"
 YAML
 cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
 stages: [test]

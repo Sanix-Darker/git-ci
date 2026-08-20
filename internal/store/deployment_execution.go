@@ -64,13 +64,16 @@ func (s *Store) EnsureDeploymentForJob(ctx context.Context, jobID string) (Deplo
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Deployment{}, fmt.Errorf("store: find job deployment: %w", err)
 	}
+	canonicalEnvironment, err := s.EnsureEnvironmentForJob(ctx, jobID)
+	if err != nil {
+		return Deployment{}, fmt.Errorf("store: ensure deployment environment: %w", err)
+	}
 	var projectID, runID, environment string
-	var tier DeploymentTier
 	err = s.db.QueryRowContext(ctx, `
-		SELECT run.project_id, target.run_id, target.environment, target.deployment_tier
+		SELECT run.project_id, target.run_id, target.environment
 		FROM deployment_targets AS target JOIN runs AS run ON run.id = target.run_id
 		WHERE target.job_id = ?
-	`, jobID).Scan(&projectID, &runID, &environment, &tier)
+	`, jobID).Scan(&projectID, &runID, &environment)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Deployment{}, &ErrNotFound{Resource: "deployment target", Key: jobID}
 	}
@@ -94,7 +97,7 @@ func (s *Store) EnsureDeploymentForJob(ctx context.Context, jobID string) (Deplo
 	result, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO deployments (id, project_id, run_id, environment, status, created_at, updated_at, job_id, deployment_tier)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, deploymentID, projectID, runID, environment, StatusQueued, now.UnixMilli(), now.UnixMilli(), jobID, tier)
+	`, deploymentID, projectID, runID, environment, StatusQueued, now.UnixMilli(), now.UnixMilli(), jobID, canonicalEnvironment.DeploymentTier)
 	if err != nil {
 		return Deployment{}, fmt.Errorf("store: ensure deployment: %w", err)
 	}

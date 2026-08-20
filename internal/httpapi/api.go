@@ -129,6 +129,10 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /app/schedules/{schedule}/toggle", a.requireWebAuth(http.HandlerFunc(a.handleToggleScheduleWeb)))
 	mux.Handle("POST /app/schedules/{schedule}/delete", a.requireWebAuth(http.HandlerFunc(a.handleDeleteScheduleWeb)))
 	mux.Handle("POST /app/settings/webhooks", a.requireWebAuth(http.HandlerFunc(a.handleCreateWebhookWeb)))
+	mux.Handle("POST /app/environments", a.requireWebAuth(http.HandlerFunc(a.handleUpsertEnvironmentWeb)))
+	mux.Handle("POST /app/environment-secrets", a.requireWebAuth(http.HandlerFunc(a.handleUpsertEnvironmentSecretWeb)))
+	mux.Handle("POST /app/environment-secrets/{secret}/delete", a.requireWebAuth(http.HandlerFunc(a.handleDeleteEnvironmentSecretWeb)))
+	mux.Handle("POST /app/approvals/{approval}/decision", a.requireWebAuth(http.HandlerFunc(a.handleApprovalDecisionWeb)))
 	mux.HandleFunc("POST /api/v1/session/login", a.handleLogin)
 	mux.Handle("GET /api/v1", a.requireAuth(http.HandlerFunc(a.handleAPIRoot)))
 	mux.Handle("GET /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleSession)))
@@ -156,7 +160,18 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /api/v1/projects/{project}/webhooks", a.requireAuth(http.HandlerFunc(a.handleProjectWebhooks)))
 	mux.Handle("GET /api/v1/projects/{project}/deployments", a.requireAuth(http.HandlerFunc(a.handleProjectDeployments)))
 	mux.Handle("POST /api/v1/projects/{project}/deployments", a.requireAuth(http.HandlerFunc(a.handleProjectDeployments)))
+	mux.Handle("GET /api/v1/deployments/{deployment}", a.requireAuth(http.HandlerFunc(a.handleDeploymentDetail)))
 	mux.Handle("PATCH /api/v1/deployments/{deployment}", a.requireAuth(http.HandlerFunc(a.handleDeployment)))
+	mux.Handle("GET /api/v1/projects/{project}/environments", a.requireAuth(http.HandlerFunc(a.handleProjectEnvironments)))
+	mux.Handle("POST /api/v1/projects/{project}/environments", a.requireAuth(http.HandlerFunc(a.handleProjectEnvironments)))
+	mux.Handle("GET /api/v1/environments/{environment}", a.requireAuth(http.HandlerFunc(a.handleEnvironment)))
+	mux.Handle("PATCH /api/v1/environments/{environment}", a.requireAuth(http.HandlerFunc(a.handleEnvironment)))
+	mux.Handle("GET /api/v1/environments/{environment}/secrets", a.requireAuth(http.HandlerFunc(a.handleEnvironmentSecrets)))
+	mux.Handle("POST /api/v1/environments/{environment}/secrets", a.requireAuth(http.HandlerFunc(a.handleEnvironmentSecrets)))
+	mux.Handle("DELETE /api/v1/environment-secrets/{secret}", a.requireAuth(http.HandlerFunc(a.handleEnvironmentSecret)))
+	mux.Handle("GET /api/v1/approvals", a.requireAuth(http.HandlerFunc(a.handleApprovals)))
+	mux.Handle("GET /api/v1/approvals/{approval}", a.requireAuth(http.HandlerFunc(a.handleApproval)))
+	mux.Handle("POST /api/v1/approvals/{approval}/decision", a.requireAuth(http.HandlerFunc(a.handleApprovalDecision)))
 	mux.HandleFunc("POST /hooks/{endpoint}", a.handleWebhookDelivery)
 	mux.HandleFunc("/api/", a.handleAPINotFound)
 	mux.HandleFunc("/api", a.handleAPINotFound)
@@ -207,7 +222,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "audit"},
+		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "protected-environments", "approvals", "environment-secrets", "deployments", "audit"},
 	})
 }
 
