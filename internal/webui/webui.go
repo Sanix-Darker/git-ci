@@ -62,7 +62,7 @@ type CommitTriggerView struct {
 
 type WorkflowView struct {
 	ID, ProjectID, ProjectName, Name, Key, Provider, File string
-	Revision, JobCount                                    int
+	Revision, JobCount, EdgeCount                         int
 	DefaultRef                                            string
 	Triggers                                              []string
 	TriggerPolicies                                       []WorkflowTriggerPolicyView
@@ -70,6 +70,11 @@ type WorkflowView struct {
 	Stages                                                []string
 	Jobs                                                  []WorkflowJobView
 	GraphRows                                             []RunGraphRowView
+	Badges                                                []SemanticBadgeView
+}
+
+type SemanticBadgeView struct {
+	Label, Tone, Hint string
 }
 
 type WorkflowTriggerPolicyView struct {
@@ -86,13 +91,15 @@ type WorkflowInputView struct {
 }
 
 type WorkflowJobView struct {
-	Key, Name, Stage, Runner, Dependencies string
-	AllowFailure                           bool
-	Steps                                  []WorkflowStepView
+	Key, SourceKey, Name, Stage, Runner, Dependencies string
+	AllowFailure                                      bool
+	Steps                                             []WorkflowStepView
+	Badges                                            []SemanticBadgeView
 }
 
 type WorkflowStepView struct {
 	Name, Command, Action string
+	Badges                []SemanticBadgeView
 }
 
 type RunView struct {
@@ -113,6 +120,7 @@ type RunDetailView struct {
 	GraphRows []RunGraphRowView
 	Lineage   *RunLineageView
 	Terminal  bool
+	EdgeCount int
 }
 
 type RunLineageView struct {
@@ -120,17 +128,19 @@ type RunLineageView struct {
 }
 
 type RunJobView struct {
-	ID, Key, Name, Status, Dot, Runner, Dependencies string
-	AllowFailure                                     bool
-	DependencyKeys                                   []string
-	Steps                                            []RunStepView
-	Replay                                           ReplayControlView
+	ID, Key, SourceKey, Name, Status, Dot, Runner, Dependencies string
+	AllowFailure                                                bool
+	DependencyKeys                                              []string
+	Steps                                                       []RunStepView
+	Replay                                                      ReplayControlView
+	Badges                                                      []SemanticBadgeView
 }
 
 type RunStepView struct {
 	ID, RunID, Name, Status, Dot, Command string
 	Terminal                              bool
 	Replay                                ReplayControlView
+	Badges                                []SemanticBadgeView
 }
 
 type ReplayControlView struct {

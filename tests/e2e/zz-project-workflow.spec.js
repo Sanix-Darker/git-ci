@@ -31,6 +31,17 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(pipeline.locator('input[name="commitSha"]')).toBeVisible();
   await expect(pipeline.getByRole("button", { name: /RUN WORKFLOW/ })).toBeVisible();
 
+  const matrix = page.locator("details.workflow-detail").filter({ hasText: "Matrix Preview" });
+  await matrix.locator("summary").click();
+  await expect(pipeline).not.toHaveAttribute("open", "");
+  const matrixGraph = matrix.getByLabel("Pipeline dependency graph");
+  await expect(matrixGraph).toContainText("DEPENDENCY DAG");
+  await expect(matrixGraph).toContainText("03 NODES / 02 EDGES");
+  await expect(matrixGraph).toContainText("MATRIX 01/02");
+  await expect(matrixGraph).toContainText("OS=linux");
+  await expect(matrixGraph).toContainText("IF matrix.os != 'blocked'");
+  await expect(matrix).toContainText("LOCK preview-${{ github.ref }} / CANCEL OLD");
+
   const manual = page.locator("details.workflow-detail").filter({ hasText: "Failure CI" });
   await manual.locator("summary").click();
   await expect(pipeline).not.toHaveAttribute("open", "");

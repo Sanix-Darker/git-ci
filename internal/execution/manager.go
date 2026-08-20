@@ -14,16 +14,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sanix-darker/git-ci/internal/executionsemantics"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 )
 
 const (
-	defaultPollInterval       = 750 * time.Millisecond
-	runWorkerLeaseTTL         = 15 * time.Second
-	runWorkerHeartbeat        = 5 * time.Second
-	environmentLeaseTTL       = 30 * time.Second
-	environmentLeaseHeartbeat = 10 * time.Second
+	defaultPollInterval           = 750 * time.Millisecond
+	runWorkerLeaseTTL             = 15 * time.Second
+	runWorkerHeartbeat            = 5 * time.Second
+	environmentLeaseTTL           = 30 * time.Second
+	environmentLeaseHeartbeat     = 10 * time.Second
+	executionConcurrencyTTL       = 30 * time.Second
+	executionConcurrencyHeartbeat = 10 * time.Second
+	executionConcurrencyRetry     = 250 * time.Millisecond
 )
 
 // Manager owns workflow synchronization, immutable run creation, and one
@@ -164,6 +168,10 @@ func (m *Manager) enqueueTriggered(ctx context.Context, workflowID, ref, commitS
 	if err != nil {
 		return store.Run{}, err
 	}
+	runEnvironment, workflowConcurrency, err := snapshotWorkflowConcurrency(runEnvironment, definition, ref, resolvedCommit, trigger)
+	if err != nil {
+		return store.Run{}, err
+	}
 	jobs := make([]store.EnqueueJob, 0, len(definition.Jobs))
 	for _, job := range definition.Jobs {
 		dependencies := uniqueStrings(append(append([]string{}, job.Needs...), job.Requires...))
@@ -220,6 +228,11 @@ func (m *Manager) enqueueTriggered(ctx context.Context, workflowID, ref, commitS
 	})
 	if err != nil {
 		return store.Run{}, err
+	}
+	if workflowConcurrency != nil {
+		if err := m.cancelSupersededConcurrencyRuns(ctx, project.ID, run, *workflowConcurrency); err != nil {
+			return store.Run{}, err
+		}
 	}
 	m.Notify()
 	return run, nil
@@ -399,6 +412,19 @@ func (m *Manager) ProcessNext(ctx context.Context) (bool, error) {
 	workerCtx, stopWorker := context.WithCancel(ctx)
 	workerDone := make(chan struct{})
 	go m.heartbeatRunWorker(workerCtx, run.ID, stopWorker, workerDone)
+	workflowLease, err := m.acquireRunConcurrency(workerCtx, *run)
+	if err != nil {
+		stopWorker()
+		<-workerDone
+		_ = m.store.ReleaseRunWorker(context.WithoutCancel(ctx), run.ID, m.workerID)
+		return true, err
+	}
+	workflowConcurrencyDone := make(chan struct{})
+	if workflowLease != nil {
+		go m.heartbeatExecutionConcurrency(workerCtx, *workflowLease, stopWorker, workflowConcurrencyDone)
+	} else {
+		close(workflowConcurrencyDone)
+	}
 	workspace, workspaceErr := m.workspaces.Acquire(workerCtx, *run)
 	if workspaceErr != nil {
 		err = m.failWorkspaceSetup(workerCtx, *run, workspaceErr)
@@ -407,6 +433,12 @@ func (m *Manager) ProcessNext(ctx context.Context) (bool, error) {
 	}
 	stopWorker()
 	<-workerDone
+	<-workflowConcurrencyDone
+	if workflowLease != nil {
+		if _, releaseErr := m.store.ReleaseExecutionConcurrency(context.WithoutCancel(ctx), workflowLease.Scope, workflowLease.Group, workflowLease.HolderID, workflowLease.OwnerID); err == nil && releaseErr != nil {
+			err = releaseErr
+		}
+	}
 	if releaseErr := m.store.ReleaseRunWorker(context.WithoutCancel(ctx), run.ID, m.workerID); err == nil && releaseErr != nil {
 		err = releaseErr
 	}
@@ -447,14 +479,18 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 			continue
 		}
 		dependencies := decodeStringList(item.Job.DependencyKeys)
-		if !dependenciesSatisfied(dependencies, statuses, allowedFailure) {
-			if err := m.skipJob(ctx, item); err != nil {
+		decision := evaluateJobExecution(graph.Run, item.Job, dependencies, statuses, allowedFailure)
+		if !decision.Run {
+			if err := m.skipJobWithReason(ctx, item, decision.Reason); err != nil {
 				return err
 			}
 			statuses[key] = store.StatusSkipped
-			allowedFailure[key] = item.Job.AllowFailure
+			allowedFailure[key] = decision.AllowFailure
 			continue
 		}
+		item.Job.Environment = mergeEnvironmentJSON(item.Job.Environment, decision.Variables)
+		item.Job.AllowFailure = decision.AllowFailure
+		allowedFailure[key] = decision.AllowFailure
 		cancelled, err := m.isCancelled(ctx, run.ID)
 		if err != nil {
 			return err
@@ -481,6 +517,10 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 		if preparation.Secrets != nil {
 			jobSecrets = preparation.Secrets
 		}
+		jobConcurrencyLease, err := m.acquireJobConcurrency(ctx, graph.Run, item.Job)
+		if err != nil {
+			return err
+		}
 		jobCtx := ctx
 		stopEnvironment := func() {}
 		environmentDone := make(chan struct{})
@@ -488,7 +528,25 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 			jobCtx, stopEnvironment = context.WithCancel(ctx)
 			go m.heartbeatEnvironment(jobCtx, item.Job.ID, stopEnvironment, environmentDone)
 		}
+		concurrencyDone := make(chan struct{})
+		stopConcurrency := func() {}
+		if jobConcurrencyLease != nil {
+			jobCtx, stopConcurrency = context.WithCancel(jobCtx)
+			go m.heartbeatExecutionConcurrency(jobCtx, *jobConcurrencyLease, stopConcurrency, concurrencyDone)
+		} else {
+			close(concurrencyDone)
+		}
 		status, err := m.executeJob(jobCtx, graph.Run, item, workspacePath, jobSecrets)
+		stopConcurrency()
+		<-concurrencyDone
+		if jobConcurrencyLease != nil {
+			released, releaseErr := m.store.ReleaseExecutionConcurrency(context.WithoutCancel(ctx), jobConcurrencyLease.Scope, jobConcurrencyLease.Group, jobConcurrencyLease.HolderID, jobConcurrencyLease.OwnerID)
+			if err == nil && releaseErr != nil {
+				err = fmt.Errorf("execution: release job concurrency: %w", releaseErr)
+			} else if err == nil && !released {
+				err = errors.New("execution: job concurrency ownership was lost")
+			}
+		}
 		if preparation.Lease != nil {
 			stopEnvironment()
 			<-environmentDone
@@ -734,6 +792,27 @@ func (m *Manager) heartbeatEnvironment(ctx context.Context, jobID string, cancel
 	}
 }
 
+func (m *Manager) heartbeatExecutionConcurrency(ctx context.Context, lease store.ExecutionConcurrencyLease, cancel context.CancelFunc, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(executionConcurrencyHeartbeat)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			result, err := m.store.AcquireExecutionConcurrency(ctx, store.AcquireExecutionConcurrencyParams{
+				Scope: lease.Scope, Group: lease.Group, RunID: lease.RunID, HolderID: lease.HolderID,
+				OwnerID: lease.OwnerID, TTL: executionConcurrencyTTL, Now: now.UTC(),
+			})
+			if err != nil || !result.Acquired {
+				cancel()
+				return
+			}
+		}
+	}
+}
+
 func isTerminalExecutionStatus(status store.Status) bool {
 	switch status {
 	case store.StatusSucceeded, store.StatusFailed, store.StatusCancelled, store.StatusSkipped:
@@ -747,6 +826,14 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	if _, err := m.store.TransitionJob(ctx, item.Job.ID, store.StatusRunning); err != nil {
 		return "", fmt.Errorf("execution: start job: %w", err)
 	}
+	jobSemantics, semanticsPresent, semanticsErr := decodeJobSemantics(item.Job.Environment)
+	if semanticsErr != nil {
+		return "", fmt.Errorf("execution: decode job semantics: %w", semanticsErr)
+	}
+	var semantics *frozenJobSemantics
+	if semanticsPresent {
+		semantics = &jobSemantics
+	}
 	jobCtx := ctx
 	jobCancel := func() {}
 	if item.Job.TimeoutMinutes > 0 {
@@ -754,6 +841,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	}
 	defer jobCancel()
 	jobFailed := false
+	stepStatuses := make(map[string]store.Status, len(item.Steps))
 	for index, step := range item.Steps {
 		cancelled, err := m.isCancelled(jobCtx, run.ID)
 		if err != nil {
@@ -771,6 +859,23 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 			}
 			return store.StatusCancelled, nil
 		}
+		condition, conditionErr := decodeStepCondition(step.Environment)
+		if conditionErr != nil {
+			if err := m.skipStepWithReason(ctx, step, "condition metadata is invalid: "+conditionErr.Error()); err != nil {
+				return "", err
+			}
+			stepStatuses[pointerValue(step.Key)] = store.StatusSkipped
+			continue
+		}
+		conditionContext := buildConditionContext(run, item.Job, semantics, nil, nil, stepStatuses, !jobFailed, jobFailed)
+		shouldRun, reason := evaluateConditionContract(condition, conditionContext)
+		if !shouldRun {
+			if err := m.skipStepWithReason(ctx, step, reason); err != nil {
+				return "", err
+			}
+			stepStatuses[pointerValue(step.Key)] = store.StatusSkipped
+			continue
+		}
 		if _, err := m.store.TransitionStep(ctx, step.ID, store.StatusRunning); err != nil {
 			return "", fmt.Errorf("execution: start step: %w", err)
 		}
@@ -779,6 +884,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 			if _, transitionErr := m.store.TransitionStep(ctx, step.ID, store.StatusSucceeded); transitionErr != nil {
 				return "", transitionErr
 			}
+			stepStatuses[pointerValue(step.Key)] = store.StatusSucceeded
 			continue
 		}
 		cancelled, cancelErr := m.isCancelled(ctx, run.ID)
@@ -801,14 +907,11 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 			return "", transitionErr
 		}
 		_ = m.appendSystem(ctx, step.ID, "step failed: "+err.Error())
+		stepStatuses[pointerValue(step.Key)] = store.StatusFailed
 		if step.AllowFailure {
 			continue
 		}
 		jobFailed = true
-		if err := m.skipSteps(ctx, item.Steps[index+1:]); err != nil {
-			return "", err
-		}
-		break
 	}
 	status := store.StatusSucceeded
 	if jobFailed {
@@ -950,6 +1053,25 @@ func (m *Manager) skipJob(ctx context.Context, item store.JobGraph) error {
 	return err
 }
 
+func (m *Manager) skipJobWithReason(ctx context.Context, item store.JobGraph, reason string) error {
+	if reason != "" && len(item.Steps) > 0 {
+		if err := m.appendSystem(ctx, item.Steps[0].ID, "job skipped: "+reason); err != nil {
+			return err
+		}
+	}
+	return m.skipJob(ctx, item)
+}
+
+func (m *Manager) skipStepWithReason(ctx context.Context, step store.Step, reason string) error {
+	if reason != "" {
+		if err := m.appendSystem(ctx, step.ID, "step skipped: "+reason); err != nil {
+			return err
+		}
+	}
+	_, err := m.store.TransitionStep(ctx, step.ID, store.StatusSkipped)
+	return err
+}
+
 func (m *Manager) skipSteps(ctx context.Context, steps []store.Step) error {
 	for _, step := range steps {
 		if step.Status != store.StatusQueued {
@@ -989,6 +1111,465 @@ func dependenciesSatisfied(dependencies []string, statuses map[string]store.Stat
 		}
 	}
 	return true
+}
+
+type frozenJobSemantics struct {
+	Provider      string                               `json:"provider"`
+	SourceKey     string                               `json:"sourceKey"`
+	Matrix        map[string]string                    `json:"matrix"`
+	MatrixIndex   int                                  `json:"matrixIndex"`
+	MatrixTotal   int                                  `json:"matrixTotal"`
+	MatrixLabel   string                               `json:"matrixLabel"`
+	Condition     executionsemantics.ConditionContract `json:"condition"`
+	Rules         []RuleDefinition                     `json:"rules"`
+	Only          *OnlyExceptDefinition                `json:"only"`
+	Except        *OnlyExceptDefinition                `json:"except"`
+	When          string                               `json:"when"`
+	Concurrency   *ConcurrencyDefinition               `json:"concurrency"`
+	Interruptible bool                                 `json:"interruptible"`
+	FailFast      bool                                 `json:"failFast"`
+	MaxParallel   int                                  `json:"maxParallel"`
+}
+
+type workflowConcurrencySnapshot struct {
+	Group            string `json:"group"`
+	CancelInProgress bool   `json:"cancelInProgress,omitempty"`
+}
+
+type jobExecutionDecision struct {
+	Run          bool
+	Reason       string
+	Variables    map[string]string
+	AllowFailure bool
+}
+
+func evaluateJobExecution(run store.Run, job store.Job, dependencies []string, statuses map[string]store.Status, allowed map[string]bool) jobExecutionDecision {
+	decision := jobExecutionDecision{AllowFailure: job.AllowFailure}
+	semantics, present, err := decodeJobSemantics(job.Environment)
+	if err != nil {
+		decision.Reason = "execution metadata is invalid: " + err.Error()
+		return decision
+	}
+	ready, successful, failed := dependencyState(dependencies, statuses, allowed)
+	if !ready {
+		decision.Reason = "a required job has not completed"
+		return decision
+	}
+	if !present {
+		decision.Run = successful
+		if !successful {
+			decision.Reason = "a required job did not succeed"
+		}
+		return decision
+	}
+	conditionContext := buildConditionContext(run, job, &semantics, dependencies, statuses, nil, successful, failed)
+	conditionMatches, reason := evaluateConditionContract(semantics.Condition, conditionContext)
+	if !conditionMatches {
+		decision.Reason = reason
+		return decision
+	}
+
+	if len(semantics.Rules) > 0 {
+		for index, rule := range semantics.Rules {
+			if len(rule.Changes) > 0 || len(rule.Exists) > 0 {
+				decision.Reason = fmt.Sprintf("rule %d uses changes/exists, which is not runtime-evaluable yet", index+1)
+				return decision
+			}
+			matches, ruleReason := evaluateConditionContract(rule.Condition, conditionContext)
+			if !matches {
+				if rule.Condition.Expression != "" && !rule.Condition.Evaluable {
+					decision.Reason = ruleReason
+					return decision
+				}
+				continue
+			}
+			when := strings.ToLower(strings.TrimSpace(rule.When))
+			if when == "never" || when == "manual" || when == "delayed" {
+				decision.Reason = "matched rule requires when: " + when
+				return decision
+			}
+			decision.Run = true
+			decision.Variables = rule.Variables
+			decision.AllowFailure = decision.AllowFailure || rule.AllowFailure
+			return decision
+		}
+		decision.Reason = "no GitLab rule matched"
+		return decision
+	}
+
+	if semantics.Only != nil && !matchesRefSelector(semantics.Only.Refs, run) {
+		decision.Reason = "run ref does not match only selector"
+		return decision
+	}
+	if semantics.Except != nil && matchesRefSelector(semantics.Except.Refs, run) {
+		decision.Reason = "run ref matches except selector"
+		return decision
+	}
+	when := strings.ToLower(strings.TrimSpace(semantics.When))
+	if when == "never" || when == "manual" || when == "delayed" {
+		decision.Reason = "job requires when: " + when
+		return decision
+	}
+	decision.Run = true
+	return decision
+}
+
+func decodeJobSemantics(environment json.RawMessage) (frozenJobSemantics, bool, error) {
+	values := decodeEnvironmentJSON(environment)
+	encoded := strings.TrimSpace(values["GCI_JOB_SEMANTICS_JSON"])
+	if encoded == "" {
+		return frozenJobSemantics{}, false, nil
+	}
+	var semantics frozenJobSemantics
+	if err := json.Unmarshal([]byte(encoded), &semantics); err != nil {
+		return frozenJobSemantics{}, true, err
+	}
+	return semantics, true, nil
+}
+
+func decodeStepCondition(environment json.RawMessage) (executionsemantics.ConditionContract, error) {
+	encoded := strings.TrimSpace(decodeEnvironmentJSON(environment)["GCI_STEP_CONDITION_JSON"])
+	if encoded == "" {
+		return executionsemantics.ConditionContract{Evaluable: true}, nil
+	}
+	var condition executionsemantics.ConditionContract
+	if err := json.Unmarshal([]byte(encoded), &condition); err != nil {
+		return executionsemantics.ConditionContract{}, err
+	}
+	return condition, nil
+}
+
+func evaluateConditionContract(condition executionsemantics.ConditionContract, context executionsemantics.ConditionContext) (bool, string) {
+	if !condition.Evaluable {
+		diagnostic := condition.Diagnostic
+		if diagnostic == "" {
+			diagnostic = "condition is not supported"
+		}
+		return false, diagnostic
+	}
+	if condition.Expression == "" {
+		if context.Success {
+			return true, ""
+		}
+		return false, "default success condition was not met"
+	}
+	if !usesStatusFunction(condition.Expression) && !context.Success {
+		return false, "implicit success condition was not met"
+	}
+	matches, err := executionsemantics.EvaluateCondition(condition.Expression, context)
+	if err != nil {
+		return false, "condition could not be evaluated: " + err.Error()
+	}
+	if !matches {
+		return false, "condition evaluated to false: " + condition.Expression
+	}
+	return true, ""
+}
+
+func usesStatusFunction(expression string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(expression, " ", ""))
+	for _, function := range []string{"success(", "failure(", "cancelled(", "always("} {
+		if strings.Contains(normalized, function) {
+			return true
+		}
+	}
+	return false
+}
+
+func dependencyState(dependencies []string, statuses map[string]store.Status, allowed map[string]bool) (ready, successful, failed bool) {
+	ready = true
+	successful = true
+	for _, dependency := range dependencies {
+		status, exists := statuses[dependency]
+		if !exists {
+			ready = false
+			successful = false
+			continue
+		}
+		if status == store.StatusSucceeded || status == store.StatusFailed && allowed[dependency] {
+			continue
+		}
+		successful = false
+		if status == store.StatusFailed {
+			failed = true
+		}
+	}
+	return ready, successful, failed
+}
+
+func buildConditionContext(run store.Run, job store.Job, semantics *frozenJobSemantics, dependencies []string, statuses map[string]store.Status, stepStatuses map[string]store.Status, success, failure bool) executionsemantics.ConditionContext {
+	values := make(map[string]interface{})
+	ref := pointerValue(run.Ref)
+	refName := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "refs/tags/")
+	eventName := run.TriggerType
+	if eventName == "manual" {
+		eventName = "workflow_dispatch"
+	}
+	values["github.ref"] = ref
+	values["github.ref_name"] = refName
+	values["github.sha"] = pointerValue(run.CommitSHA)
+	values["github.event_name"] = eventName
+	values["CI_COMMIT_REF_NAME"] = refName
+	values["CI_COMMIT_BRANCH"] = refName
+	values["CI_COMMIT_SHA"] = pointerValue(run.CommitSHA)
+	values["CI_PIPELINE_SOURCE"] = gitLabPipelineSource(run.TriggerType)
+	for key, value := range decodeEnvironmentJSON(run.Environment) {
+		values["env."+key] = value
+		values[key] = value
+		if strings.HasPrefix(key, "INPUT_") {
+			values["inputs."+strings.ToLower(strings.TrimPrefix(key, "INPUT_"))] = value
+		}
+	}
+	for key, value := range decodeEnvironmentJSON(job.Environment) {
+		values["env."+key] = value
+		values[key] = value
+	}
+	if semantics != nil {
+		for key, value := range semantics.Matrix {
+			values["matrix."+key] = value
+		}
+	}
+	for _, dependency := range dependencies {
+		if status, exists := statuses[dependency]; exists {
+			values["needs."+dependency+".result"] = providerStatus(status)
+		}
+	}
+	for key, status := range stepStatuses {
+		values["steps."+key+".outcome"] = providerStatus(status)
+		values["steps."+key+".conclusion"] = providerStatus(status)
+	}
+	return executionsemantics.ConditionContext{
+		Values: values, Success: success, Failure: failure, Cancelled: false,
+		CaseInsensitive: semantics != nil && semantics.Provider == string(ProviderGitLabCI),
+	}
+}
+
+func matchesRefSelector(selectors []string, run store.Run) bool {
+	if len(selectors) == 0 {
+		return true
+	}
+	ref := pointerValue(run.Ref)
+	refName := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "refs/tags/")
+	for _, selector := range selectors {
+		switch strings.TrimSpace(selector) {
+		case "branches":
+			if strings.HasPrefix(ref, "refs/heads/") {
+				return true
+			}
+		case "tags":
+			if strings.HasPrefix(ref, "refs/tags/") {
+				return true
+			}
+		case "merge_requests":
+			if run.TriggerType == "pull_request" || run.TriggerType == "merge_request" {
+				return true
+			}
+		case "schedules":
+			if run.TriggerType == "schedule" {
+				return true
+			}
+		default:
+			if selector == ref || selector == refName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func gitLabPipelineSource(trigger string) string {
+	switch trigger {
+	case "manual", "workflow_dispatch":
+		return "web"
+	case "pull_request", "merge_request":
+		return "merge_request_event"
+	case "schedule":
+		return "schedule"
+	default:
+		return "push"
+	}
+}
+
+func providerStatus(status store.Status) string {
+	switch status {
+	case store.StatusSucceeded:
+		return "success"
+	case store.StatusFailed:
+		return "failure"
+	default:
+		return string(status)
+	}
+}
+
+func decodeEnvironmentJSON(environment json.RawMessage) map[string]string {
+	values := make(map[string]string)
+	_ = json.Unmarshal(environment, &values)
+	return values
+}
+
+func mergeEnvironmentJSON(environment json.RawMessage, overlay map[string]string) json.RawMessage {
+	if len(overlay) == 0 {
+		return environment
+	}
+	values := decodeEnvironmentJSON(environment)
+	for key, value := range overlay {
+		values[key] = value
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return environment
+	}
+	return encoded
+}
+
+func snapshotWorkflowConcurrency(environment json.RawMessage, definition Definition, ref, commitSHA, trigger string) (json.RawMessage, *workflowConcurrencySnapshot, error) {
+	if definition.Concurrency == nil {
+		return environment, nil, nil
+	}
+	values := runtimeTemplateValues(ref, commitSHA, trigger, definition.Name, decodeEnvironmentJSON(environment))
+	group, err := resolveConcurrencyGroup(definition.Concurrency.Group, values)
+	if err != nil {
+		return nil, nil, fmt.Errorf("execution: workflow concurrency: %w", err)
+	}
+	snapshot := &workflowConcurrencySnapshot{Group: group, CancelInProgress: definition.Concurrency.CancelInProgress}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("execution: encode workflow concurrency: %w", err)
+	}
+	return mergeEnvironmentJSON(environment, map[string]string{"GCI_WORKFLOW_CONCURRENCY_JSON": string(encoded)}), snapshot, nil
+}
+
+func decodeWorkflowConcurrency(environment json.RawMessage) (*workflowConcurrencySnapshot, error) {
+	encoded := strings.TrimSpace(decodeEnvironmentJSON(environment)["GCI_WORKFLOW_CONCURRENCY_JSON"])
+	if encoded == "" {
+		return nil, nil
+	}
+	var snapshot workflowConcurrencySnapshot
+	if err := json.Unmarshal([]byte(encoded), &snapshot); err != nil {
+		return nil, err
+	}
+	return &snapshot, nil
+}
+
+func (m *Manager) cancelSupersededConcurrencyRuns(ctx context.Context, projectID string, current store.Run, snapshot workflowConcurrencySnapshot) error {
+	runs, err := m.store.ListRuns(ctx, projectID)
+	if err != nil {
+		return fmt.Errorf("execution: list concurrency runs: %w", err)
+	}
+	for _, candidate := range runs {
+		if candidate.ID == current.ID || candidate.Status != store.StatusQueued && !(snapshot.CancelInProgress && candidate.Status == store.StatusRunning) {
+			continue
+		}
+		other, err := decodeWorkflowConcurrency(candidate.Environment)
+		if err != nil || other == nil || !strings.EqualFold(other.Group, snapshot.Group) {
+			continue
+		}
+		if _, err := m.store.RequestRunCancellation(ctx, candidate.ID); err != nil {
+			return fmt.Errorf("execution: supersede concurrency run %q: %w", candidate.ID, err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) acquireRunConcurrency(ctx context.Context, run store.Run) (*store.ExecutionConcurrencyLease, error) {
+	snapshot, err := decodeWorkflowConcurrency(run.Environment)
+	if err != nil {
+		return nil, fmt.Errorf("execution: decode workflow concurrency: %w", err)
+	}
+	if snapshot == nil || snapshot.Group == "" {
+		return nil, nil
+	}
+	return m.waitForExecutionConcurrency(ctx, store.ExecutionConcurrencyWorkflow, concurrencyLeaseGroup(run.ProjectID, snapshot.Group), run.ID, run.ID, snapshot.CancelInProgress)
+}
+
+func (m *Manager) acquireJobConcurrency(ctx context.Context, run store.Run, job store.Job) (*store.ExecutionConcurrencyLease, error) {
+	semantics, present, err := decodeJobSemantics(job.Environment)
+	if err != nil {
+		return nil, fmt.Errorf("execution: decode job concurrency: %w", err)
+	}
+	if !present || semantics.Concurrency == nil || strings.TrimSpace(semantics.Concurrency.Group) == "" {
+		return nil, nil
+	}
+	conditionContext := buildConditionContext(run, job, &semantics, nil, nil, nil, true, false)
+	group, err := resolveConcurrencyGroup(semantics.Concurrency.Group, conditionContext.Values)
+	if err != nil {
+		return nil, fmt.Errorf("execution: job concurrency: %w", err)
+	}
+	return m.waitForExecutionConcurrency(ctx, store.ExecutionConcurrencyJob, concurrencyLeaseGroup(run.ProjectID, group), run.ID, job.ID, semantics.Concurrency.CancelInProgress)
+}
+
+func (m *Manager) waitForExecutionConcurrency(ctx context.Context, scope store.ExecutionConcurrencyScope, group, runID, holderID string, cancelInProgress bool) (*store.ExecutionConcurrencyLease, error) {
+	lastCancellation := ""
+	for {
+		result, err := m.store.AcquireExecutionConcurrency(ctx, store.AcquireExecutionConcurrencyParams{
+			Scope: scope, Group: group, RunID: runID, HolderID: holderID,
+			OwnerID: m.workerID, TTL: executionConcurrencyTTL, Now: time.Now().UTC(),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("execution: acquire concurrency group %q: %w", group, err)
+		}
+		if result.Acquired {
+			return &result.Lease, nil
+		}
+		if cancelInProgress && result.Lease.RunID != runID && result.Lease.RunID != lastCancellation {
+			if _, err := m.store.RequestRunCancellation(ctx, result.Lease.RunID); err != nil {
+				return nil, fmt.Errorf("execution: cancel concurrency holder: %w", err)
+			}
+			lastCancellation = result.Lease.RunID
+		}
+		timer := time.NewTimer(executionConcurrencyRetry)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func concurrencyLeaseGroup(projectID, group string) string {
+	return strings.ToLower(strings.TrimSpace(projectID)) + ":" + strings.ToLower(strings.TrimSpace(group))
+}
+
+func resolveConcurrencyGroup(group string, values map[string]interface{}) (string, error) {
+	for {
+		start := strings.Index(group, "${{")
+		if start < 0 {
+			break
+		}
+		endOffset := strings.Index(group[start+3:], "}}")
+		if endOffset < 0 {
+			return "", errors.New("template is missing closing braces")
+		}
+		end := start + 3 + endOffset
+		name := strings.TrimSpace(group[start+3 : end])
+		value, exists := values[name]
+		if !exists {
+			return "", fmt.Errorf("template context %q is unavailable", name)
+		}
+		group = group[:start] + fmt.Sprint(value) + group[end+2:]
+	}
+	group = strings.NewReplacer(
+		"$CI_COMMIT_REF_NAME", fmt.Sprint(values["CI_COMMIT_REF_NAME"]),
+		"$CI_COMMIT_BRANCH", fmt.Sprint(values["CI_COMMIT_BRANCH"]),
+	).Replace(group)
+	return executionsemantics.NormalizeConcurrencyGroup(group)
+}
+
+func runtimeTemplateValues(ref, commitSHA, trigger, workflow string, environment map[string]string) map[string]interface{} {
+	refName := strings.TrimPrefix(strings.TrimPrefix(ref, "refs/heads/"), "refs/tags/")
+	values := map[string]interface{}{
+		"github.ref": ref, "github.ref_name": refName, "github.sha": commitSHA,
+		"github.event_name": trigger, "github.workflow": workflow,
+		"CI_COMMIT_REF_NAME": refName, "CI_COMMIT_BRANCH": refName, "CI_COMMIT_SHA": commitSHA,
+	}
+	for key, value := range environment {
+		values["env."+key] = value
+		if strings.HasPrefix(key, "INPUT_") {
+			values["inputs."+strings.ToLower(strings.TrimPrefix(key, "INPUT_"))] = value
+		}
+	}
+	return values
 }
 
 func decodeStringList(value json.RawMessage) []string {

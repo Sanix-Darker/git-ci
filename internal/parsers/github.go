@@ -171,6 +171,11 @@ func (p *GithubParser) convertToPipeline(workflow *GithubWorkflow) (*types.Pipel
 		Environment: workflow.Env,
 		Triggers:    p.parseTriggers(workflow.On),
 	}
+	if workflow.Concurrency != nil {
+		pipeline.Concurrency = &types.Concurrency{
+			Group: workflow.Concurrency.Group, CancelInProgress: workflow.Concurrency.CancelInProgress,
+		}
+	}
 
 	// Process each job
 	for jobID, ghJob := range workflow.Jobs {
@@ -210,6 +215,11 @@ func (p *GithubParser) convertJob(jobID string, ghJob *GithubJob, globalDefaults
 		TimeoutMin:      ghJob.TimeoutMinutes,
 		ContinueOnErr:   p.parseContinueOnError(ghJob.ContinueOnError),
 		Needs:           p.parseNeeds(ghJob.Needs),
+	}
+	if ghJob.Concurrency != nil {
+		job.Concurrency = &types.Concurrency{
+			Group: ghJob.Concurrency.Group, CancelInProgress: ghJob.Concurrency.CancelInProgress,
+		}
 	}
 
 	// Set default timeout if not specified
