@@ -2,7 +2,8 @@
 
 The service API is rooted at `/api/v1`. A future breaking contract will use a
 new major path; unversioned and removed aliases are not compatibility surfaces.
-`GET /api/v1` returns the running version and capability document.
+`GET /api/v1` returns the API identifier and capability document. The running
+service version is exposed by `GET /healthz`.
 
 ## Authentication
 
