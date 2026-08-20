@@ -39,7 +39,7 @@ LDFLAGS := -ldflags="-w -s \
 .PHONY: all build clean test fmt vet lint run install uninstall \
         deps vendor docker release tag help coverage bench \
         check build-all ci dev watch \
-        docker-test docker-unit docker-integration e2e-public e2e-service
+		docker-test docker-unit docker-integration web e2e-public e2e-service e2e-web
 
 ## help: Display this help message
 help:
@@ -259,6 +259,14 @@ e2e-public:
 ## e2e-service: Exercise the compiled service, API, auth, and restart persistence
 e2e-service:
 	@bash scripts/e2e-service-foundation.sh
+
+## web: Compile the Tailwind web assets
+web:
+	@npm run build:web
+
+## e2e-web: Exercise the public site and operator console in Chromium
+e2e-web:
+	@npm run test:e2e
 
 ## release: Create release artifacts
 release: clean build-all

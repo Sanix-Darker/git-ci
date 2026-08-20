@@ -1,0 +1,137 @@
+{{define "app"}}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="htmx-config" content='{"allowEval":false,"selfRequestsOnly":true,"historyCacheSize":0}'>
+    <title>git-ci / {{.Title}}</title>
+    <link rel="stylesheet" href="/ui/assets/app.css">
+    <script src="/ui/assets/htmx.min.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">Skip to workspace</a>
+    <header class="mast app-mast">
+      <a class="brand" href="/app"><b>G</b><span>GIT-CI</span></a>
+      <div class="project-switcher"><span>CONTROL PLANE</span><small>LOCAL VPS</small></div>
+      <div class="mast-state"><span id="global-indicator" class="request-indicator">SYNC</span><i class="dot dot-green"></i>SERVICE READY</div>
+    </header>
+    {{template "app_frame" .}}
+  </body>
+</html>
+{{end}}
+
+{{define "app_frame"}}
+<title>git-ci / {{.Title}}</title>
+<div id="app-frame" class="app-frame">
+  {{template "sidebar" .}}
+  <main id="workspace" class="workspace">
+    <header class="workspace-header">
+      <div><p class="kicker">{{upper .Kicker}}</p><h1>{{upper .Title}}</h1></div>
+      <p>{{.Description}}</p>
+    </header>
+    {{if .Error}}<div class="notice notice-error" role="alert"><i class="dot dot-red"></i>{{.Error}}</div>{{end}}
+    {{if eq .Page "overview"}}{{template "overview_panel" .}}{{end}}
+    {{if eq .Page "projects"}}{{template "projects_panel" .}}{{end}}
+    {{if and (ne .Page "overview") (ne .Page "projects")}}{{template "future_panel" .}}{{end}}
+  </main>
+</div>
+{{end}}
+
+{{define "sidebar"}}
+<aside class="sidebar">
+  <div>
+    <p class="sidebar-label">OPERATE</p>
+    <nav class="main-nav" aria-label="Control plane">
+      <a class="{{if eq .Page "overview"}}active{{end}}" href="/app" hx-get="/app" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>01</span><b>Dashboard</b></a>
+      <a class="{{if eq .Page "projects"}}active{{end}}" href="/app/projects" hx-get="/app/projects" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>02</span><b>Projects</b><small>{{len .Projects}}</small></a>
+      <a class="{{if eq .Page "workflows"}}active{{end}}" href="/app/workflows" hx-get="/app/workflows" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>03</span><b>Workflows</b></a>
+      <a class="{{if eq .Page "runs"}}active{{end}}" href="/app/runs" hx-get="/app/runs" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>04</span><b>Runs</b></a>
+      <a class="{{if eq .Page "jobs"}}active{{end}}" href="/app/jobs" hx-get="/app/jobs" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>05</span><b>Jobs</b></a>
+    </nav>
+    <p class="sidebar-label sidebar-label-spaced">CONFIGURE</p>
+    <nav class="main-nav" aria-label="Configuration">
+      <a class="{{if eq .Page "secrets"}}active{{end}}" href="/app/secrets" hx-get="/app/secrets" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>06</span><b>Secrets</b></a>
+      <a class="{{if eq .Page "schedules"}}active{{end}}" href="/app/schedules" hx-get="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>07</span><b>Schedules</b></a>
+      <a class="{{if eq .Page "deployments"}}active{{end}}" href="/app/deployments" hx-get="/app/deployments" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>08</span><b>Deployments</b></a>
+      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>09</span><b>Settings</b></a>
+    </nav>
+  </div>
+  <div class="operator">
+    <div><i class="dot dot-green"></i><span>{{upper .Actor}}</span></div>
+    <form method="post" action="/logout" hx-post="/logout">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <button type="submit">LOG OUT</button>
+    </form>
+  </div>
+</aside>
+{{end}}
+
+{{define "overview_panel"}}
+<section class="metric-row" aria-label="Service metrics">
+  <article><strong>{{pad2 (len .Projects)}}</strong><span>REGISTERED PROJECTS</span></article>
+  <article><strong>{{pad2 (len .Candidates)}}</strong><span>VPS CHECKOUTS</span></article>
+  <article><strong class="word-metric">READY</strong><span>CONTROL SERVICE</span></article>
+</section>
+<section class="surface-grid">
+  <article class="surface-card surface-card-wide">
+    <div class="card-heading"><div><p class="kicker">PIPELINE SURFACE</p><h2>EXECUTION GRAPH</h2></div><span class="state-tag"><i class="dot dot-blue"></i>NEXT SLICE</span></div>
+    <div class="pipeline-graph" aria-label="Target pipeline graph">
+      <div class="graph-node"><small>TRIGGER</small><b>PUSH</b></div><i class="connector"></i>
+      <div class="graph-stack"><div class="graph-node"><small>JOB 01</small><b>TEST</b></div><div class="graph-node"><small>JOB 02</small><b>LINT</b></div></div>
+      <i class="connector"></i><div class="graph-node"><small>GATE</small><b>DEPLOY</b></div>
+    </div>
+    <p class="graph-note">Structure preview only. Run state is never fabricated.</p>
+  </article>
+  <article class="surface-card">
+    <div class="card-heading"><div><p class="kicker">RECENT PROJECTS</p><h2>REGISTRY</h2></div><a href="/app/projects" hx-get="/app/projects" hx-target="#app-frame" hx-swap="outerHTML" hx-push-url="true">VIEW ALL -></a></div>
+    {{template "project_rows" .}}
+  </article>
+</section>
+{{end}}
+
+{{define "projects_panel"}}
+<section class="project-layout">
+  <article class="surface-card">
+    <div class="card-heading"><div><p class="kicker">APPROVED ROOTS</p><h2>DISCOVERED</h2></div><span>{{pad2 (len .Candidates)}}</span></div>
+    <div class="candidate-list">
+      {{range .Candidates}}
+      <article class="candidate">
+        <div><strong>{{base .Path}}</strong><code>{{.Path}}</code></div>
+        <form method="post" action="/app/projects" hx-post="/app/projects" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator">
+          <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+          <input type="hidden" name="path" value="{{.Path}}">
+          <input type="hidden" name="slug" value="{{.SuggestedSlug}}">
+          <button type="submit">REGISTER -></button>
+        </form>
+      </article>
+      {{else}}<div class="empty-state"><i></i><p>NO GIT CHECKOUTS FOUND IN APPROVED ROOTS</p></div>{{end}}
+    </div>
+  </article>
+  <article class="surface-card">
+    <div class="card-heading"><div><p class="kicker">SQLITE REGISTRY</p><h2>ACTIVE</h2></div><span>{{pad2 (len .Projects)}}</span></div>
+    {{template "project_rows" .}}
+  </article>
+</section>
+{{end}}
+
+{{define "project_rows"}}
+<div class="project-rows">
+  {{range .Projects}}
+  <article>
+    <div class="row-main"><i class="dot dot-green"></i><div><strong>{{.Name}}</strong><code>{{.Slug}}</code></div></div>
+    <div class="row-meta"><span>{{.DefaultBranch}}</span><span>{{upper .SourceType}}</span></div>
+  </article>
+  {{else}}<div class="empty-state"><i></i><p>NO PROJECTS REGISTERED</p></div>{{end}}
+</div>
+{{end}}
+
+{{define "future_panel"}}
+<section class="future-surface">
+  <div class="future-index">{{if eq .Page "workflows"}}03{{else if eq .Page "runs"}}04{{else if eq .Page "jobs"}}05{{else}}--{{end}}</div>
+  <div><p class="kicker">DELIVERY STATUS</p><h2>DOMAIN NOT ENABLED YET.</h2><p>{{.Description}}</p></div>
+  <span class="state-tag"><i class="dot dot-blue"></i>PLANNED</span>
+</section>
+{{end}}

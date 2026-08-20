@@ -66,6 +66,9 @@ func TestPublicAndAuthenticationContract(t *testing.T) {
 	if session.Code != http.StatusOK {
 		t.Fatalf("session status = %d, body=%s", session.Code, session.Body.String())
 	}
+	if !strings.Contains(session.Body.String(), `"csrfToken":"`+loginPayload.CSRFToken+`"`) {
+		t.Fatalf("session did not restore CSRF state: %s", session.Body.String())
+	}
 }
 
 func TestCookieCSRFAndProjectLifecycle(t *testing.T) {
@@ -151,7 +154,13 @@ func TestDiscoveryAndRouteSeparation(t *testing.T) {
 		t.Fatalf("home status = %d, body=%s", home.Code, home.Body.String())
 	}
 	app := fixture.request(t, http.MethodGet, "/app", nil, "", nil, "", nil)
-	assertAPIError(t, app, http.StatusNotFound, "console_unavailable")
+	if app.Code != http.StatusSeeOther || app.Header().Get("Location") != "/login" {
+		t.Fatalf("app status = %d, location=%q", app.Code, app.Header().Get("Location"))
+	}
+	login := fixture.request(t, http.MethodGet, "/login", nil, "", nil, "", nil)
+	if login.Code != http.StatusOK || !strings.Contains(login.Body.String(), "OPERATOR GATE") {
+		t.Fatalf("login status = %d, body=%s", login.Code, login.Body.String())
+	}
 	legacy := fixture.request(t, http.MethodGet, "/api/v0/projects", nil, "", nil, "", nil)
 	assertAPIError(t, legacy, http.StatusNotFound, "route_not_found")
 	missing := fixture.request(t, http.MethodGet, "/api/v1/projects/missing", nil, fixture.token, nil, "", nil)

@@ -1,0 +1,27 @@
+{
+  "name": "git-ci-web",
+  "version": "1.0.0",
+  "description": "Static web surface for the git-ci service",
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build:web": "mkdir -p internal/webui/assets site/assets && npx @tailwindcss/cli -i ./web/input.css -o ./internal/webui/assets/app.css --minify && cp ./internal/webui/assets/app.css ./site/assets/app.css && cp ./node_modules/htmx.org/dist/htmx.min.js ./internal/webui/assets/htmx.min.js",
+    "test:e2e": "npm run build:web && playwright test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@tailwindcss/cli": "4.3.0",
+    "tailwindcss": "4.3.0"
+  },
+  "dependencies": {
+    "htmx.org": "2.0.10"
+  }
+}
