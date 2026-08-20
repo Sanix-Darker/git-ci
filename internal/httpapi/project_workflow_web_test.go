@@ -19,8 +19,16 @@ func TestWebProjectRegistrationDiscoversAndRendersWorkflowGraph(t *testing.T) {
 	}
 	definition := `name: Release pipeline
 on: [push, workflow_dispatch]
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
+    if: ${{ matrix.os != 'blocked' }}
+    strategy:
+      max-parallel: 2
+      matrix:
+        os: [linux, windows]
     runs-on: ubuntu-latest
     steps:
       - name: Compile
@@ -62,7 +70,7 @@ jobs:
 	response = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(response, request)
 	body := response.Body.String()
-	for _, expected := range []string{"Release pipeline", "Pipeline dependency graph", "Compile", "Deploy", "AFTER BUILD", "name=\"ref\"", "name=\"commitSha\""} {
+	for _, expected := range []string{"Release pipeline", "Pipeline dependency graph", "Compile", "Deploy", "AFTER BUILD", "MATRIX 01/02", "OS=linux", "IF matrix.os != &#39;blocked&#39;", "LOCK release-${{ github.ref }} / CANCEL OLD", "name=\"ref\"", "name=\"commitSha\""} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("workflow page missing %q", expected)
 		}

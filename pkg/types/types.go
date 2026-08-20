@@ -91,6 +91,8 @@ type Job struct {
 	AllowFailure  bool         `yaml:"allow_failure,omitempty" json:"allow_failure,omitempty"` // GitLab
 	Retry         *RetryPolicy `yaml:"retry,omitempty" json:"retry,omitempty"`
 	MaxRetries    int          `yaml:"max_retries,omitempty" json:"max_retries,omitempty"` // Jenkins
+	Concurrency   *Concurrency `yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
+	Interruptible bool         `yaml:"interruptible,omitempty" json:"interruptible,omitempty"`
 
 	// Parallelism and strategy
 	Strategy *Strategy                `yaml:"strategy,omitempty" json:"strategy,omitempty"` // GitHub

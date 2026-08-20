@@ -46,6 +46,31 @@ jobs:
       - name: Deploy production
         run: printf 'deployed %s\n' "$DEPLOY_TOKEN"
 YAML
+cat >"$project_root/alpha-service/.github/workflows/matrix.yml" <<'YAML'
+name: Matrix Preview
+on: workflow_dispatch
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    if: ${{ matrix.os != 'blocked' }}
+    strategy:
+      fail-fast: true
+      max-parallel: 2
+      matrix:
+        os: [linux, windows]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Verify target
+        if: ${{ matrix.os == 'linux' }}
+        run: printf '%s\n' '${{ matrix.os }}'
+  publish:
+    needs: verify
+    runs-on: linux
+    steps:
+      - run: printf 'published\n'
+YAML
 cat >"$project_root/alpha-service/.github/workflows/failure.yml" <<'YAML'
 name: Failure CI
 on:

@@ -373,12 +373,13 @@
   <details class="workflow-detail" id="workflow-{{.ID}}">
     <summary><span class="provider-block">{{upper .Provider}}</span><span><small>{{upper .ProjectName}} / REV {{.Revision}}</small><strong>{{.Name}}</strong><code>{{.File}}</code></span><span class="resource-stat"><b>{{.JobCount}}</b> JOBS</span><span class="resource-open">VIEW GRAPH</span></summary>
     <div class="workflow-detail-body">
-      <div class="definition-facts"><div><span>KEY</span><code>{{.Key}}</code></div><div><span>TRIGGERS</span><p>{{range .Triggers}}<b class="definition-chip">{{upper .}}</b>{{else}}<b class="definition-chip">MANUAL</b>{{end}}</p></div><div><span>STAGES</span><p>{{range .Stages}}<b class="definition-chip">{{upper .}}</b>{{else}}<b class="definition-chip">DAG</b>{{end}}</p></div></div>
+      <div class="definition-facts"><div><span>KEY</span><code>{{.Key}}</code></div><div><span>TRIGGERS</span><p>{{range .Triggers}}<b class="definition-chip">{{upper .}}</b>{{else}}<b class="definition-chip">MANUAL</b>{{end}}</p></div><div><span>STAGES</span><p>{{range .Stages}}<b class="definition-chip">{{upper .}}</b>{{else}}<b class="definition-chip">DAG</b>{{end}}</p></div><div><span>EXECUTION POLICY</span>{{template "semantic_badges" .Badges}}</div></div>
       {{if .TriggerPolicies}}<section class="trigger-policies" aria-label="Workflow trigger policies"><header><span>TRIGGER CONTRACT</span><small>PARSED FROM REPOSITORY</small></header><div>{{range .TriggerPolicies}}<article><h4><i class="dot {{if .Evaluable}}dot-green{{else}}dot-red{{end}}"></i>{{upper .Event}}</h4><p>{{range .Branches}}<b>BRANCH {{.}}</b>{{end}}{{range .BranchesIgnore}}<b>EXCEPT BRANCH {{.}}</b>{{end}}{{range .Tags}}<b>TAG {{.}}</b>{{end}}{{range .TagsIgnore}}<b>EXCEPT TAG {{.}}</b>{{end}}{{range .Paths}}<b>PATH {{.}}</b>{{end}}{{range .PathsIgnore}}<b>EXCEPT PATH {{.}}</b>{{end}}{{range .Actions}}<b>ACTION {{upper .}}</b>{{end}}{{range .Schedules}}<b>CRON {{.}}</b>{{end}}{{if .Condition}}<code>{{.Condition}}</code>{{end}}{{if not .Evaluable}}<em>VISIBLE / NOT EVALUATED</em>{{end}}</p></article>{{end}}</div></section>{{end}}
       <div class="pipeline-graph workflow-graph" aria-label="Pipeline dependency graph">
-        {{range .GraphRows}}<section class="pipeline-stage"><header><span>LEVEL {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>READY</span></header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}</div></section>{{else}}<p class="empty-state">NO EXECUTABLE JOBS WERE NORMALIZED.</p>{{end}}
+        <header class="graph-key"><span><b>DEPENDENCY DAG</b><small>LEFT TO RIGHT EXECUTION LEVELS</small></span><span>{{pad2 .JobCount}} NODES / {{pad2 .EdgeCount}} EDGES</span></header>
+        {{range .GraphRows}}<section class="pipeline-stage"><header><span>LEVEL {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>READY</span></header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small>{{template "semantic_badges" .Badges}}</article>{{end}}</div></section>{{else}}<p class="empty-state">NO EXECUTABLE JOBS WERE NORMALIZED.</p>{{end}}
       </div>
-      <div class="workflow-job-list">{{range .Jobs}}<article><header><span><b>{{.Name}}</b><small>{{if .Stage}}{{upper .Stage}}{{else}}DAG{{end}}{{if .Dependencies}} / NEEDS {{upper .Dependencies}}{{end}}</small></span><span>{{len .Steps}} STEPS</span></header>{{range .Steps}}<div class="workflow-step"><span>{{if .Action}}ACTION{{else}}RUN{{end}}</span><b>{{.Name}}</b><code>{{if .Command}}{{.Command}}{{else}}{{.Action}}{{end}}</code></div>{{end}}</article>{{end}}</div>
+      <div class="workflow-job-list">{{range .Jobs}}<article><header><span><b>{{.Name}}</b><small>{{if .Stage}}{{upper .Stage}}{{else}}DAG{{end}}{{if .Dependencies}} / NEEDS {{upper .Dependencies}}{{end}}</small>{{template "semantic_badges" .Badges}}</span><span>{{len .Steps}} STEPS</span></header>{{range .Steps}}<div class="workflow-step"><span>{{if .Action}}ACTION{{else}}RUN{{end}}</span><b>{{.Name}}</b><code>{{if .Command}}{{.Command}}{{else}}{{.Action}}{{end}}</code>{{template "semantic_badges" .Badges}}</div>{{end}}</article>{{end}}</div>
       <form class="manual-dispatch" method="post" action="/app/workflows/{{.ID}}/runs" hx-post="/app/workflows/{{.ID}}/runs" hx-disabled-elt="button" hx-indicator="#global-indicator">
         <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
         <label><span>REF</span><input name="ref" value="{{.DefaultRef}}" autocomplete="off" required></label>
@@ -437,16 +438,17 @@
   <dl class="run-facts"><div><dt>PROJECT</dt><dd>{{.Run.ProjectName}}</dd></div><div><dt>REF</dt><dd>{{.Run.Ref}}</dd></div><div><dt>COMMIT</dt><dd>{{if .Run.CommitSHA}}{{short .Run.CommitSHA}}{{else}}LOCAL{{end}}</dd></div><div><dt>CREATED</dt><dd>{{.Run.CreatedAt}}</dd></div></dl>
   {{with .Lineage}}<aside class="run-provenance" aria-label="Run provenance"><div><p class="kicker">PROVENANCE</p><strong>{{.Kind}}</strong></div><a href="/app/runs/{{.SourceRunID}}">SOURCE RUN / {{short .SourceRunID}}</a><code>{{if .SourceStepID}}STEP {{short .SourceStepID}}{{else if .SourceJobID}}JOB {{short .SourceJobID}}{{end}}</code><small>{{.Actor}} / {{.CreatedAt}}</small></aside>{{end}}
   <div class="pipeline-graph" aria-label="Pipeline dependency graph">
-    {{range .GraphRows}}<section class="pipeline-stage"><header><span>STAGE {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>{{.Status}}</span>{{template "play_control" .Replay}}</header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}</div></section>{{end}}
+    <header class="graph-key"><span><b>IMMUTABLE RUN DAG</b><small>LIVE SQLITE SNAPSHOT</small></span><span>{{pad2 (len .Jobs)}} NODES / {{pad2 .EdgeCount}} EDGES</span></header>
+    {{range .GraphRows}}<section class="pipeline-stage"><header><span>STAGE {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>{{.Status}}</span>{{template "play_control" .Replay}}</header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small>{{template "semantic_badges" .Badges}}</article>{{end}}</div></section>{{end}}
   </div>
   <div class="job-details">
     {{range .Jobs}}
     <article class="job-detail">
-      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3></div><div class="job-meta"><span>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowFailure}} / ALLOW FAILURE{{end}}</span>{{template "play_control" .Replay}}</div></header>
+      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3>{{template "semantic_badges" .Badges}}</div><div class="job-meta"><span>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowFailure}} / ALLOW FAILURE{{end}}</span>{{template "play_control" .Replay}}</div></header>
       <div class="step-list">
         {{range .Steps}}
         <section class="step-detail">
-          <header><span><i class="dot {{.Dot}}"></i>{{.Name}}</span><span class="step-actions"><b>{{.Status}}</b>{{template "play_control" .Replay}}</span></header>
+          <header><span><i class="dot {{.Dot}}"></i>{{.Name}}{{template "semantic_badges" .Badges}}</span><span class="step-actions"><b>{{.Status}}</b>{{template "play_control" .Replay}}</span></header>
           {{if .Command}}<code class="step-command">$ {{.Command}}</code>{{end}}
           <div class="log-console log-console-lazy" aria-label="Logs for {{.Name}}" aria-busy="true" hx-get="/app/runs/{{.RunID}}/steps/{{.ID}}/logs" hx-trigger="revealed" hx-swap="outerHTML">
             <div class="log-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
@@ -461,6 +463,8 @@
 </section>
 {{end}}
 {{end}}
+
+{{define "semantic_badges"}}{{if .}}<span class="semantic-badges">{{range .}}<b class="semantic-chip {{.Tone}}" title="{{.Hint}}">{{.Label}}</b>{{end}}</span>{{end}}{{end}}
 
 {{define "step_logs"}}
 <div class="log-console log-console-loaded" aria-label="Logs for {{.StepName}}" aria-busy="false" data-terminal="{{.Terminal}}" {{if not .Terminal}}hx-get="/app/runs/{{.RunID}}/steps/{{.StepID}}/logs" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>

@@ -81,7 +81,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.locator("details.workflow-detail", { hasText: "Alpha CI" })).toBeVisible();
   await page.getByRole("button", { name: "SYNC BETA-WORKER" }).click();
   await expect(page.locator("details.workflow-detail", { hasText: ".gitlab-ci.yml" })).toBeVisible();
-  await expect(page.getByText("GITHUB", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("GITHUB", { exact: true })).toHaveCount(3);
   await expect(page.getByText("GITLAB", { exact: true })).toBeVisible();
 
   await page.getByRole("link", { name: "Secrets" }).click();

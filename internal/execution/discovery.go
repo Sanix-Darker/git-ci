@@ -4,12 +4,14 @@
 package execution
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/sanix-darker/git-ci/internal/executionsemantics"
 	"github.com/sanix-darker/git-ci/internal/parsers"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
@@ -44,6 +46,7 @@ type Definition struct {
 	Stages           []string               `json:"stages"`
 	Triggers         []string               `json:"triggers"`
 	TriggerPolicies  []triggerpolicy.Policy `json:"triggerPolicies,omitempty"`
+	Concurrency      *ConcurrencyDefinition `json:"concurrency,omitempty"`
 	Jobs             []JobDefinition        `json:"jobs"`
 	TopologicalOrder []string               `json:"topologicalOrder"`
 }
@@ -52,20 +55,55 @@ type Definition struct {
 // source job identifier; Needs and Requires therefore reference keys rather
 // than presentation names.
 type JobDefinition struct {
-	Key             string            `json:"key"`
-	Name            string            `json:"name"`
-	Environment     map[string]string `json:"environment"`
-	EnvironmentName string            `json:"environmentName,omitempty"`
-	DeploymentTier  string            `json:"deploymentTier,omitempty"`
-	Needs           []string          `json:"needs"`
-	Requires        []string          `json:"requires"`
-	Stage           string            `json:"stage,omitempty"`
-	RunnerHint      string            `json:"runnerHint,omitempty"`
-	AllowFailure    bool              `json:"allowFailure"`
-	TimeoutMinutes  int               `json:"timeoutMinutes,omitempty"`
-	RollbackCommand string            `json:"rollbackCommand,omitempty"`
-	VerifyCommand   string            `json:"verifyCommand,omitempty"`
-	Steps           []StepDefinition  `json:"steps"`
+	Key             string                               `json:"key"`
+	SourceKey       string                               `json:"sourceKey,omitempty"`
+	Name            string                               `json:"name"`
+	Environment     map[string]string                    `json:"environment"`
+	EnvironmentName string                               `json:"environmentName,omitempty"`
+	DeploymentTier  string                               `json:"deploymentTier,omitempty"`
+	Needs           []string                             `json:"needs"`
+	Requires        []string                             `json:"requires"`
+	Stage           string                               `json:"stage,omitempty"`
+	RunnerHint      string                               `json:"runnerHint,omitempty"`
+	AllowFailure    bool                                 `json:"allowFailure"`
+	TimeoutMinutes  int                                  `json:"timeoutMinutes,omitempty"`
+	RollbackCommand string                               `json:"rollbackCommand,omitempty"`
+	VerifyCommand   string                               `json:"verifyCommand,omitempty"`
+	Matrix          map[string]string                    `json:"matrix,omitempty"`
+	MatrixIndex     int                                  `json:"matrixIndex,omitempty"`
+	MatrixTotal     int                                  `json:"matrixTotal,omitempty"`
+	MatrixLabel     string                               `json:"matrixLabel,omitempty"`
+	Condition       executionsemantics.ConditionContract `json:"condition"`
+	Rules           []RuleDefinition                     `json:"rules,omitempty"`
+	Only            *OnlyExceptDefinition                `json:"only,omitempty"`
+	Except          *OnlyExceptDefinition                `json:"except,omitempty"`
+	When            string                               `json:"when,omitempty"`
+	Concurrency     *ConcurrencyDefinition               `json:"concurrency,omitempty"`
+	Interruptible   bool                                 `json:"interruptible,omitempty"`
+	FailFast        bool                                 `json:"failFast,omitempty"`
+	MaxParallel     int                                  `json:"maxParallel,omitempty"`
+	Steps           []StepDefinition                     `json:"steps"`
+}
+
+type ConcurrencyDefinition struct {
+	Group            string `json:"group"`
+	CancelInProgress bool   `json:"cancelInProgress,omitempty"`
+	Limit            int    `json:"limit,omitempty"`
+}
+
+type RuleDefinition struct {
+	Condition    executionsemantics.ConditionContract `json:"condition"`
+	When         string                               `json:"when,omitempty"`
+	Changes      []string                             `json:"changes,omitempty"`
+	Exists       []string                             `json:"exists,omitempty"`
+	Variables    map[string]string                    `json:"variables,omitempty"`
+	AllowFailure bool                                 `json:"allowFailure,omitempty"`
+}
+
+type OnlyExceptDefinition struct {
+	Refs      []string `json:"refs,omitempty"`
+	Changes   []string `json:"changes,omitempty"`
+	Variables []string `json:"variables,omitempty"`
 }
 
 type deploymentExtension struct {
@@ -77,15 +115,16 @@ type deploymentExtension struct {
 // Command holds the shell/script command when available; Action preserves a
 // provider action reference such as actions/checkout@v4.
 type StepDefinition struct {
-	Key              string            `json:"key"`
-	Name             string            `json:"name"`
-	Command          string            `json:"command,omitempty"`
-	Action           string            `json:"action,omitempty"`
-	Environment      map[string]string `json:"environment"`
-	WorkingDirectory string            `json:"workingDirectory,omitempty"`
-	TimeoutMinutes   int               `json:"timeoutMinutes,omitempty"`
-	Shell            string            `json:"shell,omitempty"`
-	AllowFailure     bool              `json:"allowFailure"`
+	Key              string                               `json:"key"`
+	Name             string                               `json:"name"`
+	Command          string                               `json:"command,omitempty"`
+	Action           string                               `json:"action,omitempty"`
+	Environment      map[string]string                    `json:"environment"`
+	WorkingDirectory string                               `json:"workingDirectory,omitempty"`
+	TimeoutMinutes   int                                  `json:"timeoutMinutes,omitempty"`
+	Shell            string                               `json:"shell,omitempty"`
+	AllowFailure     bool                                 `json:"allowFailure"`
+	Condition        executionsemantics.ConditionContract `json:"condition"`
 }
 
 type registeredProject struct {
@@ -506,28 +545,56 @@ func normalizeDefinition(
 		return Definition{}, fmt.Errorf("parser returned no pipeline")
 	}
 
-	jobKeys := make([]string, 0, len(pipeline.Jobs))
+	sourceKeys := make([]string, 0, len(pipeline.Jobs))
 	for key := range pipeline.Jobs {
-		jobKeys = append(jobKeys, key)
+		sourceKeys = append(sourceKeys, key)
 	}
-	sort.Strings(jobKeys)
+	sort.Strings(sourceKeys)
 
-	jobs := make(map[string]JobDefinition, len(jobKeys))
-	dependencies := make(map[string][]string, len(jobKeys))
-	for _, key := range jobKeys {
-		job := pipeline.Jobs[key]
+	jobs := make(map[string]JobDefinition, len(sourceKeys))
+	variantKeys := make(map[string][]string, len(sourceKeys))
+	jobKeys := make([]string, 0, len(sourceKeys))
+	for _, sourceKey := range sourceKeys {
+		job := pipeline.Jobs[sourceKey]
 		if job == nil {
-			return Definition{}, fmt.Errorf("job %q is nil", key)
+			return Definition{}, fmt.Errorf("job %q is nil", sourceKey)
 		}
-		normalized, err := normalizeJob(key, job, extensions[key])
+		variants, err := executionsemantics.ExpandMatrix(job)
 		if err != nil {
-			return Definition{}, fmt.Errorf("job %q: %w", key, err)
+			return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
 		}
-		jobs[key] = normalized
-		dependencies[key] = sortedUnique(append(
-			append([]string{}, normalized.Needs...),
-			normalized.Requires...,
-		))
+		if len(jobKeys)+len(variants) > 256 {
+			return Definition{}, fmt.Errorf("workflow expands beyond 256 jobs")
+		}
+		for _, variant := range variants {
+			key := executionsemantics.MatrixJobKey(sourceKey, variant)
+			normalized, err := normalizeJob(key, job, extensions[sourceKey])
+			if err != nil {
+				return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
+			}
+			normalized.SourceKey = sourceKey
+			if err := applyMatrixVariant(&normalized, variant, string(file.provider)); err != nil {
+				return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
+			}
+			jobs[key] = normalized
+			variantKeys[sourceKey] = append(variantKeys[sourceKey], key)
+			jobKeys = append(jobKeys, key)
+		}
+	}
+
+	dependencies := make(map[string][]string, len(jobKeys))
+	for _, sourceKey := range sourceKeys {
+		job := pipeline.Jobs[sourceKey]
+		for _, key := range variantKeys[sourceKey] {
+			normalized := jobs[key]
+			normalized.Needs = expandDependencyKeys(job.Needs, variantKeys)
+			normalized.Requires = expandDependencyKeys(job.Requires, variantKeys)
+			jobs[key] = normalized
+			dependencies[key] = sortedUnique(append(
+				append([]string{}, normalized.Needs...),
+				normalized.Requires...,
+			))
+		}
 	}
 
 	order, err := deterministicTopologicalOrder(jobKeys, dependencies)
@@ -555,6 +622,7 @@ func normalizeDefinition(
 		Stages:           copyStringSlice(pipeline.Stages),
 		Triggers:         sortedUnique(pipeline.Triggers),
 		TriggerPolicies:  triggerPolicies,
+		Concurrency:      normalizeConcurrency(pipeline.Concurrency),
 		Jobs:             make([]JobDefinition, 0, len(order)),
 		TopologicalOrder: copyStringSlice(order),
 	}
@@ -579,7 +647,7 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 	if rollback != "" && strings.TrimSpace(job.EnvironmentName) == "" {
 		return JobDefinition{}, fmt.Errorf("x-gci rollback requires a deployment environment")
 	}
-	return JobDefinition{
+	normalized := JobDefinition{
 		Key:             key,
 		Name:            job.Name,
 		Environment:     copyStringMap(job.Environment),
@@ -593,8 +661,144 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		TimeoutMinutes:  job.TimeoutMin,
 		RollbackCommand: rollback,
 		VerifyCommand:   verify,
+		Condition:       executionsemantics.CompileCondition(job.If),
+		Rules:           normalizeRules(job.Rules),
+		Only:            normalizeOnlyExcept(job.Only),
+		Except:          normalizeOnlyExcept(job.Except),
+		When:            job.When,
+		Concurrency:     normalizeConcurrency(job.Concurrency),
+		Interruptible:   job.Interruptible,
 		Steps:           normalizeSteps(key, job.Steps),
-	}, nil
+	}
+	if job.Strategy != nil {
+		normalized.FailFast = job.Strategy.FailFast
+		normalized.MaxParallel = job.Strategy.MaxParallel
+	}
+	return normalized, nil
+}
+
+func applyMatrixVariant(job *JobDefinition, variant executionsemantics.MatrixVariant, provider string) error {
+	job.Matrix = variant.Values
+	job.MatrixIndex = variant.Index
+	job.MatrixTotal = variant.Total
+	job.MatrixLabel = variant.Label
+	job.Name = executionsemantics.MatrixJobName(job.Name, variant)
+	environment, err := executionsemantics.MatrixEnvironment(variant, provider)
+	if err != nil {
+		return err
+	}
+	if job.Environment == nil {
+		job.Environment = make(map[string]string)
+	}
+	for key, value := range environment {
+		job.Environment[key] = value
+	}
+	fields := []*string{&job.Name, &job.EnvironmentName, &job.DeploymentTier, &job.RunnerHint, &job.RollbackCommand, &job.VerifyCommand}
+	for _, field := range fields {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(*field, variant.Values)
+		if err != nil {
+			return err
+		}
+		*field = resolved
+	}
+	for key, value := range job.Environment {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(value, variant.Values)
+		if err != nil {
+			return err
+		}
+		job.Environment[key] = resolved
+	}
+	if job.Concurrency != nil {
+		job.Concurrency.Group, err = executionsemantics.ResolveMatrixTemplate(job.Concurrency.Group, variant.Values)
+		if err != nil {
+			return err
+		}
+	}
+	for index := range job.Steps {
+		step := &job.Steps[index]
+		stepFields := []*string{&step.Name, &step.Command, &step.Action, &step.WorkingDirectory, &step.Shell}
+		for _, field := range stepFields {
+			resolved, err := executionsemantics.ResolveMatrixTemplate(*field, variant.Values)
+			if err != nil {
+				return err
+			}
+			*field = resolved
+		}
+		for key, value := range step.Environment {
+			resolved, err := executionsemantics.ResolveMatrixTemplate(value, variant.Values)
+			if err != nil {
+				return err
+			}
+			step.Environment[key] = resolved
+		}
+	}
+	return freezeJobSemantics(job, provider)
+}
+
+func expandDependencyKeys(keys []string, variants map[string][]string) []string {
+	var expanded []string
+	for _, key := range keys {
+		if matches := variants[key]; len(matches) > 0 {
+			expanded = append(expanded, matches...)
+		} else {
+			expanded = append(expanded, key)
+		}
+	}
+	return sortedUnique(expanded)
+}
+
+func normalizeConcurrency(value *types.Concurrency) *ConcurrencyDefinition {
+	if value == nil || strings.TrimSpace(value.Group) == "" {
+		return nil
+	}
+	return &ConcurrencyDefinition{Group: value.Group, CancelInProgress: value.CancelInProgress, Limit: value.Limit}
+}
+
+func normalizeRules(rules []types.Rule) []RuleDefinition {
+	result := make([]RuleDefinition, 0, len(rules))
+	for _, rule := range rules {
+		result = append(result, RuleDefinition{
+			Condition: executionsemantics.CompileCondition(rule.If), When: rule.When,
+			Changes: copyStringSlice(rule.Changes), Exists: copyStringSlice(rule.Exists),
+			Variables: copyStringMap(rule.Variables), AllowFailure: rule.AllowFailure,
+		})
+	}
+	return result
+}
+
+func normalizeOnlyExcept(value *types.OnlyExcept) *OnlyExceptDefinition {
+	if value == nil {
+		return nil
+	}
+	return &OnlyExceptDefinition{
+		Refs: copyStringSlice(value.Refs), Changes: copyStringSlice(value.Changes), Variables: copyStringSlice(value.Variables),
+	}
+}
+
+func freezeJobSemantics(job *JobDefinition, provider string) error {
+	metadata := map[string]interface{}{
+		"provider": provider, "sourceKey": job.SourceKey, "matrix": job.Matrix, "matrixIndex": job.MatrixIndex,
+		"matrixTotal": job.MatrixTotal, "matrixLabel": job.MatrixLabel, "condition": job.Condition,
+		"rules": job.Rules, "only": job.Only, "except": job.Except, "when": job.When,
+		"concurrency": job.Concurrency, "interruptible": job.Interruptible,
+		"failFast": job.FailFast, "maxParallel": job.MaxParallel,
+	}
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("encode execution semantics: %w", err)
+	}
+	job.Environment["GCI_JOB_SEMANTICS_JSON"] = string(encoded)
+	for index := range job.Steps {
+		if job.Steps[index].Environment == nil {
+			job.Steps[index].Environment = make(map[string]string)
+		}
+		encoded, err := json.Marshal(job.Steps[index].Condition)
+		if err != nil {
+			return fmt.Errorf("encode step condition: %w", err)
+		}
+		job.Steps[index].Environment["GCI_STEP_CONDITION_JSON"] = string(encoded)
+	}
+	return nil
 }
 
 func readDeploymentExtensions(file workflowFile) (map[string]deploymentExtension, error) {
@@ -679,6 +883,7 @@ func normalizeSteps(jobKey string, steps []types.Step) []StepDefinition {
 			TimeoutMinutes:   step.TimeoutMin,
 			Shell:            step.Shell,
 			AllowFailure:     step.AllowFailure || step.ContinueOnErr,
+			Condition:        executionsemantics.CompileCondition(step.If),
 		})
 	}
 	return normalized

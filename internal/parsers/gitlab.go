@@ -532,6 +532,12 @@ func (p *GitlabParser) convertJob(
 		Tags:        glJob.Tags,
 		When:        glJob.When,
 	}
+	if glJob.ResourceGroup != "" {
+		job.Concurrency = &types.Concurrency{Group: glJob.ResourceGroup, Limit: 1}
+	}
+	if glJob.Interruptible != nil {
+		job.Interruptible = *glJob.Interruptible
+	}
 
 	// Set image/runs-on
 	if glJob.Image != nil {
@@ -634,12 +640,6 @@ func (p *GitlabParser) convertJob(
 	// Handle trigger
 	if glJob.Trigger != nil {
 		job.Trigger = p.parseTrigger(glJob.Trigger)
-	}
-
-	// Set interruptible
-	if glJob.Interruptible != nil {
-		// Copy the value
-		job.ContinueOnErr = !*glJob.Interruptible
 	}
 
 	return job

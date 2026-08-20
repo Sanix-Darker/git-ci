@@ -250,24 +250,50 @@ type workflowDefinitionDocument struct {
 	TriggerPolicies  []triggerpolicy.Policy `json:"triggerPolicies"`
 	Stages           []string               `json:"stages"`
 	TopologicalOrder []string               `json:"topologicalOrder"`
+	Concurrency      *concurrencyDocument   `json:"concurrency"`
 	Jobs             json.RawMessage        `json:"jobs"`
 }
 
 type workflowDefinitionJobDocument struct {
-	Key          string                           `json:"key"`
-	Name         string                           `json:"name"`
-	Stage        string                           `json:"stage"`
-	RunnerHint   string                           `json:"runnerHint"`
-	Needs        []string                         `json:"needs"`
-	Requires     []string                         `json:"requires"`
-	AllowFailure bool                             `json:"allowFailure"`
-	Steps        []workflowDefinitionStepDocument `json:"steps"`
+	Key           string                           `json:"key"`
+	SourceKey     string                           `json:"sourceKey"`
+	Name          string                           `json:"name"`
+	Stage         string                           `json:"stage"`
+	RunnerHint    string                           `json:"runnerHint"`
+	Needs         []string                         `json:"needs"`
+	Requires      []string                         `json:"requires"`
+	AllowFailure  bool                             `json:"allowFailure"`
+	Matrix        map[string]string                `json:"matrix"`
+	MatrixIndex   int                              `json:"matrixIndex"`
+	MatrixTotal   int                              `json:"matrixTotal"`
+	MatrixLabel   string                           `json:"matrixLabel"`
+	Condition     conditionDocument                `json:"condition"`
+	Rules         []json.RawMessage                `json:"rules"`
+	When          string                           `json:"when"`
+	Concurrency   *concurrencyDocument             `json:"concurrency"`
+	Interruptible bool                             `json:"interruptible"`
+	FailFast      bool                             `json:"failFast"`
+	MaxParallel   int                              `json:"maxParallel"`
+	Steps         []workflowDefinitionStepDocument `json:"steps"`
 }
 
 type workflowDefinitionStepDocument struct {
-	Name    string `json:"name"`
-	Command string `json:"command"`
-	Action  string `json:"action"`
+	Name      string            `json:"name"`
+	Command   string            `json:"command"`
+	Action    string            `json:"action"`
+	Condition conditionDocument `json:"condition"`
+}
+
+type conditionDocument struct {
+	Expression string `json:"expression"`
+	Evaluable  bool   `json:"evaluable"`
+	Diagnostic string `json:"diagnostic"`
+}
+
+type concurrencyDocument struct {
+	Group            string `json:"group"`
+	CancelInProgress bool   `json:"cancelInProgress"`
+	Limit            int    `json:"limit"`
 }
 
 func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
@@ -277,6 +303,13 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 	}
 	view.Triggers = definition.Triggers
 	view.Stages = definition.Stages
+	if definition.Concurrency != nil {
+		label := "LOCK " + definition.Concurrency.Group
+		if definition.Concurrency.CancelInProgress {
+			label += " / CANCEL OLD"
+		}
+		view.Badges = append(view.Badges, webui.SemanticBadgeView{Label: label, Hint: "Workflow concurrency group"})
+	}
 	manualInputs := make(map[string]struct{})
 	for _, policy := range definition.TriggerPolicies {
 		policyView := webui.WorkflowTriggerPolicyView{
@@ -326,8 +359,9 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 		dependencies := append([]string(nil), job.Needs...)
 		dependencies = append(dependencies, job.Requires...)
 		workflowJob := webui.WorkflowJobView{
-			Key: key, Name: job.Name, Stage: job.Stage, Runner: job.RunnerHint,
+			Key: key, SourceKey: job.SourceKey, Name: job.Name, Stage: job.Stage, Runner: job.RunnerHint,
 			Dependencies: strings.Join(dependencies, ", "), AllowFailure: job.AllowFailure,
+			Badges: jobSemanticBadges(job),
 		}
 		if workflowJob.Name == "" {
 			workflowJob.Name = key
@@ -335,13 +369,15 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 		for _, step := range job.Steps {
 			workflowJob.Steps = append(workflowJob.Steps, webui.WorkflowStepView{
 				Name: step.Name, Command: step.Command, Action: step.Action,
+				Badges: conditionBadges(step.Condition),
 			})
 		}
+		view.EdgeCount += len(dependencies)
 		view.Jobs = append(view.Jobs, workflowJob)
 		runJobs = append(runJobs, webui.RunJobView{
-			Key: key, Name: workflowJob.Name, Status: "READY", Dot: "dot-green",
+			Key: key, SourceKey: workflowJob.SourceKey, Name: workflowJob.Name, Status: "READY", Dot: "dot-green",
 			Runner: workflowJob.Runner, Dependencies: workflowJob.Dependencies,
-			DependencyKeys: dependencies, AllowFailure: workflowJob.AllowFailure,
+			DependencyKeys: dependencies, AllowFailure: workflowJob.AllowFailure, Badges: workflowJob.Badges,
 		})
 	}
 	view.GraphRows = buildGraphRows(runJobs)
@@ -396,6 +432,7 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 			Runner: stringValue(item.Job.Runner), Dependencies: strings.Join(decodeDependencies(item.Job.DependencyKeys), ", "),
 			AllowFailure: item.Job.AllowFailure, Replay: jobReplay,
 		}
+		populateRunJobSemanticView(&job, item.Job.Environment)
 		for _, step := range item.Steps {
 			stepEligibility, err := a.store.EvaluateStepReplay(ctx, step.ID)
 			if err != nil {
@@ -409,13 +446,102 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 				ID: step.ID, RunID: runID, Name: step.Name, Status: strings.ToUpper(string(step.Status)),
 				Dot: statusDot(step.Status), Command: stringValue(step.Command), Terminal: detail.Terminal, Replay: stepReplay,
 			}
+			view.Badges = frozenStepBadges(step.Environment)
 			job.Steps = append(job.Steps, view)
 		}
 		job.DependencyKeys = decodeDependencies(item.Job.DependencyKeys)
+		detail.EdgeCount += len(job.DependencyKeys)
 		detail.Jobs = append(detail.Jobs, job)
 	}
 	detail.GraphRows = buildGraphRows(detail.Jobs)
 	return detail, nil
+}
+
+func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
+	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if job.MatrixTotal > 1 {
+		badges = append(badges, webui.SemanticBadgeView{
+			Label: fmt.Sprintf("MATRIX %02d/%02d", job.MatrixIndex, job.MatrixTotal), Hint: job.MatrixLabel,
+		})
+	}
+	matrixKeys := make([]string, 0, len(job.Matrix))
+	for key := range job.Matrix {
+		matrixKeys = append(matrixKeys, key)
+	}
+	sort.Strings(matrixKeys)
+	for _, key := range matrixKeys {
+		badges = append(badges, webui.SemanticBadgeView{Label: strings.ToUpper(key) + "=" + job.Matrix[key], Hint: "Matrix coordinate"})
+	}
+	badges = append(badges, conditionBadges(job.Condition)...)
+	if len(job.Rules) > 0 {
+		badges = append(badges, webui.SemanticBadgeView{Label: fmt.Sprintf("%d RULES", len(job.Rules)), Hint: "Ordered GitLab rule evaluation"})
+	}
+	if job.When != "" {
+		badges = append(badges, webui.SemanticBadgeView{Label: "WHEN " + strings.ToUpper(job.When)})
+	}
+	if job.Concurrency != nil {
+		label := "LOCK " + job.Concurrency.Group
+		if job.Concurrency.CancelInProgress {
+			label += " / CANCEL OLD"
+		}
+		badges = append(badges, webui.SemanticBadgeView{Label: label, Hint: "Job or resource concurrency group"})
+	}
+	if job.MaxParallel > 0 {
+		badges = append(badges, webui.SemanticBadgeView{Label: fmt.Sprintf("MAX %d", job.MaxParallel), Hint: "Matrix parallelism cap"})
+	}
+	if job.FailFast {
+		badges = append(badges, webui.SemanticBadgeView{Label: "FAIL FAST"})
+	}
+	if job.Interruptible {
+		badges = append(badges, webui.SemanticBadgeView{Label: "INTERRUPTIBLE"})
+	}
+	return badges
+}
+
+func conditionBadges(condition conditionDocument) []webui.SemanticBadgeView {
+	if condition.Expression == "" && condition.Diagnostic == "" {
+		return nil
+	}
+	badge := webui.SemanticBadgeView{Label: "IF " + condition.Expression, Hint: condition.Expression}
+	if !condition.Evaluable {
+		badge.Tone = "danger"
+		badge.Hint = condition.Diagnostic
+	}
+	return []webui.SemanticBadgeView{badge}
+}
+
+func populateRunJobSemanticView(view *webui.RunJobView, environment json.RawMessage) {
+	encoded := decodeEnvironmentValue(environment, "GCI_JOB_SEMANTICS_JSON")
+	if encoded == "" {
+		return
+	}
+	var semantics workflowDefinitionJobDocument
+	if json.Unmarshal([]byte(encoded), &semantics) != nil {
+		view.Badges = append(view.Badges, webui.SemanticBadgeView{Label: "INVALID SEMANTICS", Tone: "danger", Hint: "Snapshot metadata could not be decoded"})
+		return
+	}
+	view.SourceKey = semantics.SourceKey
+	view.Badges = jobSemanticBadges(semantics)
+}
+
+func frozenStepBadges(environment json.RawMessage) []webui.SemanticBadgeView {
+	encoded := decodeEnvironmentValue(environment, "GCI_STEP_CONDITION_JSON")
+	if encoded == "" {
+		return nil
+	}
+	var condition conditionDocument
+	if json.Unmarshal([]byte(encoded), &condition) != nil {
+		return []webui.SemanticBadgeView{{Label: "INVALID CONDITION", Tone: "danger"}}
+	}
+	return conditionBadges(condition)
+}
+
+func decodeEnvironmentValue(environment json.RawMessage, key string) string {
+	var values map[string]string
+	if json.Unmarshal(environment, &values) != nil {
+		return ""
+	}
+	return values[key]
 }
 
 func replayControl(kind store.RunLineageKind, sourceID, runID, csrfToken string, eligibility store.ReplayEligibility) (webui.ReplayControlView, error) {
