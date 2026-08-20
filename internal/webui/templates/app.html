@@ -19,6 +19,7 @@
       <div class="project-switcher"><span>CONTROL PLANE</span><small>SQLITE / LOCAL WORKER</small></div>
       <div class="mast-state"><span id="global-indicator" class="request-indicator">SYNC</span><i class="dot dot-green"></i>SERVICE READY</div>
     </header>
+    <div id="toast-region" class="toast-region" aria-live="polite" aria-label="Notifications"></div>
     {{template "app_frame" .}}
   </body>
 </html>
@@ -40,8 +41,8 @@
       <div><p class="kicker">{{upper .Kicker}}</p><h1>{{upper .Title}}</h1></div>
       <p>{{.Description}}</p>
     </header>
-    {{if .Error}}<div class="notice notice-error" role="alert"><i class="dot dot-red"></i>{{.Error}}</div>{{end}}
-    {{if .Notice}}<div class="notice notice-ok" role="status"><i class="dot dot-green"></i><code>{{.Notice}}</code></div>{{end}}
+    {{if .Error}}<div class="notice notice-error" role="alert" data-toast data-toast-kind="error"><i class="dot dot-red"></i>{{.Error}}</div>{{end}}
+    {{if .Notice}}<div class="notice notice-ok" role="status" data-toast data-toast-kind="success"><i class="dot dot-green"></i><code>{{.Notice}}</code></div>{{end}}
     {{if eq .Page "overview"}}{{template "overview_panel" .}}{{end}}
     {{if eq .Page "projects"}}{{template "projects_panel" .}}{{end}}
     {{if eq .Page "workflows"}}{{template "workflows_panel" .}}{{end}}
@@ -104,6 +105,26 @@
 {{end}}
 
 {{define "settings_panel"}}
+<section class="surface-card alert-preview" aria-labelledby="email-alerts-title">
+  <div class="card-heading">
+    <div><p class="kicker">NOTIFICATIONS</p><h2 id="email-alerts-title">EMAIL ALERTS</h2></div>
+    <span class="state-tag"><i class="dot dot-blue"></i>UI PREVIEW</span>
+  </div>
+  <p class="alert-preview-copy">Choose who should be notified and when. These values are not persisted and no email will be sent yet.</p>
+  <div class="alert-preview-grid">
+    <label class="field-label" for="alert-recipients">RECIPIENTS</label>
+    <input id="alert-recipients" type="email" multiple autocomplete="email" placeholder="ops@example.com, owner@example.com" aria-describedby="alert-delivery-state">
+    <fieldset class="alert-events">
+      <legend>ALERT EVENTS</legend>
+      <label><input type="checkbox" checked> RUN FAILED</label>
+      <label><input type="checkbox" checked> DEPLOYMENT FAILED</label>
+      <label><input type="checkbox"> APPROVAL WAITING</label>
+      <label><input type="checkbox"> ROLLBACK COMPLETED</label>
+    </fieldset>
+    <p id="alert-delivery-state" class="alert-delivery-state">UI PREVIEW / DELIVERY NOT ACTIVE</p>
+    <button class="button-secondary" type="button" disabled>DELIVERY NOT ENABLED</button>
+  </div>
+</section>
 <section class="configuration-grid">
   <form class="config-form" method="post" action="/app/settings/webhooks" hx-post="/app/settings/webhooks" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
     <header><p class="kicker">EVENT TRIGGERS</p><h2>NEW WEBHOOK</h2></header>
@@ -175,9 +196,15 @@
 <section class="project-layout">
   <article class="surface-card">
     <div class="card-heading"><div><p class="kicker">APPROVED ROOTS</p><h2>DISCOVERED</h2></div><span>{{pad2 (len .Candidates)}}</span></div>
-    <div class="candidate-list">
+    <div class="project-search" data-project-search-region>
+      <label for="project-search">SEARCH CHECKOUTS</label>
+      <input id="project-search" type="search" list="project-suggestions" autocomplete="off" placeholder="NAME, SLUG, OR PATH" data-project-search>
+      <datalist id="project-suggestions">{{range .Candidates}}<option value="{{base .Path}}">{{.Path}}</option>{{end}}</datalist>
+      <span><b data-project-visible-count>{{len .Candidates}}</b> AVAILABLE</span>
+    </div>
+    <div class="candidate-list" data-project-candidates>
       {{range .Candidates}}
-      <article class="candidate">
+      <article class="candidate" data-project-candidate data-project-search-value="{{base .Path}} {{.SuggestedSlug}} {{.Path}}">
         <div><strong>{{base .Path}}</strong><code>{{.Path}}</code></div>
         <form method="post" action="/app/projects" hx-post="/app/projects" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator">
           <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">

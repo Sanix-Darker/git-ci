@@ -181,7 +181,7 @@ func (a *API) handleCreateProjectWeb(writer http.ResponseWriter, request *http.R
 		return
 	}
 	writer.Header().Set("HX-Trigger", "projectRegistered")
-	a.renderAppSection(writer, request, "projects", "", http.StatusOK)
+	a.renderAppSectionState(writer, request, "projects", "", "PROJECT REGISTERED", http.StatusOK)
 }
 
 func (a *API) renderAppSection(writer http.ResponseWriter, request *http.Request, section, message string, status int) {
@@ -205,6 +205,7 @@ func (a *API) renderAppSectionState(writer http.ResponseWriter, request *http.Re
 		http.Error(writer, "failed to discover projects", http.StatusInternalServerError)
 		return
 	}
+	candidates = unregisteredProjectCandidates(items, candidates)
 	definition := appPages[section]
 	data := webui.PageData{
 		Page:        section,
@@ -232,6 +233,23 @@ func (a *API) renderAppSectionState(writer http.ResponseWriter, request *http.Re
 		status = http.StatusOK
 	}
 	a.web.RenderApp(writer, status, data, isHTMX(request))
+}
+
+func unregisteredProjectCandidates(items []store.Project, candidates []projects.Project) []projects.Project {
+	registered := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if item.CanonicalPath != nil {
+			registered[*item.CanonicalPath] = struct{}{}
+		}
+	}
+
+	result := make([]projects.Project, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, exists := registered[candidate.Path]; !exists {
+			result = append(result, candidate)
+		}
+	}
+	return result
 }
 
 func (a *API) requireWebAuth(next http.Handler) http.Handler {

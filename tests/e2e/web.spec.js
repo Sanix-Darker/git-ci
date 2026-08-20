@@ -20,7 +20,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
 
   await page.getByLabel("Token").fill("invalid-token");
   await page.getByRole("button", { name: /ENTER CONTROL PLANE/ }).click();
-  await expect(page.getByRole("status")).toContainText("not valid");
+  await expect(page.getByRole("status").filter({ hasText: "not valid" })).toBeVisible();
   await expect(page).toHaveURL(/\/login$/);
 
   const token = (await fs.readFile(tokenPath, "utf8")).trim();
@@ -40,9 +40,18 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page).toHaveURL(/\/app\/projects$/);
   await page.unroute("**/app/projects");
   await expect(page.getByRole("heading", { name: "PROJECTS" })).toBeVisible();
+  const projectSearch = page.getByRole("combobox", { name: "SEARCH CHECKOUTS" });
+  await expect(projectSearch).toHaveAttribute("list", "project-suggestions");
+  await projectSearch.fill("beta-worker");
+  await expect(page.locator("[data-project-candidate]", { hasText: "alpha-service" })).toBeHidden();
+  await expect(page.locator("[data-project-candidate]", { hasText: "beta-worker" })).toBeVisible();
+  await projectSearch.fill("");
   const alpha = page.locator("article.candidate", { hasText: "alpha-service" });
   await expect(alpha).toBeVisible();
   await alpha.getByRole("button", { name: /REGISTER/ }).click();
+  await expect(page.locator("[data-project-candidate]", { hasText: "alpha-service" })).toHaveCount(0);
+  await expect(page.getByRole("status").filter({ hasText: "PROJECT REGISTERED" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Dismiss notification" })).toBeVisible();
   await expect(page.locator(".project-rows")).toContainText("alpha-service");
 
   const beta = page.locator("article.candidate", { hasText: "beta-worker" });
@@ -65,7 +74,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await page.getByLabel("NAME").fill("DEPLOY_TOKEN");
   await page.getByLabel("VALUE").fill("e2e-super-secret");
   await page.getByRole("button", { name: /ENCRYPT \+ STORE/ }).click();
-  await expect(page.getByRole("status")).toContainText("AES-256-GCM");
+  await expect(page.getByRole("status").filter({ hasText: "AES-256-GCM" })).toBeVisible();
   await expect(page.locator(".compact-list")).toContainText("DEPLOY_TOKEN");
   await expect(page.locator("body")).not.toContainText("e2e-super-secret");
 
@@ -106,16 +115,22 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await page.getByLabel("WORKFLOW").selectOption({ label: "alpha-service / Alpha CI" });
   await page.getByLabel("CRON").fill("*/5 * * * *");
   await page.getByRole("button", { name: /CREATE \+ ENABLE/ }).click();
-  await expect(page.getByRole("status")).toContainText("SCHEDULE ARMED");
+  await expect(page.getByRole("status").filter({ hasText: "SCHEDULE ARMED" })).toBeVisible();
   await expect(page.locator(".schedule-list")).toContainText("Alpha CI");
   await page.locator(".schedule-list").getByRole("button", { name: "PAUSE" }).click();
-  await expect(page.getByRole("status")).toContainText("SCHEDULE UPDATED");
+  await expect(page.getByRole("status").filter({ hasText: "SCHEDULE UPDATED" })).toBeVisible();
 
   await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: "EMAIL ALERTS" })).toBeVisible();
+  await page.getByLabel("RECIPIENTS").fill("ops@example.com");
+  await expect(page.getByText("UI PREVIEW / DELIVERY NOT ACTIVE")).toBeVisible();
+  await expect(page.getByRole("button", { name: "DELIVERY NOT ENABLED" })).toBeDisabled();
+  const navFontSize = await page.locator(".main-nav a").first().evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  expect(navFontSize).toBeGreaterThanOrEqual(10);
   await page.getByLabel("WORKFLOW").selectOption({ label: "alpha-service / Alpha CI" });
   await page.getByLabel("NAME").fill("github-push");
   await page.getByRole("button", { name: /CREATE ENDPOINT/ }).click();
-  await expect(page.getByRole("status")).toContainText("WEBHOOK TOKEN");
+  await expect(page.getByRole("status").filter({ hasText: "WEBHOOK TOKEN" })).toBeVisible();
   await expect(page.locator(".compact-list")).toContainText("github-push");
 
   await page.goto("/app/projects");
