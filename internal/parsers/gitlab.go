@@ -930,6 +930,13 @@ func (p *GitlabParser) parseCache(cache interface{}) *types.CacheConfig {
 			c.When = when
 		}
 
+		switch fallback := v["fallback_keys"].(type) {
+		case string:
+			c.Fallback = []string{fallback}
+		case []interface{}:
+			c.Fallback = p.parseStringArray(fallback)
+		}
+
 		return c
 	case []interface{}:
 		// Multiple caches - return first one for simplicity
@@ -985,6 +992,19 @@ func (p *GitlabParser) convertVariables(vars map[string]interface{}) map[string]
 }
 
 func (p *GitlabParser) convertArtifacts(artifacts *GitlabArtifacts) *types.ArtifactConfig {
+	reports := make(map[string]string, len(artifacts.Reports))
+	for kind, value := range artifacts.Reports {
+		switch typed := value.(type) {
+		case string:
+			reports[kind] = typed
+		case []interface{}:
+			reports[kind] = strings.Join(p.parseStringArray(typed), "\n")
+		case []string:
+			reports[kind] = strings.Join(typed, "\n")
+		default:
+			reports[kind] = fmt.Sprintf("%v", typed)
+		}
+	}
 	return &types.ArtifactConfig{
 		Name:      artifacts.Name,
 		Paths:     artifacts.Paths,
@@ -993,6 +1013,7 @@ func (p *GitlabParser) convertArtifacts(artifacts *GitlabArtifacts) *types.Artif
 		When:      artifacts.When,
 		Untracked: artifacts.Untracked,
 		Public:    artifacts.Public != nil && *artifacts.Public,
+		Reports:   reports,
 	}
 }
 

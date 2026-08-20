@@ -436,6 +436,11 @@
     <div class="run-detail-state"><span><i class="dot {{.Run.Dot}}"></i>{{.Run.Status}}</span>{{if .Run.CanCancel}}<form method="post" action="/app/runs/{{.Run.ID}}/cancel" hx-post="/app/runs/{{.Run.ID}}/cancel" hx-target="#run-detail" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">CANCEL</button></form>{{end}}</div>
   </header>
   <dl class="run-facts"><div><dt>PROJECT</dt><dd>{{.Run.ProjectName}}</dd></div><div><dt>REF</dt><dd>{{.Run.Ref}}</dd></div><div><dt>COMMIT</dt><dd>{{if .Run.CommitSHA}}{{short .Run.CommitSHA}}{{else}}LOCAL{{end}}</dd></div><div><dt>CREATED</dt><dd>{{.Run.CreatedAt}}</dd></div></dl>
+  {{if or .Artifacts .TestReports}}<section class="run-outputs" aria-label="Run outputs">
+    <header><span><b>RUN OUTPUTS</b><small>IMMUTABLE FILES + TEST SIGNAL</small></span><span>{{pad2 (len .Artifacts)}} ARCHIVES / {{pad2 (len .TestReports)}} REPORTS</span></header>
+    {{if .Artifacts}}<div class="artifact-grid">{{range .Artifacts}}<a class="artifact-card" href="{{.Download}}"><span>ZIP / {{pad2 .FileCount}} FILES</span><strong>{{.Name}}</strong><code>SHA256 {{short .SHA256}}</code><small>{{.Size}} / DOWNLOAD -&gt;</small></a>{{end}}</div>{{end}}
+    {{if .TestReports}}<div class="report-grid">{{range .TestReports}}<article class="report-card"><span>JUNIT / {{.Duration}}</span><strong>{{.Name}}</strong><dl><div><dt>TESTS</dt><dd>{{.Tests}}</dd></div><div><dt>FAILED</dt><dd>{{.Failures}}</dd></div><div><dt>ERRORS</dt><dd>{{.Errors}}</dd></div><div><dt>SKIPPED</dt><dd>{{.Skipped}}</dd></div></dl></article>{{end}}</div>{{end}}
+  </section>{{end}}
   {{with .Lineage}}<aside class="run-provenance" aria-label="Run provenance"><div><p class="kicker">PROVENANCE</p><strong>{{.Kind}}</strong></div><a href="/app/runs/{{.SourceRunID}}">SOURCE RUN / {{short .SourceRunID}}</a><code>{{if .SourceStepID}}STEP {{short .SourceStepID}}{{else if .SourceJobID}}JOB {{short .SourceJobID}}{{end}}</code><small>{{.Actor}} / {{.CreatedAt}}</small></aside>{{end}}
   <div class="pipeline-graph" aria-label="Pipeline dependency graph">
     <header class="graph-key"><span><b>IMMUTABLE RUN DAG</b><small>LIVE SQLITE SNAPSHOT</small></span><span>{{pad2 (len .Jobs)}} NODES / {{pad2 .EdgeCount}} EDGES</span></header>
