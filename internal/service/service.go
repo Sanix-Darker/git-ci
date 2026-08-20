@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sanix-darker/git-ci/internal/auth"
+	"github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/httpapi"
 	"github.com/sanix-darker/git-ci/internal/projects"
 	"github.com/sanix-darker/git-ci/internal/store"
@@ -35,6 +36,7 @@ type Config struct {
 type Service struct {
 	config         Config
 	store          *store.Store
+	execution      *execution.Manager
 	handler        http.Handler
 	bootstrapToken string
 	closeOnce      sync.Once
@@ -69,6 +71,11 @@ func New(ctx context.Context, config Config) (*Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("service: persistence: %w", err)
 	}
+	executionManager, err := execution.NewManager(database)
+	if err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("service: execution manager: %w", err)
+	}
 	handler, err := httpapi.New(httpapi.Config{
 		Auth:         manager,
 		Store:        database,
@@ -76,6 +83,7 @@ func New(ctx context.Context, config Config) (*Service, error) {
 		StaticDir:    config.StaticDir,
 		Version:      config.Version,
 		MaxBodyBytes: config.MaxBodyBytes,
+		Execution:    executionManager,
 	})
 	if err != nil {
 		_ = database.Close()
@@ -84,6 +92,7 @@ func New(ctx context.Context, config Config) (*Service, error) {
 	return &Service{
 		config:         config,
 		store:          database,
+		execution:      executionManager,
 		handler:        handler,
 		bootstrapToken: bootstrapToken,
 	}, nil
@@ -114,17 +123,36 @@ func (s *Service) Run(ctx context.Context) error {
 		MaxHeaderBytes:    1 << 20,
 	}
 	serveErrors := make(chan error, 1)
+	workerErrors := make(chan error, 1)
+	workerCtx, stopWorker := context.WithCancel(ctx)
+	defer stopWorker()
 	go func() {
 		serveErrors <- server.Serve(listener)
+	}()
+	go func() {
+		workerErrors <- s.execution.Run(workerCtx)
 	}()
 
 	select {
 	case err := <-serveErrors:
+		stopWorker()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return fmt.Errorf("service: serve: %w", err)
+	case err := <-workerErrors:
+		if err == nil && ctx.Err() != nil {
+			return nil
+		}
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.config.ShutdownTimeout)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+		if err != nil {
+			return fmt.Errorf("service: execution worker: %w", err)
+		}
+		return errors.New("service: execution worker stopped")
 	case <-ctx.Done():
+		stopWorker()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.config.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {

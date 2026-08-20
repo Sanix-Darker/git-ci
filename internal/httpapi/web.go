@@ -214,6 +214,10 @@ func (a *API) renderAppSection(writer http.ResponseWriter, request *http.Request
 		Candidates:  candidates,
 		Error:       message,
 	}
+	if err := a.populateExecutionPage(request.Context(), &data, ""); err != nil {
+		http.Error(writer, "failed to load execution state", http.StatusInternalServerError)
+		return
+	}
 	if isHTMX(request) && status >= 400 {
 		status = http.StatusOK
 	}

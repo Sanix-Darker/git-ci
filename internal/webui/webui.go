@@ -30,6 +30,48 @@ type PageData struct {
 	Error       string
 	Projects    []store.Project
 	Candidates  []projects.Project
+	Workflows   []WorkflowView
+	Runs        []RunView
+	Jobs        []JobView
+	SelectedRun *RunDetailView
+}
+
+type WorkflowView struct {
+	ID, ProjectID, ProjectName, Name, Key, Provider, File string
+	Revision, JobCount                                    int
+}
+
+type RunView struct {
+	ID, ProjectName, WorkflowName, WorkflowKey, Status, Dot, Ref, CommitSHA, CreatedAt string
+	CanCancel                                                                          bool
+}
+
+type JobView struct {
+	ID, RunID, ProjectName, WorkflowName, Key, Name, Status, Dot string
+	StepCount                                                    int
+}
+
+type RunDetailView struct {
+	Run      RunView
+	Jobs     []RunJobView
+	Terminal bool
+}
+
+type RunJobView struct {
+	ID, Key, Name, Status, Dot, Runner, Dependencies string
+	AllowFailure                                     bool
+	Steps                                            []RunStepView
+}
+
+type RunStepView struct {
+	ID, Name, Status, Dot, Command string
+	Logs                           []LogView
+}
+
+type LogView struct {
+	Sequence int
+	Stream   string
+	Message  string
 }
 
 type Renderer struct {
@@ -43,6 +85,12 @@ func New() (*Renderer, error) {
 		"pad2":  func(value int) string { return fmt.Sprintf("%02d", value) },
 		"upper": strings.ToUpper,
 		"itoa":  strconv.Itoa,
+		"short": func(value string) string {
+			if len(value) <= 10 {
+				return value
+			}
+			return value[:10]
+		},
 	}
 	parsed, err := template.New("git-ci").Funcs(functions).ParseFS(embedded, "templates/*.html")
 	if err != nil {
@@ -76,6 +124,10 @@ func (r *Renderer) RenderApp(writer http.ResponseWriter, status int, data PageDa
 		name = "app_frame"
 	}
 	r.render(writer, status, name, data)
+}
+
+func (r *Renderer) RenderRunPanel(writer http.ResponseWriter, status int, data PageData) {
+	r.render(writer, status, "run_detail_panel", data)
 }
 
 func (r *Renderer) render(writer http.ResponseWriter, status int, name string, data PageData) {

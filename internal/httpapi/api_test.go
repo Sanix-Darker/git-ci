@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/sanix-darker/git-ci/internal/auth"
+	"github.com/sanix-darker/git-ci/internal/execution"
 	"github.com/sanix-darker/git-ci/internal/projects"
 	"github.com/sanix-darker/git-ci/internal/store"
 )
@@ -194,9 +195,13 @@ func newAPIFixture(t *testing.T, maxBodyBytes int64) *apiFixture {
 	if err != nil {
 		t.Fatalf("new auth manager: %v", err)
 	}
+	executionManager, err := execution.NewManager(database)
+	if err != nil {
+		t.Fatalf("new execution manager: %v", err)
+	}
 	handler, err := New(Config{
 		Auth: manager, Store: database, Projects: registry, StaticDir: staticDir,
-		Version: "test", MaxBodyBytes: maxBodyBytes,
+		Version: "test", MaxBodyBytes: maxBodyBytes, Execution: executionManager,
 	})
 	if err != nil {
 		t.Fatalf("new API: %v", err)

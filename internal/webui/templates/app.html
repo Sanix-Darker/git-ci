@@ -15,7 +15,7 @@
     <a class="skip-link" href="#workspace">Skip to workspace</a>
     <header class="mast app-mast">
       <a class="brand" href="/app"><b>G</b><span>GIT-CI</span></a>
-      <div class="project-switcher"><span>CONTROL PLANE</span><small>LOCAL VPS</small></div>
+      <div class="project-switcher"><span>CONTROL PLANE</span><small>SQLITE / LOCAL WORKER</small></div>
       <div class="mast-state"><span id="global-indicator" class="request-indicator">SYNC</span><i class="dot dot-green"></i>SERVICE READY</div>
     </header>
     {{template "app_frame" .}}
@@ -35,7 +35,10 @@
     {{if .Error}}<div class="notice notice-error" role="alert"><i class="dot dot-red"></i>{{.Error}}</div>{{end}}
     {{if eq .Page "overview"}}{{template "overview_panel" .}}{{end}}
     {{if eq .Page "projects"}}{{template "projects_panel" .}}{{end}}
-    {{if and (ne .Page "overview") (ne .Page "projects")}}{{template "future_panel" .}}{{end}}
+    {{if eq .Page "workflows"}}{{template "workflows_panel" .}}{{end}}
+    {{if eq .Page "runs"}}{{template "runs_panel" .}}{{end}}
+    {{if eq .Page "jobs"}}{{template "jobs_panel" .}}{{end}}
+    {{if or (eq .Page "secrets") (eq .Page "schedules") (eq .Page "deployments") (eq .Page "settings")}}{{template "future_panel" .}}{{end}}
   </main>
 </div>
 {{end}}
@@ -47,9 +50,9 @@
     <nav class="main-nav" aria-label="Control plane">
       <a class="{{if eq .Page "overview"}}active{{end}}" href="/app" hx-get="/app" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>01</span><b>Dashboard</b></a>
       <a class="{{if eq .Page "projects"}}active{{end}}" href="/app/projects" hx-get="/app/projects" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>02</span><b>Projects</b><small>{{len .Projects}}</small></a>
-      <a class="{{if eq .Page "workflows"}}active{{end}}" href="/app/workflows" hx-get="/app/workflows" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>03</span><b>Workflows</b></a>
-      <a class="{{if eq .Page "runs"}}active{{end}}" href="/app/runs" hx-get="/app/runs" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>04</span><b>Runs</b></a>
-      <a class="{{if eq .Page "jobs"}}active{{end}}" href="/app/jobs" hx-get="/app/jobs" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>05</span><b>Jobs</b></a>
+      <a class="{{if eq .Page "workflows"}}active{{end}}" href="/app/workflows" hx-get="/app/workflows" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>03</span><b>Workflows</b><small>{{len .Workflows}}</small></a>
+      <a class="{{if eq .Page "runs"}}active{{end}}" href="/app/runs" hx-get="/app/runs" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>04</span><b>Runs</b><small>{{len .Runs}}</small></a>
+      <a class="{{if eq .Page "jobs"}}active{{end}}" href="/app/jobs" hx-get="/app/jobs" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>05</span><b>Jobs</b><small>{{len .Jobs}}</small></a>
     </nav>
     <p class="sidebar-label sidebar-label-spaced">CONFIGURE</p>
     <nav class="main-nav" aria-label="Configuration">
@@ -72,21 +75,16 @@
 {{define "overview_panel"}}
 <section class="metric-row" aria-label="Service metrics">
   <article><strong>{{pad2 (len .Projects)}}</strong><span>REGISTERED PROJECTS</span></article>
-  <article><strong>{{pad2 (len .Candidates)}}</strong><span>VPS CHECKOUTS</span></article>
-  <article><strong class="word-metric">READY</strong><span>CONTROL SERVICE</span></article>
+  <article><strong>{{pad2 (len .Workflows)}}</strong><span>ACTIVE WORKFLOWS</span></article>
+  <article><strong>{{pad2 (len .Runs)}}</strong><span>DURABLE RUNS</span></article>
 </section>
 <section class="surface-grid">
   <article class="surface-card surface-card-wide">
-    <div class="card-heading"><div><p class="kicker">PIPELINE SURFACE</p><h2>EXECUTION GRAPH</h2></div><span class="state-tag"><i class="dot dot-blue"></i>NEXT SLICE</span></div>
-    <div class="pipeline-graph" aria-label="Target pipeline graph">
-      <div class="graph-node"><small>TRIGGER</small><b>PUSH</b></div><i class="connector"></i>
-      <div class="graph-stack"><div class="graph-node"><small>JOB 01</small><b>TEST</b></div><div class="graph-node"><small>JOB 02</small><b>LINT</b></div></div>
-      <i class="connector"></i><div class="graph-node"><small>GATE</small><b>DEPLOY</b></div>
-    </div>
-    <p class="graph-note">Structure preview only. Run state is never fabricated.</p>
+    <div class="card-heading"><div><p class="kicker">LATEST EXECUTION</p><h2>RUN STATE</h2></div><a href="/app/runs" hx-get="/app/runs" hx-target="#app-frame" hx-swap="outerHTML" hx-push-url="true">ALL RUNS -></a></div>
+    {{template "run_rows" .}}
   </article>
   <article class="surface-card">
-    <div class="card-heading"><div><p class="kicker">RECENT PROJECTS</p><h2>REGISTRY</h2></div><a href="/app/projects" hx-get="/app/projects" hx-target="#app-frame" hx-swap="outerHTML" hx-push-url="true">VIEW ALL -></a></div>
+    <div class="card-heading"><div><p class="kicker">SOURCE CONTROL</p><h2>REGISTRY</h2></div><a href="/app/projects" hx-get="/app/projects" hx-target="#app-frame" hx-swap="outerHTML" hx-push-url="true">VIEW ALL -></a></div>
     {{template "project_rows" .}}
   </article>
 </section>
@@ -128,10 +126,104 @@
 </div>
 {{end}}
 
+{{define "workflows_panel"}}
+<section class="action-strip">
+  <div><p class="kicker">DISCOVERY</p><strong>READ PROVIDER FILES FROM REGISTERED CHECKOUTS</strong></div>
+  <div class="action-strip-buttons">
+    {{range .Projects}}
+    <form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">SYNC {{upper .Name}}</button>
+    </form>
+    {{else}}<a href="/app/projects">REGISTER A PROJECT -></a>{{end}}
+  </div>
+</section>
+<section class="workflow-grid">
+  {{range .Workflows}}
+  <article class="workflow-card">
+    <header><span>{{upper .Provider}}</span><span>REV {{.Revision}}</span></header>
+    <div class="workflow-card-body">
+      <p class="kicker">{{upper .ProjectName}}</p><h2>{{.Name}}</h2><code>{{.File}}</code>
+      <dl><div><dt>JOBS</dt><dd>{{pad2 .JobCount}}</dd></div><div><dt>KEY</dt><dd>{{.Key}}</dd></div></dl>
+    </div>
+    <form method="post" action="/app/workflows/{{.ID}}/runs" hx-post="/app/workflows/{{.ID}}/runs" hx-disabled-elt="button" hx-indicator="#global-indicator">
+      <input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">RUN NOW <span>-></span></button>
+    </form>
+  </article>
+  {{else}}<div class="empty-state empty-state-bordered"><i></i><p>NO WORKFLOWS SYNCED. REGISTER A PROJECT, THEN SYNC ITS PROVIDER FILES.</p></div>{{end}}
+</section>
+{{end}}
+
+{{define "runs_panel"}}
+{{if .SelectedRun}}{{template "run_detail_panel" .}}{{else}}
+<section class="surface-card flush-card">
+  <div class="card-heading padded-heading"><div><p class="kicker">SQLITE HISTORY</p><h2>ALL RUNS</h2></div><span>{{pad2 (len .Runs)}}</span></div>
+  {{template "run_rows" .}}
+</section>
+{{end}}
+{{end}}
+
+{{define "run_rows"}}
+<div class="data-table run-table">
+  <div class="data-head"><span>STATE</span><span>WORKFLOW</span><span>PROJECT</span><span>REF</span><span>CREATED</span><span></span></div>
+  {{range .Runs}}
+  <a class="data-row" href="/app/runs/{{.ID}}">
+    <span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.WorkflowName}}</strong><span>{{.ProjectName}}</span><code>{{.Ref}}</code><time>{{.CreatedAt}}</time><b>-></b>
+  </a>
+  {{else}}<div class="empty-state"><i></i><p>NO RUNS QUEUED</p></div>{{end}}
+</div>
+{{end}}
+
+{{define "jobs_panel"}}
+<section class="surface-card flush-card">
+  <div class="card-heading padded-heading"><div><p class="kicker">EXECUTION INVENTORY</p><h2>ALL JOBS</h2></div><span>{{pad2 (len .Jobs)}}</span></div>
+  <div class="data-table job-table">
+    <div class="data-head"><span>STATE</span><span>JOB</span><span>WORKFLOW</span><span>PROJECT</span><span>STEPS</span><span></span></div>
+    {{range .Jobs}}
+    <a class="data-row" href="/app/runs/{{.RunID}}">
+      <span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.Name}}</strong><span>{{.WorkflowName}}</span><span>{{.ProjectName}}</span><code>{{pad2 .StepCount}}</code><b>-></b>
+    </a>
+    {{else}}<div class="empty-state"><i></i><p>NO JOB SNAPSHOTS STORED</p></div>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{define "run_detail_panel"}}
+{{with .SelectedRun}}
+<section id="run-detail" class="run-detail" {{if not .Terminal}}hx-get="/app/runs/{{.Run.ID}}/panel" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
+  <header class="run-detail-head">
+    <div><a href="/app/runs">&lt;- ALL RUNS</a><p class="kicker">RUN / {{short .Run.ID}}</p><h2>{{.Run.WorkflowName}}</h2></div>
+    <div class="run-detail-state"><span><i class="dot {{.Run.Dot}}"></i>{{.Run.Status}}</span>{{if .Run.CanCancel}}<form method="post" action="/app/runs/{{.Run.ID}}/cancel" hx-post="/app/runs/{{.Run.ID}}/cancel" hx-target="#run-detail" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">CANCEL</button></form>{{end}}</div>
+  </header>
+  <dl class="run-facts"><div><dt>PROJECT</dt><dd>{{.Run.ProjectName}}</dd></div><div><dt>REF</dt><dd>{{.Run.Ref}}</dd></div><div><dt>COMMIT</dt><dd>{{if .Run.CommitSHA}}{{short .Run.CommitSHA}}{{else}}LOCAL{{end}}</dd></div><div><dt>CREATED</dt><dd>{{.Run.CreatedAt}}</dd></div></dl>
+  <div class="run-graph" aria-label="Pipeline dependency graph">
+    {{range .Jobs}}<article class="run-node"><header><i class="dot {{.Dot}}"></i><span>{{.Status}}</span></header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small></article>{{end}}
+  </div>
+  <div class="job-details">
+    {{range .Jobs}}
+    <article class="job-detail">
+      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3></div><div>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowFailure}} / ALLOW FAILURE{{end}}</div></header>
+      <div class="step-list">
+        {{range .Steps}}
+        <section class="step-detail">
+          <header><span><i class="dot {{.Dot}}"></i>{{.Name}}</span><b>{{.Status}}</b></header>
+          {{if .Command}}<code class="step-command">$ {{.Command}}</code>{{end}}
+          <div class="log-console" aria-label="Logs for {{.Name}}">
+            {{range .Logs}}<div><span>{{pad2 .Sequence}}</span><b>{{.Stream}}</b><pre>{{.Message}}</pre></div>{{else}}<p>WAITING FOR OUTPUT</p>{{end}}
+          </div>
+        </section>
+        {{end}}
+      </div>
+    </article>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{end}}
+
 {{define "future_panel"}}
 <section class="future-surface">
-  <div class="future-index">{{if eq .Page "workflows"}}03{{else if eq .Page "runs"}}04{{else if eq .Page "jobs"}}05{{else}}--{{end}}</div>
-  <div><p class="kicker">DELIVERY STATUS</p><h2>DOMAIN NOT ENABLED YET.</h2><p>{{.Description}}</p></div>
-  <span class="state-tag"><i class="dot dot-blue"></i>PLANNED</span>
+  <div class="future-index">{{if eq .Page "secrets"}}06{{else if eq .Page "schedules"}}07{{else if eq .Page "deployments"}}08{{else}}09{{end}}</div>
+  <div><p class="kicker">PLANNED DOMAIN</p><h2>{{upper .Title}}</h2><p>{{.Description}}</p></div>
+  <span class="state-tag"><i class="dot dot-blue"></i>CONTRACT NEXT</span>
 </section>
 {{end}}
