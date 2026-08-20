@@ -1,6 +1,8 @@
 package parsers
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -60,5 +62,42 @@ func TestGitlabParser_GetProviderName(t *testing.T) {
 	parser := NewGitlabParser()
 	if parser.GetProviderName() != "gitlab" {
 		t.Errorf("expected 'gitlab', got %q", parser.GetProviderName())
+	}
+}
+
+func TestGitlabParser_PreservesArtifactReportsAndCacheFallbacks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".gitlab-ci.yml")
+	contents := []byte(`
+stages: [test]
+test:
+  stage: test
+  script: ["printf ok"]
+  cache:
+    key: deps
+    paths: [vendor/]
+    fallback_keys: [deps-main, deps-default]
+  artifacts:
+    paths: [dist/]
+    reports:
+      junit:
+        - dist/unit.xml
+        - dist/integration.xml
+`)
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pipeline, err := NewGitlabParser().Parse(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := pipeline.Jobs["test"]
+	if job == nil || job.Artifacts == nil || job.Cache == nil {
+		t.Fatalf("parsed output contracts = %#v", job)
+	}
+	if job.Artifacts.Reports["junit"] != "dist/unit.xml\ndist/integration.xml" {
+		t.Fatalf("JUnit reports = %#v", job.Artifacts.Reports)
+	}
+	if len(job.Cache.Fallback) != 2 || job.Cache.Fallback[0] != "deps-main" || job.Cache.Fallback[1] != "deps-default" {
+		t.Fatalf("cache fallbacks = %#v", job.Cache.Fallback)
 	}
 }

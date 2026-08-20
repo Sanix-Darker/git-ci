@@ -115,12 +115,24 @@ type JobView struct {
 }
 
 type RunDetailView struct {
-	Run       RunView
-	Jobs      []RunJobView
-	GraphRows []RunGraphRowView
-	Lineage   *RunLineageView
-	Terminal  bool
-	EdgeCount int
+	Run         RunView
+	Jobs        []RunJobView
+	GraphRows   []RunGraphRowView
+	Lineage     *RunLineageView
+	Terminal    bool
+	EdgeCount   int
+	Artifacts   []ArtifactView
+	TestReports []TestReportView
+}
+
+type ArtifactView struct {
+	ID, Name, SHA256, Size, Download string
+	FileCount                        int
+}
+
+type TestReportView struct {
+	Name, Duration                   string
+	Tests, Failures, Errors, Skipped int
 }
 
 type RunLineageView struct {

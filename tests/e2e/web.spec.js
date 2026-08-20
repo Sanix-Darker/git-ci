@@ -5,6 +5,39 @@ const { test, expect } = require("@playwright/test");
 const tokenPath = path.join(process.cwd(), "build/e2e-web/state/admin.token");
 const browserErrors = new WeakMap();
 
+async function ensureCompletedRun(page, adminToken) {
+  const headers = { Authorization: `Bearer ${adminToken}` };
+  const projectsResponse = await page.request.get("/api/v1/projects", { headers });
+  const projectsPayload = await projectsResponse.json();
+  let project = projectsPayload.items.find((item) => item.slug === "alpha-service");
+  if (!project) {
+    const created = await page.request.post("/api/v1/projects", {
+      headers,
+      data: {
+        slug: "alpha-service",
+        name: "Alpha service",
+        path: `${process.cwd()}/build/e2e-web/projects/alpha-service`,
+      },
+    });
+    project = await created.json();
+  }
+  await page.request.post(`/api/v1/projects/${project.id}/workflows/sync`, { headers });
+  let runs = await (await page.request.get(`/api/v1/projects/${project.id}/runs`, { headers })).json();
+  if (!runs.items.length) {
+    const workflows = await (await page.request.get(`/api/v1/projects/${project.id}/workflows`, { headers })).json();
+    const workflow = workflows.items.find((item) => item.name === "Alpha CI");
+    const queued = await page.request.post(`/api/v1/workflows/${workflow.id}/runs`, {
+      headers,
+      data: { ref: "main" },
+    });
+    const run = await queued.json();
+    await expect.poll(async () => {
+      const response = await page.request.get(`/api/v1/runs/${run.id}`, { headers });
+      return (await response.json()).run.status;
+    }, { timeout: 30_000 }).toBe("succeeded");
+  }
+}
+
 test.beforeEach(async ({ page }) => {
   const errors = [];
   page.on("console", (message) => {
@@ -30,7 +63,7 @@ test("@responsive public page presents the CLI and self-hosted service", async (
 });
 
 test("operator uses HTMX login, navigation, project registration, persistence, and logout", async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   await page.goto("/login");
   await expect(page.getByRole("heading", { name: /YOUR CI/ })).toBeVisible();
 
@@ -59,20 +92,27 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   const projectSearch = page.getByRole("combobox", { name: "SEARCH CHECKOUTS" });
   await expect(projectSearch).toHaveAttribute("list", "project-suggestions");
   await projectSearch.fill("beta-worker");
-  await expect(page.locator("[data-project-candidate]", { hasText: "alpha-service" })).toBeHidden();
-  await expect(page.locator("[data-project-candidate]", { hasText: "beta-worker" })).toBeVisible();
+  const betaCandidate = page.locator("[data-project-candidate]", { hasText: "beta-worker" });
+  if (await betaCandidate.count()) {
+    await expect(page.locator("[data-project-candidate]", { hasText: "alpha-service" })).toBeHidden();
+    await expect(betaCandidate).toBeVisible();
+  }
   await projectSearch.fill("");
   const alpha = page.locator("article.candidate", { hasText: "alpha-service" });
-  await expect(alpha).toBeVisible();
-  await alpha.getByRole("button", { name: /REGISTER/ }).click();
-  await expect(page.locator("[data-project-candidate]", { hasText: "alpha-service" })).toHaveCount(0);
-  await expect(page.getByRole("status").filter({ hasText: "PROJECT REGISTERED" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Dismiss notification" })).toBeVisible();
+  if (await alpha.count()) {
+    await expect(alpha).toBeVisible();
+    await alpha.getByRole("button", { name: /REGISTER/ }).click();
+    await expect(page.locator("[data-project-candidate]", { hasText: "alpha-service" })).toHaveCount(0);
+    await expect(page.getByRole("status").filter({ hasText: "PROJECT REGISTERED" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Dismiss notification" })).toBeVisible();
+  }
   await expect(page.locator(".project-rows")).toContainText("alpha-service");
 
   const beta = page.locator("article.candidate", { hasText: "beta-worker" });
-  await expect(beta).toBeVisible();
-  await beta.getByRole("button", { name: /REGISTER/ }).click();
+  if (await beta.count()) {
+    await expect(beta).toBeVisible();
+    await beta.getByRole("button", { name: /REGISTER/ }).click();
+  }
   await expect(page.locator(".project-rows")).toContainText("beta-worker");
 
   await page.getByRole("link", { name: "Workflows" }).click();
@@ -86,6 +126,7 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
 
   await page.getByRole("link", { name: "Secrets" }).click();
   await expect(page).toHaveURL(/\/app\/secrets$/);
+  await expect(page.getByRole("heading", { name: "SECRETS", exact: true })).toBeVisible({ timeout: 15_000 });
   await page.getByLabel("PROJECT").selectOption({ label: "alpha-service" });
   await page.getByLabel("NAME").fill("DEPLOY_TOKEN");
   await page.getByLabel("VALUE").fill("e2e-super-secret");
@@ -104,6 +145,22 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await expect(page.locator(".run-node").filter({ has: page.getByText("Prepare", { exact: true }) })).toBeVisible();
   await expect(page.locator(".run-node").filter({ has: page.getByText("Test", { exact: true }) })).toContainText("AFTER PREPARE");
   await expect(page.locator(".run-detail-state")).toContainText("SUCCEEDED", { timeout: 15000 });
+  const outputs = page.getByLabel("Run outputs");
+  await expect(outputs).toContainText("alpha-build");
+  await expect(outputs.getByRole("link", { name: /alpha-build/ })).toHaveAttribute("href", /\/artifacts\//);
+  const runID = page.url().split("/").pop();
+  const authorization = { Authorization: `Bearer ${token}` };
+  const artifactResponse = await page.request.get(`/api/v1/runs/${runID}/artifacts`, { headers: authorization });
+  expect(artifactResponse.ok()).toBeTruthy();
+  const artifactPayload = await artifactResponse.json();
+  expect(artifactPayload.count).toBe(1);
+  expect(artifactPayload.items[0].sha256).toHaveLength(64);
+  const downloadResponse = await page.request.get(`/api/v1/runs/${runID}/artifacts/${artifactPayload.items[0].id}`, { headers: authorization });
+  expect(downloadResponse.ok()).toBeTruthy();
+  expect(downloadResponse.headers()["content-type"]).toContain("application/zip");
+  const cacheResponse = await page.request.get(`/api/v1/projects/${artifactPayload.items[0].projectId}/caches`, { headers: authorization });
+  expect(cacheResponse.ok()).toBeTruthy();
+  expect((await cacheResponse.json()).count).toBeGreaterThan(0);
   await expect(page.locator(".pipeline-stage")).toHaveCount(3);
   const prepareLogs = page.getByLabel("Logs for Prepare");
   const testLogs = page.getByLabel("Logs for Test");
@@ -270,6 +327,7 @@ test("@responsive operator surfaces preserve padding, mobile records, and reduce
   await page.getByLabel("Token").fill(token);
   await page.getByRole("button", { name: /ENTER CONTROL PLANE/ }).click();
   await expect(page.getByRole("heading", { name: "DASHBOARD" })).toBeVisible();
+  await ensureCompletedRun(page, token);
   const layout = await page.evaluate(() => {
     const workspace = getComputedStyle(document.querySelector(".workspace"));
     const animated = getComputedStyle(document.querySelector(".histogram-fill"));

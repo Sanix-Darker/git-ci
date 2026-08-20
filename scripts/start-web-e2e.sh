@@ -28,7 +28,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Test
-        run: printf 'tests passed\n'
+        run: |
+          mkdir -p dist .gci-cache
+          printf 'tests passed\n'
+          printf 'e2e artifact\n' > dist/app.txt
+          printf 'cached\n' > .gci-cache/dependency
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: .gci-cache
+          key: alpha-dependencies-v1
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha-build
+          path: dist
       - name: Secret mask
         env:
           TOKEN: "${{ secrets.DEPLOY_TOKEN }}"
@@ -100,6 +114,11 @@ worker-test:
   stage: test
   script:
     - printf 'worker passed\n'
+  artifacts:
+    name: worker-report
+    paths: [report.xml]
+    reports:
+      junit: report.xml
 YAML
 
 for project in "$project_root/alpha-service" "$project_root/beta-worker"; do

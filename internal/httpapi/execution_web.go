@@ -274,7 +274,26 @@ type workflowDefinitionJobDocument struct {
 	Interruptible bool                             `json:"interruptible"`
 	FailFast      bool                             `json:"failFast"`
 	MaxParallel   int                              `json:"maxParallel"`
+	Artifacts     *artifactDefinitionDocument      `json:"artifacts"`
+	Cache         *cacheDefinitionDocument         `json:"cache"`
 	Steps         []workflowDefinitionStepDocument `json:"steps"`
+}
+
+type artifactDefinitionDocument struct {
+	Name     string            `json:"name"`
+	When     string            `json:"when"`
+	ExpireIn string            `json:"expire_in"`
+	Paths    []string          `json:"paths"`
+	Exclude  []string          `json:"exclude"`
+	Reports  map[string]string `json:"reports"`
+}
+
+type cacheDefinitionDocument struct {
+	Key      string   `json:"key"`
+	Policy   string   `json:"policy"`
+	When     string   `json:"when"`
+	Paths    []string `json:"paths"`
+	Fallback []string `json:"fallback_keys"`
 }
 
 type workflowDefinitionStepDocument struct {
@@ -403,6 +422,28 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 		Run:      runView(graph.Run, projectNames[graph.Run.ProjectID], workflowNames),
 		Terminal: terminalStatus(graph.Run.Status),
 	}
+	artifacts, err := a.store.ListRunArtifacts(ctx, runID)
+	if err != nil {
+		return webui.RunDetailView{}, err
+	}
+	for _, artifact := range artifacts {
+		detail.Artifacts = append(detail.Artifacts, webui.ArtifactView{
+			ID: artifact.ID, Name: artifact.Name, SHA256: artifact.SHA256,
+			Size: formatOutputBytes(artifact.SizeBytes), FileCount: artifact.FileCount,
+			Download: "/app/runs/" + runID + "/artifacts/" + artifact.ID,
+		})
+	}
+	reports, err := a.store.ListRunTestReports(ctx, runID)
+	if err != nil {
+		return webui.RunDetailView{}, err
+	}
+	for _, report := range reports {
+		detail.TestReports = append(detail.TestReports, webui.TestReportView{
+			Name: report.Name, Tests: report.Tests, Failures: report.Failures,
+			Errors: report.Errors, Skipped: report.Skipped,
+			Duration: fmt.Sprintf("%.2fs", report.DurationSeconds),
+		})
+	}
 	lineage, lineageErr := a.store.GetRunLineage(ctx, runID)
 	if lineageErr == nil {
 		detail.Lineage = &webui.RunLineageView{
@@ -494,6 +535,15 @@ func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeV
 	}
 	if job.Interruptible {
 		badges = append(badges, webui.SemanticBadgeView{Label: "INTERRUPTIBLE"})
+	}
+	if job.Artifacts != nil {
+		badges = append(badges, webui.SemanticBadgeView{Label: "ARTIFACT", Hint: strings.Join(job.Artifacts.Paths, ", ")})
+		if len(job.Artifacts.Reports) > 0 {
+			badges = append(badges, webui.SemanticBadgeView{Label: "TEST REPORT", Hint: "JUnit summary captured after execution"})
+		}
+	}
+	if job.Cache != nil {
+		badges = append(badges, webui.SemanticBadgeView{Label: "CACHE " + strings.ToUpper(job.Cache.Key), Hint: strings.Join(job.Cache.Paths, ", ")})
 	}
 	return badges
 }

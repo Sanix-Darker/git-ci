@@ -86,6 +86,7 @@ func New(ctx context.Context, config Config) (*Service, error) {
 	executionManager, err := execution.NewManager(database,
 		execution.WithSecretResolver(secretManager),
 		execution.WithWorkspaceRoot(filepath.Join(config.StateDir, "workspaces")),
+		execution.WithDataRoot(filepath.Join(config.StateDir, "data")),
 	)
 	if err != nil {
 		_ = database.Close()

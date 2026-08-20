@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/sanix-darker/git-ci/internal/executionsemantics"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
+	"github.com/sanix-darker/git-ci/pkg/types"
 )
 
 const (
@@ -42,6 +44,8 @@ type Manager struct {
 	wake          chan struct{}
 	workspaceRoot string
 	workspaces    *workspaceManager
+	dataRoot      string
+	archives      *archiveManager
 }
 
 type SecretResolver interface {
@@ -60,6 +64,10 @@ func WithSecretResolver(resolver SecretResolver) Option {
 
 func WithWorkspaceRoot(root string) Option {
 	return func(manager *Manager) { manager.workspaceRoot = root }
+}
+
+func WithDataRoot(root string) Option {
+	return func(manager *Manager) { manager.dataRoot = root }
 }
 
 func NewManager(database *store.Store, options ...Option) (*Manager, error) {
@@ -82,6 +90,14 @@ func NewManager(database *store.Store, options ...Option) (*Manager, error) {
 		return nil, err
 	}
 	manager.workspaces = workspaces
+	if manager.dataRoot == "" && manager.workspaceRoot != "" {
+		manager.dataRoot = filepath.Join(filepath.Dir(manager.workspaceRoot), "data")
+	}
+	archives, err := newArchiveManager(manager.dataRoot)
+	if err != nil {
+		return nil, err
+	}
+	manager.archives = archives
 	return manager, nil
 }
 
@@ -834,6 +850,11 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	if semanticsPresent {
 		semantics = &jobSemantics
 	}
+	if semantics != nil && semantics.Cache != nil {
+		if err := m.restoreDeclaredCache(ctx, run, item.Steps, workspacePath, semantics.Cache); err != nil && len(item.Steps) > 0 {
+			_ = m.appendSystem(ctx, item.Steps[0].ID, "cache restore warning: "+err.Error())
+		}
+	}
 	jobCtx := ctx
 	jobCancel := func() {}
 	if item.Job.TimeoutMinutes > 0 {
@@ -917,6 +938,22 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	if jobFailed {
 		status = store.StatusFailed
 	}
+	if status == store.StatusSucceeded {
+		if err := m.saveJobCaches(ctx, run, item.Steps, workspacePath, semantics); err != nil {
+			status = store.StatusFailed
+			if len(item.Steps) > 0 {
+				_ = m.appendSystem(ctx, item.Steps[len(item.Steps)-1].ID, "cache save failed: "+err.Error())
+			}
+		}
+	}
+	if semantics != nil && semantics.Artifacts != nil {
+		if err := m.captureJobArtifact(ctx, run, item.Job, item.Steps, workspacePath, semantics.Artifacts, status == store.StatusSucceeded); err != nil {
+			status = store.StatusFailed
+			if len(item.Steps) > 0 {
+				_ = m.appendSystem(ctx, item.Steps[len(item.Steps)-1].ID, "artifact capture failed: "+err.Error())
+			}
+		}
+	}
 	if _, err := m.store.TransitionJob(ctx, item.Job.ID, status); err != nil {
 		return "", fmt.Errorf("execution: finish job: %w", err)
 	}
@@ -925,8 +962,9 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 
 func (m *Manager) executeStep(ctx context.Context, run store.Run, job store.Job, step store.Step, workspacePath string, secretValues map[string]string) error {
 	if step.Action != nil {
-		if strings.HasPrefix(*step.Action, "actions/checkout@") {
-			return m.appendSystem(ctx, step.ID, "using pinned commit workspace "+pointerValue(run.CommitSHA))
+		handled, err := m.executeBuiltinAction(ctx, run, job, step, workspacePath)
+		if handled {
+			return err
 		}
 		return fmt.Errorf("unsupported action %q", *step.Action)
 	}
@@ -1129,6 +1167,8 @@ type frozenJobSemantics struct {
 	Interruptible bool                                 `json:"interruptible"`
 	FailFast      bool                                 `json:"failFast"`
 	MaxParallel   int                                  `json:"maxParallel"`
+	Artifacts     *types.ArtifactConfig                `json:"artifacts"`
+	Cache         *types.CacheConfig                   `json:"cache"`
 }
 
 type workflowConcurrencySnapshot struct {

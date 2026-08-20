@@ -331,6 +331,37 @@
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
 
+.run-outputs { margin: 1rem 0; border: 1px solid #4a4a4a; background: #070707; }
+.run-outputs > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem; border-bottom: 1px solid #333; color: #999; font-size: .58rem; }
+.run-outputs > header span:first-child { display: grid; gap: .2rem; }
+.run-outputs > header b { color: #f0f0f0; font-size: .72rem; }
+.run-outputs > header small { color: #777; font-size: .52rem; }
+.artifact-grid, .report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+.artifact-card, .report-card { min-width: 0; padding: .85rem; border-right: 1px solid #292929; border-bottom: 1px solid #292929; color: #cfcfcf; text-decoration: none; }
+.artifact-card { display: grid; gap: .45rem; transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), background 120ms steps(2, end); }
+.artifact-card:hover, .artifact-card:focus-visible { border-color: #e5e5e5; background: #101010; transform: translateX(3px); }
+.artifact-card > span, .report-card > span { color: #8c8c8c; font-size: .55rem; }
+.artifact-card strong, .report-card strong { overflow: hidden; color: #f1f1f1; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-card code { color: #888; font-size: .54rem; }
+.artifact-card small { color: #b8b8b8; font-size: .58rem; }
+.report-card { display: grid; gap: .55rem; }
+.report-card dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: .35rem; margin: 0; }
+.report-card dl div { padding: .45rem; border: 1px solid #303030; }
+.report-card dt { color: #777; font-size: .48rem; }
+.report-card dd { margin: .2rem 0 0; color: #e5e5e5; font-size: .72rem; }
+
+@media (max-width: 720px) {
+  .run-outputs > header { align-items: flex-start; flex-direction: column; padding: 1rem; }
+  .artifact-grid, .report-grid { grid-template-columns: 1fr; }
+  .artifact-card, .report-card { padding: 1rem; border-right: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifact-card,
+  .artifact-card:hover,
+  .artifact-card:focus-visible { transition: none !important; transform: none !important; }
+}
+
 .delivery-stack { display: grid; gap: 1rem; margin-bottom: 1rem; }
 .approval-surface { overflow: hidden; }
 .approval-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); background: #383838; gap: 1px; }

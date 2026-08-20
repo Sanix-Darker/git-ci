@@ -82,6 +82,8 @@ type JobDefinition struct {
 	Interruptible   bool                                 `json:"interruptible,omitempty"`
 	FailFast        bool                                 `json:"failFast,omitempty"`
 	MaxParallel     int                                  `json:"maxParallel,omitempty"`
+	Artifacts       *types.ArtifactConfig                `json:"artifacts,omitempty"`
+	Cache           *types.CacheConfig                   `json:"cache,omitempty"`
 	Steps           []StepDefinition                     `json:"steps"`
 }
 
@@ -125,6 +127,9 @@ type StepDefinition struct {
 	Shell            string                               `json:"shell,omitempty"`
 	AllowFailure     bool                                 `json:"allowFailure"`
 	Condition        executionsemantics.ConditionContract `json:"condition"`
+	Inputs           map[string]string                    `json:"inputs,omitempty"`
+	Artifacts        *types.ArtifactConfig                `json:"artifacts,omitempty"`
+	Cache            *types.CacheConfig                   `json:"cache,omitempty"`
 }
 
 type registeredProject struct {
@@ -668,6 +673,8 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		When:            job.When,
 		Concurrency:     normalizeConcurrency(job.Concurrency),
 		Interruptible:   job.Interruptible,
+		Artifacts:       copyArtifactConfig(job.Artifacts),
+		Cache:           copyCacheConfig(job.Cache),
 		Steps:           normalizeSteps(key, job.Steps),
 	}
 	if job.Strategy != nil {
@@ -714,6 +721,12 @@ func applyMatrixVariant(job *JobDefinition, variant executionsemantics.MatrixVar
 			return err
 		}
 	}
+	if err := resolveMatrixArtifactConfig(job.Artifacts, variant.Values); err != nil {
+		return err
+	}
+	if err := resolveMatrixCacheConfig(job.Cache, variant.Values); err != nil {
+		return err
+	}
 	for index := range job.Steps {
 		step := &job.Steps[index]
 		stepFields := []*string{&step.Name, &step.Command, &step.Action, &step.WorkingDirectory, &step.Shell}
@@ -730,6 +743,19 @@ func applyMatrixVariant(job *JobDefinition, variant executionsemantics.MatrixVar
 				return err
 			}
 			step.Environment[key] = resolved
+		}
+		for key, value := range step.Inputs {
+			resolved, err := executionsemantics.ResolveMatrixTemplate(value, variant.Values)
+			if err != nil {
+				return err
+			}
+			step.Inputs[key] = resolved
+		}
+		if err := resolveMatrixArtifactConfig(step.Artifacts, variant.Values); err != nil {
+			return err
+		}
+		if err := resolveMatrixCacheConfig(step.Cache, variant.Values); err != nil {
+			return err
 		}
 	}
 	return freezeJobSemantics(job, provider)
@@ -782,6 +808,7 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 		"rules": job.Rules, "only": job.Only, "except": job.Except, "when": job.When,
 		"concurrency": job.Concurrency, "interruptible": job.Interruptible,
 		"failFast": job.FailFast, "maxParallel": job.MaxParallel,
+		"artifacts": job.Artifacts, "cache": job.Cache,
 	}
 	encoded, err := json.Marshal(metadata)
 	if err != nil {
@@ -797,6 +824,13 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 			return fmt.Errorf("encode step condition: %w", err)
 		}
 		job.Steps[index].Environment["GCI_STEP_CONDITION_JSON"] = string(encoded)
+		if len(job.Steps[index].Inputs) > 0 {
+			encoded, err = json.Marshal(job.Steps[index].Inputs)
+			if err != nil {
+				return fmt.Errorf("encode action inputs: %w", err)
+			}
+			job.Steps[index].Environment["GCI_ACTION_INPUTS_JSON"] = string(encoded)
+		}
 	}
 	return nil
 }
@@ -884,6 +918,9 @@ func normalizeSteps(jobKey string, steps []types.Step) []StepDefinition {
 			Shell:            step.Shell,
 			AllowFailure:     step.AllowFailure || step.ContinueOnErr,
 			Condition:        executionsemantics.CompileCondition(step.If),
+			Inputs:           copyStringMap(step.With),
+			Artifacts:        copyArtifactConfig(step.Artifacts),
+			Cache:            copyCacheConfig(step.Cache),
 		})
 	}
 	return normalized
@@ -931,6 +968,92 @@ func copyStringSlice(values []string) []string {
 	cloned := make([]string, len(values))
 	copy(cloned, values)
 	return cloned
+}
+
+func copyArtifactConfig(value *types.ArtifactConfig) *types.ArtifactConfig {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	copy.Paths = copyStringSlice(value.Paths)
+	copy.Exclude = copyStringSlice(value.Exclude)
+	copy.Reports = copyStringMap(value.Reports)
+	return &copy
+}
+
+func copyCacheConfig(value *types.CacheConfig) *types.CacheConfig {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	copy.Paths = copyStringSlice(value.Paths)
+	copy.Fallback = copyStringSlice(value.Fallback)
+	return &copy
+}
+
+func resolveMatrixArtifactConfig(value *types.ArtifactConfig, matrix map[string]string) error {
+	if value == nil {
+		return nil
+	}
+	fields := []*string{&value.Name, &value.When, &value.ExpireIn, &value.Format}
+	for _, field := range fields {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(*field, matrix)
+		if err != nil {
+			return err
+		}
+		*field = resolved
+	}
+	for index := range value.Paths {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(value.Paths[index], matrix)
+		if err != nil {
+			return err
+		}
+		value.Paths[index] = resolved
+	}
+	for index := range value.Exclude {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(value.Exclude[index], matrix)
+		if err != nil {
+			return err
+		}
+		value.Exclude[index] = resolved
+	}
+	for key, raw := range value.Reports {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(raw, matrix)
+		if err != nil {
+			return err
+		}
+		value.Reports[key] = resolved
+	}
+	return nil
+}
+
+func resolveMatrixCacheConfig(value *types.CacheConfig, matrix map[string]string) error {
+	if value == nil {
+		return nil
+	}
+	fields := []*string{&value.Key, &value.Policy, &value.When}
+	for _, field := range fields {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(*field, matrix)
+		if err != nil {
+			return err
+		}
+		*field = resolved
+	}
+	for index := range value.Paths {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(value.Paths[index], matrix)
+		if err != nil {
+			return err
+		}
+		value.Paths[index] = resolved
+	}
+	for index := range value.Fallback {
+		resolved, err := executionsemantics.ResolveMatrixTemplate(value.Fallback[index], matrix)
+		if err != nil {
+			return err
+		}
+		value.Fallback[index] = resolved
+	}
+	return nil
 }
 
 func sortedUnique(values []string) []string {
