@@ -91,14 +91,15 @@ type Job struct {
 	ManualConfirmation string      `yaml:"manual_confirmation,omitempty" json:"manual_confirmation,omitempty"`
 
 	// Execution control
-	TimeoutMin    int          `yaml:"timeout-minutes,omitempty" json:"timeout-minutes,omitempty"`
-	Timeout       string       `yaml:"timeout,omitempty" json:"timeout,omitempty"` // GitLab format
-	ContinueOnErr bool         `yaml:"continue-on-error,omitempty" json:"continue-on-error,omitempty"`
-	AllowFailure  bool         `yaml:"allow_failure,omitempty" json:"allow_failure,omitempty"` // GitLab
-	Retry         *RetryPolicy `yaml:"retry,omitempty" json:"retry,omitempty"`
-	MaxRetries    int          `yaml:"max_retries,omitempty" json:"max_retries,omitempty"` // Jenkins
-	Concurrency   *Concurrency `yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
-	Interruptible bool         `yaml:"interruptible,omitempty" json:"interruptible,omitempty"`
+	TimeoutMin            int          `yaml:"timeout-minutes,omitempty" json:"timeout-minutes,omitempty"`
+	Timeout               string       `yaml:"timeout,omitempty" json:"timeout,omitempty"` // GitLab format
+	ContinueOnErr         bool         `yaml:"continue-on-error,omitempty" json:"continue-on-error,omitempty"`
+	AllowFailure          bool         `yaml:"allow_failure,omitempty" json:"allow_failure,omitempty"` // GitLab
+	AllowFailureExitCodes []int        `yaml:"allow_failure_exit_codes,omitempty" json:"allow_failure_exit_codes,omitempty"`
+	Retry                 *RetryPolicy `yaml:"retry,omitempty" json:"retry,omitempty"`
+	MaxRetries            int          `yaml:"max_retries,omitempty" json:"max_retries,omitempty"` // Jenkins
+	Concurrency           *Concurrency `yaml:"concurrency,omitempty" json:"concurrency,omitempty"`
+	Interruptible         bool         `yaml:"interruptible,omitempty" json:"interruptible,omitempty"`
 
 	// Parallelism and strategy
 	Strategy *Strategy                `yaml:"strategy,omitempty" json:"strategy,omitempty"` // GitHub

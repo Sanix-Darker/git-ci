@@ -236,7 +236,10 @@ func (p *GitlabParser) Parse(ciFilePath string) (*types.Pipeline, error) {
 	}
 
 	// Convert to generic Pipeline
-	pipeline := p.convertToPipeline(gitlabCI)
+	pipeline, err := p.convertToPipeline(gitlabCI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to normalize GitLab CI: %w", err)
+	}
 
 	// Validate the pipeline
 	if err := p.Validate(pipeline); err != nil {
@@ -472,7 +475,7 @@ func (p *GitlabParser) parseJob(jobData map[string]interface{}) *GitlabJob {
 }
 
 // convertToPipeline converts GitLab CI to generic Pipeline
-func (p *GitlabParser) convertToPipeline(ci *GitlabCI) *types.Pipeline {
+func (p *GitlabParser) convertToPipeline(ci *GitlabCI) (*types.Pipeline, error) {
 	pipeline := &types.Pipeline{
 		Name:        "GitLab CI Pipeline",
 		Provider:    "gitlab",
@@ -526,7 +529,10 @@ func (p *GitlabParser) convertToPipeline(ci *GitlabCI) *types.Pipeline {
 		if glJob.Retry == nil && ci.Default != nil {
 			glJob.Retry = ci.Default.Retry
 		}
-		job := p.convertJob(jobName, glJob, globalImage, globalServices, globalBeforeScript, globalAfterScript)
+		job, err := p.convertJob(jobName, glJob, globalImage, globalServices, globalBeforeScript, globalAfterScript)
+		if err != nil {
+			return nil, err
+		}
 		job.Retry = parseGitLabRetryPolicy(glJob.Retry)
 		pipeline.Jobs[jobName] = job
 	}
@@ -536,7 +542,7 @@ func (p *GitlabParser) convertToPipeline(ci *GitlabCI) *types.Pipeline {
 		pipeline.Stages = p.extractStages(ci.Jobs)
 	}
 
-	return pipeline
+	return pipeline, nil
 }
 
 // convertJob converts GitLab job to generic Job
@@ -547,7 +553,7 @@ func (p *GitlabParser) convertJob(
 	globalServices []interface{},
 	globalBeforeScript []string,
 	globalAfterScript []string,
-) *types.Job {
+) (*types.Job, error) {
 	when := glJob.When
 	if glJob.Manual && strings.TrimSpace(when) == "" {
 		when = "manual"
@@ -599,9 +605,11 @@ func (p *GitlabParser) convertJob(
 		job.AllowFailure = v
 		job.ContinueOnErr = v
 	case map[string]interface{}:
-		// Complex allow_failure with exit_codes
-		job.AllowFailure = true
-		job.ContinueOnErr = true
+		exitCodes, err := parseAllowFailureExitCodes(v)
+		if err != nil {
+			return nil, fmt.Errorf("job %q allow_failure: %w", jobName, err)
+		}
+		job.AllowFailureExitCodes = exitCodes
 	case nil:
 		if strings.EqualFold(strings.TrimSpace(job.When), "manual") {
 			job.AllowFailure = true
@@ -683,7 +691,45 @@ func (p *GitlabParser) convertJob(
 		}
 	}
 
-	return job
+	return job, nil
+}
+
+func parseAllowFailureExitCodes(value map[string]interface{}) ([]int, error) {
+	if len(value) != 1 {
+		return nil, fmt.Errorf("object form only supports exit_codes")
+	}
+	raw, exists := value["exit_codes"]
+	if !exists {
+		return nil, fmt.Errorf("object form requires exit_codes")
+	}
+	var candidates []interface{}
+	switch configured := raw.(type) {
+	case int:
+		candidates = []interface{}{configured}
+	case []interface{}:
+		candidates = configured
+	default:
+		return nil, fmt.Errorf("exit_codes must be an integer or integer array")
+	}
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("exit_codes cannot be empty")
+	}
+	result := make([]int, 0, len(candidates))
+	seen := make(map[int]bool, len(candidates))
+	for _, candidate := range candidates {
+		code, ok := candidate.(int)
+		if !ok {
+			return nil, fmt.Errorf("exit_codes must contain integers")
+		}
+		if code < 0 || code > 255 {
+			return nil, fmt.Errorf("exit code %d is outside 0..255", code)
+		}
+		if !seen[code] {
+			seen[code] = true
+			result = append(result, code)
+		}
+	}
+	return result, nil
 }
 
 // convertScriptsToSteps converts GitLab scripts to generic Steps

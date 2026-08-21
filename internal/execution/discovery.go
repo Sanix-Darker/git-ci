@@ -70,50 +70,51 @@ type ChildPipelineDefinition struct {
 // source job identifier; Needs and Requires therefore reference keys rather
 // than presentation names.
 type JobDefinition struct {
-	Retry                *types.RetryPolicy
-	Key                  string                               `json:"key"`
-	SourceKey            string                               `json:"sourceKey,omitempty"`
-	Name                 string                               `json:"name"`
-	Environment          map[string]string                    `json:"environment"`
-	EnvironmentName      string                               `json:"environmentName,omitempty"`
-	DeploymentTier       string                               `json:"deploymentTier,omitempty"`
-	Needs                []string                             `json:"needs"`
-	NeedsOptional        map[string]bool                      `json:"needsOptional,omitempty"`
-	Requires             []string                             `json:"requires"`
-	ArtifactDependencies []string                             `json:"artifactDependencies,omitempty"`
-	DependenciesDefined  bool                                 `json:"dependenciesDefined,omitempty"`
-	NeedsArtifacts       map[string]bool                      `json:"needsArtifacts,omitempty"`
-	Stage                string                               `json:"stage,omitempty"`
-	RunnerHint           string                               `json:"runnerHint,omitempty"`
-	RunnerRequirements   []string                             `json:"runnerRequirements,omitempty"`
-	RunnerGroup          string                               `json:"runnerGroup,omitempty"`
-	RunnerMatch          runnerinventory.Match                `json:"runnerMatch"`
-	AllowFailure         bool                                 `json:"allowFailure"`
-	TimeoutMinutes       int                                  `json:"timeoutMinutes,omitempty"`
-	RollbackCommand      string                               `json:"rollbackCommand,omitempty"`
-	VerifyCommand        string                               `json:"verifyCommand,omitempty"`
-	Matrix               map[string]string                    `json:"matrix,omitempty"`
-	MatrixIndex          int                                  `json:"matrixIndex,omitempty"`
-	MatrixTotal          int                                  `json:"matrixTotal,omitempty"`
-	MatrixLabel          string                               `json:"matrixLabel,omitempty"`
-	Condition            executionsemantics.ConditionContract `json:"condition"`
-	Rules                []RuleDefinition                     `json:"rules,omitempty"`
-	Only                 *OnlyExceptDefinition                `json:"only,omitempty"`
-	Except               *OnlyExceptDefinition                `json:"except,omitempty"`
-	When                 string                               `json:"when,omitempty"`
-	ManualConfirmation   string                               `json:"manualConfirmation,omitempty"`
-	Concurrency          *ConcurrencyDefinition               `json:"concurrency,omitempty"`
-	Interruptible        bool                                 `json:"interruptible,omitempty"`
-	FailFast             bool                                 `json:"failFast,omitempty"`
-	MaxParallel          int                                  `json:"maxParallel,omitempty"`
-	WorkflowCall         *types.WorkflowCall                  `json:"workflowCall,omitempty"`
-	ChildPipeline        *ChildPipelineDefinition             `json:"childPipeline,omitempty"`
-	Container            *types.Container                     `json:"container,omitempty"`
-	Services             map[string]*types.Service            `json:"services,omitempty"`
-	Artifacts            *types.ArtifactConfig                `json:"artifacts,omitempty"`
-	Cache                *types.CacheConfig                   `json:"cache,omitempty"`
-	Outputs              map[string]string                    `json:"outputs,omitempty"`
-	Steps                []StepDefinition                     `json:"steps"`
+	Retry                 *types.RetryPolicy
+	Key                   string                               `json:"key"`
+	SourceKey             string                               `json:"sourceKey,omitempty"`
+	Name                  string                               `json:"name"`
+	Environment           map[string]string                    `json:"environment"`
+	EnvironmentName       string                               `json:"environmentName,omitempty"`
+	DeploymentTier        string                               `json:"deploymentTier,omitempty"`
+	Needs                 []string                             `json:"needs"`
+	NeedsOptional         map[string]bool                      `json:"needsOptional,omitempty"`
+	Requires              []string                             `json:"requires"`
+	ArtifactDependencies  []string                             `json:"artifactDependencies,omitempty"`
+	DependenciesDefined   bool                                 `json:"dependenciesDefined,omitempty"`
+	NeedsArtifacts        map[string]bool                      `json:"needsArtifacts,omitempty"`
+	Stage                 string                               `json:"stage,omitempty"`
+	RunnerHint            string                               `json:"runnerHint,omitempty"`
+	RunnerRequirements    []string                             `json:"runnerRequirements,omitempty"`
+	RunnerGroup           string                               `json:"runnerGroup,omitempty"`
+	RunnerMatch           runnerinventory.Match                `json:"runnerMatch"`
+	AllowFailure          bool                                 `json:"allowFailure"`
+	AllowFailureExitCodes []int                                `json:"allowFailureExitCodes,omitempty"`
+	TimeoutMinutes        int                                  `json:"timeoutMinutes,omitempty"`
+	RollbackCommand       string                               `json:"rollbackCommand,omitempty"`
+	VerifyCommand         string                               `json:"verifyCommand,omitempty"`
+	Matrix                map[string]string                    `json:"matrix,omitempty"`
+	MatrixIndex           int                                  `json:"matrixIndex,omitempty"`
+	MatrixTotal           int                                  `json:"matrixTotal,omitempty"`
+	MatrixLabel           string                               `json:"matrixLabel,omitempty"`
+	Condition             executionsemantics.ConditionContract `json:"condition"`
+	Rules                 []RuleDefinition                     `json:"rules,omitempty"`
+	Only                  *OnlyExceptDefinition                `json:"only,omitempty"`
+	Except                *OnlyExceptDefinition                `json:"except,omitempty"`
+	When                  string                               `json:"when,omitempty"`
+	ManualConfirmation    string                               `json:"manualConfirmation,omitempty"`
+	Concurrency           *ConcurrencyDefinition               `json:"concurrency,omitempty"`
+	Interruptible         bool                                 `json:"interruptible,omitempty"`
+	FailFast              bool                                 `json:"failFast,omitempty"`
+	MaxParallel           int                                  `json:"maxParallel,omitempty"`
+	WorkflowCall          *types.WorkflowCall                  `json:"workflowCall,omitempty"`
+	ChildPipeline         *ChildPipelineDefinition             `json:"childPipeline,omitempty"`
+	Container             *types.Container                     `json:"container,omitempty"`
+	Services              map[string]*types.Service            `json:"services,omitempty"`
+	Artifacts             *types.ArtifactConfig                `json:"artifacts,omitempty"`
+	Cache                 *types.CacheConfig                   `json:"cache,omitempty"`
+	Outputs               map[string]string                    `json:"outputs,omitempty"`
+	Steps                 []StepDefinition                     `json:"steps"`
 }
 
 type ConcurrencyDefinition struct {
@@ -837,39 +838,40 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		return JobDefinition{}, fmt.Errorf("x-gci rollback requires a deployment environment")
 	}
 	normalized := JobDefinition{
-		Retry:                job.Retry,
-		Key:                  key,
-		Name:                 job.Name,
-		Environment:          copyStringMap(job.Environment),
-		EnvironmentName:      job.EnvironmentName,
-		DeploymentTier:       job.DeploymentTier,
-		Needs:                sortedUnique(job.Needs),
-		NeedsOptional:        copyBoolMap(job.NeedsOptional),
-		Requires:             sortedUnique(job.Requires),
-		ArtifactDependencies: sortedUnique(job.Dependencies),
-		DependenciesDefined:  job.DependenciesDefined,
-		NeedsArtifacts:       copyBoolMap(job.NeedsArtifacts),
-		Stage:                job.Stage,
-		RunnerHint:           runnerHint(job),
-		AllowFailure:         job.AllowFailure || job.ContinueOnErr,
-		TimeoutMinutes:       job.TimeoutMin,
-		RollbackCommand:      rollback,
-		VerifyCommand:        verify,
-		Condition:            executionsemantics.CompileCondition(job.If),
-		Rules:                normalizeRules(job.Rules),
-		Only:                 normalizeOnlyExcept(job.Only),
-		Except:               normalizeOnlyExcept(job.Except),
-		When:                 job.When,
-		ManualConfirmation:   strings.TrimSpace(job.ManualConfirmation),
-		Concurrency:          normalizeConcurrency(job.Concurrency),
-		Interruptible:        job.Interruptible,
-		WorkflowCall:         copyWorkflowCall(job.WorkflowCall),
-		Container:            copyContainer(job.Container),
-		Services:             copyServices(job.Services),
-		Artifacts:            copyArtifactConfig(job.Artifacts),
-		Cache:                copyCacheConfig(job.Cache),
-		Outputs:              copyStringMap(job.Outputs),
-		Steps:                normalizeSteps(key, job.Steps),
+		Retry:                 job.Retry,
+		Key:                   key,
+		Name:                  job.Name,
+		Environment:           copyStringMap(job.Environment),
+		EnvironmentName:       job.EnvironmentName,
+		DeploymentTier:        job.DeploymentTier,
+		Needs:                 sortedUnique(job.Needs),
+		NeedsOptional:         copyBoolMap(job.NeedsOptional),
+		Requires:              sortedUnique(job.Requires),
+		ArtifactDependencies:  sortedUnique(job.Dependencies),
+		DependenciesDefined:   job.DependenciesDefined,
+		NeedsArtifacts:        copyBoolMap(job.NeedsArtifacts),
+		Stage:                 job.Stage,
+		RunnerHint:            runnerHint(job),
+		AllowFailure:          job.AllowFailure || job.ContinueOnErr,
+		AllowFailureExitCodes: append([]int(nil), job.AllowFailureExitCodes...),
+		TimeoutMinutes:        job.TimeoutMin,
+		RollbackCommand:       rollback,
+		VerifyCommand:         verify,
+		Condition:             executionsemantics.CompileCondition(job.If),
+		Rules:                 normalizeRules(job.Rules),
+		Only:                  normalizeOnlyExcept(job.Only),
+		Except:                normalizeOnlyExcept(job.Except),
+		When:                  job.When,
+		ManualConfirmation:    strings.TrimSpace(job.ManualConfirmation),
+		Concurrency:           normalizeConcurrency(job.Concurrency),
+		Interruptible:         job.Interruptible,
+		WorkflowCall:          copyWorkflowCall(job.WorkflowCall),
+		Container:             copyContainer(job.Container),
+		Services:              copyServices(job.Services),
+		Artifacts:             copyArtifactConfig(job.Artifacts),
+		Cache:                 copyCacheConfig(job.Cache),
+		Outputs:               copyStringMap(job.Outputs),
+		Steps:                 normalizeSteps(key, job.Steps),
 	}
 	if job.Strategy != nil {
 		normalized.FailFast = job.Strategy.FailFast
@@ -1091,6 +1093,7 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 		"failFast": job.FailFast, "maxParallel": job.MaxParallel,
 		"workflowCall": job.WorkflowCall, "container": job.Container, "services": job.Services,
 		"artifacts": job.Artifacts, "cache": job.Cache, "outputs": job.Outputs, "retry": job.Retry,
+		"allowFailureExitCodes": job.AllowFailureExitCodes,
 	}
 	encoded, err := json.Marshal(metadata)
 	if err != nil {

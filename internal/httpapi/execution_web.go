@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -276,38 +277,39 @@ type workflowDefinitionDocument struct {
 }
 
 type workflowDefinitionJobDocument struct {
-	ChildPipeline      *childPipelineDefinitionDocument     `json:"childPipeline,omitempty"`
-	Retry              *types.RetryPolicy                   `json:"retry,omitempty"`
-	Key                string                               `json:"key"`
-	SourceKey          string                               `json:"sourceKey"`
-	Name               string                               `json:"name"`
-	Stage              string                               `json:"stage"`
-	RunnerHint         string                               `json:"runnerHint"`
-	RunnerRequirements []string                             `json:"runnerRequirements"`
-	RunnerGroup        string                               `json:"runnerGroup"`
-	RunnerMatch        runnerMatchDocument                  `json:"runnerMatch"`
-	Needs              []string                             `json:"needs"`
-	NeedsOptional      map[string]bool                      `json:"needsOptional"`
-	Requires           []string                             `json:"requires"`
-	AllowFailure       bool                                 `json:"allowFailure"`
-	Matrix             map[string]string                    `json:"matrix"`
-	MatrixIndex        int                                  `json:"matrixIndex"`
-	MatrixTotal        int                                  `json:"matrixTotal"`
-	MatrixLabel        string                               `json:"matrixLabel"`
-	Condition          conditionDocument                    `json:"condition"`
-	Rules              []json.RawMessage                    `json:"rules"`
-	When               string                               `json:"when"`
-	ManualConfirmation string                               `json:"manualConfirmation"`
-	Concurrency        *concurrencyDocument                 `json:"concurrency"`
-	Interruptible      bool                                 `json:"interruptible"`
-	FailFast           bool                                 `json:"failFast"`
-	MaxParallel        int                                  `json:"maxParallel"`
-	WorkflowCall       *workflowCallDefinitionDocument      `json:"workflowCall"`
-	Container          *containerDefinitionDocument         `json:"container"`
-	Services           map[string]serviceDefinitionDocument `json:"services"`
-	Artifacts          *artifactDefinitionDocument          `json:"artifacts"`
-	Cache              *cacheDefinitionDocument             `json:"cache"`
-	Steps              []workflowDefinitionStepDocument     `json:"steps"`
+	ChildPipeline         *childPipelineDefinitionDocument     `json:"childPipeline,omitempty"`
+	Retry                 *types.RetryPolicy                   `json:"retry,omitempty"`
+	Key                   string                               `json:"key"`
+	SourceKey             string                               `json:"sourceKey"`
+	Name                  string                               `json:"name"`
+	Stage                 string                               `json:"stage"`
+	RunnerHint            string                               `json:"runnerHint"`
+	RunnerRequirements    []string                             `json:"runnerRequirements"`
+	RunnerGroup           string                               `json:"runnerGroup"`
+	RunnerMatch           runnerMatchDocument                  `json:"runnerMatch"`
+	Needs                 []string                             `json:"needs"`
+	NeedsOptional         map[string]bool                      `json:"needsOptional"`
+	Requires              []string                             `json:"requires"`
+	AllowFailure          bool                                 `json:"allowFailure"`
+	AllowFailureExitCodes []int                                `json:"allowFailureExitCodes"`
+	Matrix                map[string]string                    `json:"matrix"`
+	MatrixIndex           int                                  `json:"matrixIndex"`
+	MatrixTotal           int                                  `json:"matrixTotal"`
+	MatrixLabel           string                               `json:"matrixLabel"`
+	Condition             conditionDocument                    `json:"condition"`
+	Rules                 []json.RawMessage                    `json:"rules"`
+	When                  string                               `json:"when"`
+	ManualConfirmation    string                               `json:"manualConfirmation"`
+	Concurrency           *concurrencyDocument                 `json:"concurrency"`
+	Interruptible         bool                                 `json:"interruptible"`
+	FailFast              bool                                 `json:"failFast"`
+	MaxParallel           int                                  `json:"maxParallel"`
+	WorkflowCall          *workflowCallDefinitionDocument      `json:"workflowCall"`
+	Container             *containerDefinitionDocument         `json:"container"`
+	Services              map[string]serviceDefinitionDocument `json:"services"`
+	Artifacts             *artifactDefinitionDocument          `json:"artifacts"`
+	Cache                 *cacheDefinitionDocument             `json:"cache"`
+	Steps                 []workflowDefinitionStepDocument     `json:"steps"`
 }
 
 type childPipelineDefinitionDocument struct {
@@ -570,6 +572,10 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 		if len(job.Attempts) > 1 {
 			job.Badges = append(job.Badges, webui.SemanticBadgeView{Label: fmt.Sprintf("%d ATTEMPTS", len(job.Attempts)), Tone: "runtime", Hint: "Durable automatic retry history"})
 		}
+		if code := matchedAllowedExitCode(item.Job.Status, item.Job.Attempts, job.AllowFailureExitCodes); code != nil {
+			job.AllowedFailure = true
+			job.Badges = append(job.Badges, webui.SemanticBadgeView{Label: fmt.Sprintf("ALLOWED EXIT %d", *code), Tone: "runtime", Hint: "The failed final attempt matched this job's allow_failure exit-code policy"})
+		}
 		job.Manual, err = manualPlayControl(item.Job, graph.Run, csrfToken)
 		if err != nil {
 			return webui.RunDetailView{}, err
@@ -604,6 +610,9 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 
 func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
 	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if len(job.AllowFailureExitCodes) > 0 {
+		badges = append(badges, webui.SemanticBadgeView{Label: "ALLOW EXIT " + formatExitCodes(job.AllowFailureExitCodes), Tone: "runtime", Hint: "Only these process exit codes may fail without failing the pipeline"})
+	}
 	if optional := enabledDependencyKeys(job.NeedsOptional); len(optional) > 0 {
 		badges = append(badges, webui.SemanticBadgeView{Label: "OPTIONAL NEED " + strings.ToUpper(strings.Join(optional, ", ")), Tone: "runtime", Hint: "Waits when present; rule-skipped or absent targets do not block this job"})
 	}
@@ -726,7 +735,33 @@ func populateRunJobSemanticView(view *webui.RunJobView, environment json.RawMess
 	}
 	view.SourceKey = semantics.SourceKey
 	view.OptionalDependencies = strings.Join(enabledDependencyKeys(semantics.NeedsOptional), ", ")
+	view.AllowFailureExitCodes = append([]int(nil), semantics.AllowFailureExitCodes...)
 	view.Badges = jobSemanticBadges(semantics)
+}
+
+func formatExitCodes(values []int) string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		result = append(result, strconv.Itoa(value))
+	}
+	return strings.Join(result, ", ")
+}
+
+func matchedAllowedExitCode(status store.Status, attempts []store.JobAttempt, allowed []int) *int {
+	if status != store.StatusFailed || len(attempts) == 0 {
+		return nil
+	}
+	code := attempts[len(attempts)-1].ExitCode
+	if code == nil {
+		return nil
+	}
+	for _, candidate := range allowed {
+		if candidate == *code {
+			matched := *code
+			return &matched
+		}
+	}
+	return nil
 }
 
 func enabledDependencyKeys(values map[string]bool) []string {

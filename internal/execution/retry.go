@@ -91,10 +91,10 @@ func timeoutRetryAlias(selector, failureKind string) bool {
 	return failureKind == "job_execution_timeout" && (selector == "stuck_or_timeout_failure" || selector == "job_execution_timeout")
 }
 
-func (m *Manager) executeJobWithRetry(ctx context.Context, run store.Run, item store.JobGraph, workspacePath string, secretValues map[string]string, outputContext *runtimeOutputContext) (store.Status, error) {
+func (m *Manager) executeJobWithRetry(ctx context.Context, run store.Run, item store.JobGraph, workspacePath string, secretValues map[string]string, outputContext *runtimeOutputContext) (store.Status, jobAttemptOutcome, error) {
 	frozen, present, decodeErr := decodeJobSemantics(item.Job.Environment)
 	if decodeErr != nil {
-		return store.StatusFailed, fmt.Errorf("decode retry policy: %w", decodeErr)
+		return store.StatusFailed, jobAttemptOutcome{}, fmt.Errorf("decode retry policy: %w", decodeErr)
 	}
 	var policy *types.RetryPolicy
 	if present {
@@ -103,7 +103,7 @@ func (m *Manager) executeJobWithRetry(ctx context.Context, run store.Run, item s
 	for {
 		attempt, err := m.store.StartJobAttempt(ctx, item.Job.ID)
 		if err != nil {
-			return store.StatusFailed, fmt.Errorf("start job attempt: %w", err)
+			return store.StatusFailed, jobAttemptOutcome{}, fmt.Errorf("start job attempt: %w", err)
 		}
 		outcome := jobAttemptOutcome{}
 		status, executeErr := m.executeJob(ctx, run, item, workspacePath, secretValues, outputContext, &outcome)
@@ -121,16 +121,46 @@ func (m *Manager) executeJobWithRetry(ctx context.Context, run store.Run, item s
 		willRetry := retryPolicyMatches(policy, attempt.AttemptNumber, status, outcome, ctx.Err() != nil)
 		finished, finishErr := m.store.FinishJobAttempt(ctx, store.FinishJobAttemptParams{AttemptID: attempt.ID, Status: status, FailureKind: outcome.FailureKind, ExitCode: outcome.ExitCode, Message: outcome.Message, WillRetry: willRetry})
 		if finishErr != nil {
-			return status, fmt.Errorf("finish job attempt: %w", finishErr)
+			return status, outcome, fmt.Errorf("finish job attempt: %w", finishErr)
 		}
 		if !willRetry {
-			return status, executeErr
+			return status, outcome, executeErr
 		}
 		if len(item.Steps) > 0 {
 			_ = m.appendSystem(context.WithoutCancel(ctx), item.Steps[0].ID, fmt.Sprintf("automatic retry scheduled after attempt %d (%s)", attempt.AttemptNumber, outcome.FailureKind))
 		}
 		if err := m.store.ResetJobForRetry(ctx, item.Job.ID, finished.ID); err != nil {
-			return status, fmt.Errorf("reset job for retry: %w", err)
+			return status, outcome, fmt.Errorf("reset job for retry: %w", err)
 		}
 	}
+}
+
+func jobFailureAllowed(job store.Job, status store.Status, outcome jobAttemptOutcome) bool {
+	if job.AllowFailure {
+		return true
+	}
+	if status != store.StatusFailed || outcome.ExitCode == nil {
+		return false
+	}
+	semantics, present, err := decodeJobSemantics(job.Environment)
+	if err != nil || !present {
+		return false
+	}
+	for _, code := range semantics.AllowFailureExitCodes {
+		if code == *outcome.ExitCode {
+			return true
+		}
+	}
+	return false
+}
+
+func persistedJobFailureAllowed(job store.Job) bool {
+	if job.AllowFailure {
+		return true
+	}
+	if job.Status != store.StatusFailed || len(job.Attempts) == 0 {
+		return false
+	}
+	latest := job.Attempts[len(job.Attempts)-1]
+	return jobFailureAllowed(job, job.Status, jobAttemptOutcome{FailureKind: latest.FailureKind, ExitCode: latest.ExitCode, Message: latest.Message})
 }
