@@ -164,7 +164,8 @@ type RunLineageView struct {
 type RunJobView struct {
 	ID, Key, SourceKey, Name, Status, Dot, Runner, Dependencies, OptionalDependencies string
 	ManualPlayedBy, ManualPlayedAt                                                    string
-	AllowFailure                                                                      bool
+	AllowFailure, AllowedFailure                                                      bool
+	AllowFailureExitCodes                                                             []int
 	DependencyKeys                                                                    []string
 	Steps                                                                             []RunStepView
 	Replay                                                                            ReplayControlView

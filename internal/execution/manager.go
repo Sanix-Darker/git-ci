@@ -475,7 +475,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 	}
 	for _, item := range graph.Jobs {
 		key := pointerValue(item.Job.Key)
-		allowedFailure[key] = item.Job.AllowFailure
+		allowedFailure[key] = persistedJobFailureAllowed(item.Job)
 		if item.Job.ManualState != nil {
 			allowedFailure[key] = !item.Job.ManualState.Blocking
 			item.Job.AllowFailure = !item.Job.ManualState.Blocking
@@ -571,7 +571,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 		} else {
 			close(concurrencyDone)
 		}
-		status, err := m.executeJobWithRetry(jobCtx, graph.Run, item, workspacePath, jobSecrets, outputContext)
+		status, outcome, err := m.executeJobWithRetry(jobCtx, graph.Run, item, workspacePath, jobSecrets, outputContext)
 		stopConcurrency()
 		<-concurrencyDone
 		if jobConcurrencyLease != nil {
@@ -602,7 +602,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 			}
 		}
 		statuses[key] = status
-		allowedFailure[key] = item.Job.AllowFailure
+		allowedFailure[key] = jobFailureAllowed(item.Job, status, outcome)
 		if status == store.StatusCancelled {
 			if err := m.cancelRemaining(ctx, graph, statuses); err != nil {
 				return err
@@ -1388,34 +1388,35 @@ func dependenciesSatisfied(dependencies []string, statuses map[string]store.Stat
 }
 
 type frozenJobSemantics struct {
-	Retry                *types.RetryPolicy                   `json:"retry,omitempty"`
-	Provider             string                               `json:"provider"`
-	SourceKey            string                               `json:"sourceKey"`
-	Stage                string                               `json:"stage"`
-	ArtifactDependencies []string                             `json:"artifactDependencies"`
-	DependenciesDefined  bool                                 `json:"dependenciesDefined"`
-	NeedsArtifacts       map[string]bool                      `json:"needsArtifacts"`
-	NeedsOptional        map[string]bool                      `json:"needsOptional"`
-	Matrix               map[string]string                    `json:"matrix"`
-	MatrixIndex          int                                  `json:"matrixIndex"`
-	MatrixTotal          int                                  `json:"matrixTotal"`
-	MatrixLabel          string                               `json:"matrixLabel"`
-	Condition            executionsemantics.ConditionContract `json:"condition"`
-	Rules                []RuleDefinition                     `json:"rules"`
-	Only                 *OnlyExceptDefinition                `json:"only"`
-	Except               *OnlyExceptDefinition                `json:"except"`
-	When                 string                               `json:"when"`
-	ManualConfirmation   string                               `json:"manualConfirmation"`
-	Concurrency          *ConcurrencyDefinition               `json:"concurrency"`
-	Interruptible        bool                                 `json:"interruptible"`
-	FailFast             bool                                 `json:"failFast"`
-	MaxParallel          int                                  `json:"maxParallel"`
-	WorkflowCall         *types.WorkflowCall                  `json:"workflowCall"`
-	Container            *types.Container                     `json:"container"`
-	Services             map[string]*types.Service            `json:"services"`
-	Artifacts            *types.ArtifactConfig                `json:"artifacts"`
-	Cache                *types.CacheConfig                   `json:"cache"`
-	Outputs              map[string]string                    `json:"outputs"`
+	Retry                 *types.RetryPolicy                   `json:"retry,omitempty"`
+	Provider              string                               `json:"provider"`
+	SourceKey             string                               `json:"sourceKey"`
+	Stage                 string                               `json:"stage"`
+	ArtifactDependencies  []string                             `json:"artifactDependencies"`
+	DependenciesDefined   bool                                 `json:"dependenciesDefined"`
+	NeedsArtifacts        map[string]bool                      `json:"needsArtifacts"`
+	NeedsOptional         map[string]bool                      `json:"needsOptional"`
+	AllowFailureExitCodes []int                                `json:"allowFailureExitCodes"`
+	Matrix                map[string]string                    `json:"matrix"`
+	MatrixIndex           int                                  `json:"matrixIndex"`
+	MatrixTotal           int                                  `json:"matrixTotal"`
+	MatrixLabel           string                               `json:"matrixLabel"`
+	Condition             executionsemantics.ConditionContract `json:"condition"`
+	Rules                 []RuleDefinition                     `json:"rules"`
+	Only                  *OnlyExceptDefinition                `json:"only"`
+	Except                *OnlyExceptDefinition                `json:"except"`
+	When                  string                               `json:"when"`
+	ManualConfirmation    string                               `json:"manualConfirmation"`
+	Concurrency           *ConcurrencyDefinition               `json:"concurrency"`
+	Interruptible         bool                                 `json:"interruptible"`
+	FailFast              bool                                 `json:"failFast"`
+	MaxParallel           int                                  `json:"maxParallel"`
+	WorkflowCall          *types.WorkflowCall                  `json:"workflowCall"`
+	Container             *types.Container                     `json:"container"`
+	Services              map[string]*types.Service            `json:"services"`
+	Artifacts             *types.ArtifactConfig                `json:"artifacts"`
+	Cache                 *types.CacheConfig                   `json:"cache"`
+	Outputs               map[string]string                    `json:"outputs"`
 }
 
 type workflowConcurrencySnapshot struct {

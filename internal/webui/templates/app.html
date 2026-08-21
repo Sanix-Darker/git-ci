@@ -552,7 +552,7 @@
   <div class="job-details">
     {{range .Jobs}}
     <article class="job-detail">
-      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3>{{template "semantic_badges" .Badges}}</div><div class="job-meta"><span>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowFailure}} / ALLOW FAILURE{{end}}{{if .ManualPlayedBy}} / PLAYED BY {{.ManualPlayedBy}} AT {{.ManualPlayedAt}}{{end}}</span>{{if .Manual.Present}}{{template "manual_play_control" .Manual}}{{else}}{{template "play_control" .Replay}}{{end}}</div></header>
+      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3>{{template "semantic_badges" .Badges}}</div><div class="job-meta"><span>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowedFailure}} / ALLOWED FAILURE{{else if .AllowFailure}} / ALLOW FAILURE{{end}}{{if .ManualPlayedBy}} / PLAYED BY {{.ManualPlayedBy}} AT {{.ManualPlayedAt}}{{end}}</span>{{if .Manual.Present}}{{template "manual_play_control" .Manual}}{{else}}{{template "play_control" .Replay}}{{end}}</div></header>
 	      {{if .Attempts}}<div class="semantic-badges job-attempts" aria-label="Job attempt history">{{range .Attempts}}<span class="semantic-chip {{.Tone}}" title="{{.Hint}}">ATTEMPT {{.Number}} / {{.Status}}</span>{{end}}</div>{{end}}
 	      {{with .ChildPipeline}}<a class="downstream-detail" href="/app/runs/{{.ChildRunID}}"><span><i class="dot {{.Dot}}"></i>{{.Status}}</span><strong>{{.SourceFile}}</strong><small>{{.Strategy}} / DEPTH {{.Depth}}</small><b>OPEN CHILD RUN -&gt;</b></a>{{end}}
       <div class="step-list">
