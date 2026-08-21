@@ -74,7 +74,8 @@ type Job struct {
 	Services  map[string]*Service `yaml:"services,omitempty" json:"services,omitempty"`
 
 	// Dependencies and ordering
-	Needs               []string        `yaml:"needs,omitempty" json:"needs,omitempty"`               // GitHub/GitLab
+	Needs               []string        `yaml:"needs,omitempty" json:"needs,omitempty"` // GitHub/GitLab
+	NeedsOptional       map[string]bool `yaml:"needs-optional,omitempty" json:"needs-optional,omitempty"`
 	Dependencies        []string        `yaml:"dependencies,omitempty" json:"dependencies,omitempty"` // GitLab
 	NeedsArtifacts      map[string]bool `yaml:"needs-artifacts,omitempty" json:"needs-artifacts,omitempty"`
 	DependenciesDefined bool            `yaml:"dependencies-defined,omitempty" json:"dependencies-defined,omitempty"`

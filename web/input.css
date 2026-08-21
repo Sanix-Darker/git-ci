@@ -1037,6 +1037,9 @@
 .graph-key small { color: #696969; font-size: .5rem; }
 .pipeline-stage-nodes .run-node { position: relative; overflow: visible; }
 .pipeline-stage + .pipeline-stage .run-node::before { position: absolute; top: 50%; left: -1.25rem; width: 1.25rem; height: 1px; background: #696969; content: ""; }
+.run-node.optional-edge { border-style: dashed; }
+.pipeline-stage + .pipeline-stage .run-node.optional-edge::before { height: 0; background: none; border-top: 1px dashed #8a8a8a; }
+.run-node.optional-edge > small { border-top-style: dashed; color: #a7a7a7; }
 .semantic-badges { display: flex; min-width: 0; flex-wrap: wrap; gap: .3rem; margin-top: .55rem; }
 .semantic-chip { display: inline-block; max-width: 100%; overflow: hidden; border: 1px solid #555; padding: .25rem .35rem; color: #bdbdbd; font-size: .49rem; font-weight: 800; letter-spacing: .035em; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; transition: border-color 120ms steps(2, end), color 120ms steps(2, end), transform 120ms steps(2, end); }
 .semantic-chip:hover { border-color: #f0f0f0; color: #fff; transform: translateY(-1px); }
@@ -1085,6 +1088,7 @@
   .definition-facts, .manual-dispatch { grid-template-columns: 1fr; }
   .graph-key { align-items: flex-start; flex-direction: column; }
   .pipeline-stage + .pipeline-stage .run-node::before { top: -.75rem; left: 50%; width: 1px; height: .75rem; }
+  .pipeline-stage + .pipeline-stage .run-node.optional-edge::before { width: 0; height: .75rem; border-top: 0; border-left: 1px dashed #8a8a8a; }
   .manual-dispatch > button { min-height: 44px; }
   .trigger-policies > div { grid-template-columns: 1fr; }
   .trigger-policies article + article { border-top: 1px solid #333; border-left: 0; }

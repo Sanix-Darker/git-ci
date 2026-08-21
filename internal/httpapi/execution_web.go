@@ -287,6 +287,7 @@ type workflowDefinitionJobDocument struct {
 	RunnerGroup        string                               `json:"runnerGroup"`
 	RunnerMatch        runnerMatchDocument                  `json:"runnerMatch"`
 	Needs              []string                             `json:"needs"`
+	NeedsOptional      map[string]bool                      `json:"needsOptional"`
 	Requires           []string                             `json:"requires"`
 	AllowFailure       bool                                 `json:"allowFailure"`
 	Matrix             map[string]string                    `json:"matrix"`
@@ -438,9 +439,10 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 		}
 		dependencies := append([]string(nil), job.Needs...)
 		dependencies = append(dependencies, job.Requires...)
+		optionalDependencies := enabledDependencyKeys(job.NeedsOptional)
 		workflowJob := webui.WorkflowJobView{
 			Key: key, SourceKey: job.SourceKey, Name: job.Name, Stage: job.Stage, Runner: job.RunnerHint,
-			Dependencies: strings.Join(dependencies, ", "), AllowFailure: job.AllowFailure,
+			Dependencies: strings.Join(dependencies, ", "), OptionalDependencies: strings.Join(optionalDependencies, ", "), AllowFailure: job.AllowFailure,
 			Badges: jobSemanticBadges(job),
 		}
 		status, dot := "READY", "dot-green"
@@ -463,7 +465,7 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 		runJobs = append(runJobs, webui.RunJobView{
 			Key: key, SourceKey: workflowJob.SourceKey, Name: workflowJob.Name, Status: status, Dot: dot,
 			Runner: workflowJob.Runner, Dependencies: workflowJob.Dependencies,
-			DependencyKeys: dependencies, AllowFailure: workflowJob.AllowFailure, Badges: workflowJob.Badges,
+			DependencyKeys: dependencies, OptionalDependencies: workflowJob.OptionalDependencies, AllowFailure: workflowJob.AllowFailure, Badges: workflowJob.Badges,
 		})
 	}
 	view.GraphRows = buildGraphRows(runJobs)
@@ -602,6 +604,9 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 
 func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
 	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if optional := enabledDependencyKeys(job.NeedsOptional); len(optional) > 0 {
+		badges = append(badges, webui.SemanticBadgeView{Label: "OPTIONAL NEED " + strings.ToUpper(strings.Join(optional, ", ")), Tone: "runtime", Hint: "Waits when present; rule-skipped or absent targets do not block this job"})
+	}
 	if job.ChildPipeline != nil {
 		badges = append(badges, webui.SemanticBadgeView{Label: "CHILD " + strings.ToUpper(job.ChildPipeline.Strategy), Tone: "runtime", Hint: job.ChildPipeline.SourceFile})
 	}
@@ -720,7 +725,19 @@ func populateRunJobSemanticView(view *webui.RunJobView, environment json.RawMess
 		return
 	}
 	view.SourceKey = semantics.SourceKey
+	view.OptionalDependencies = strings.Join(enabledDependencyKeys(semantics.NeedsOptional), ", ")
 	view.Badges = jobSemanticBadges(semantics)
+}
+
+func enabledDependencyKeys(values map[string]bool) []string {
+	result := make([]string, 0, len(values))
+	for key, enabled := range values {
+		if enabled {
+			result = append(result, key)
+		}
+	}
+	sort.Strings(result)
+	return result
 }
 
 func frozenStepBadges(environment json.RawMessage) []webui.SemanticBadgeView {

@@ -105,10 +105,10 @@ type WorkflowInputView struct {
 }
 
 type WorkflowJobView struct {
-	Key, SourceKey, Name, Stage, Runner, Dependencies string
-	AllowFailure                                      bool
-	Steps                                             []WorkflowStepView
-	Badges                                            []SemanticBadgeView
+	Key, SourceKey, Name, Stage, Runner, Dependencies, OptionalDependencies string
+	AllowFailure                                                            bool
+	Steps                                                                   []WorkflowStepView
+	Badges                                                                  []SemanticBadgeView
 }
 
 type RunnerView struct {
@@ -162,16 +162,16 @@ type RunLineageView struct {
 }
 
 type RunJobView struct {
-	ID, Key, SourceKey, Name, Status, Dot, Runner, Dependencies string
-	ManualPlayedBy, ManualPlayedAt                              string
-	AllowFailure                                                bool
-	DependencyKeys                                              []string
-	Steps                                                       []RunStepView
-	Replay                                                      ReplayControlView
-	Manual                                                      ManualPlayControlView
-	Badges                                                      []SemanticBadgeView
-	Attempts                                                    []JobAttemptView
-	ChildPipeline                                               *ChildPipelineView
+	ID, Key, SourceKey, Name, Status, Dot, Runner, Dependencies, OptionalDependencies string
+	ManualPlayedBy, ManualPlayedAt                                                    string
+	AllowFailure                                                                      bool
+	DependencyKeys                                                                    []string
+	Steps                                                                             []RunStepView
+	Replay                                                                            ReplayControlView
+	Manual                                                                            ManualPlayControlView
+	Badges                                                                            []SemanticBadgeView
+	Attempts                                                                          []JobAttemptView
+	ChildPipeline                                                                     *ChildPipelineView
 }
 
 type ChildPipelineView struct {

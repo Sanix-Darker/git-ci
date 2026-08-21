@@ -78,6 +78,7 @@ type JobDefinition struct {
 	EnvironmentName      string                               `json:"environmentName,omitempty"`
 	DeploymentTier       string                               `json:"deploymentTier,omitempty"`
 	Needs                []string                             `json:"needs"`
+	NeedsOptional        map[string]bool                      `json:"needsOptional,omitempty"`
 	Requires             []string                             `json:"requires"`
 	ArtifactDependencies []string                             `json:"artifactDependencies,omitempty"`
 	DependenciesDefined  bool                                 `json:"dependenciesDefined,omitempty"`
@@ -646,9 +647,15 @@ func normalizeDefinitionRecursive(
 		for _, key := range variantKeys[sourceKey] {
 			normalized := jobs[key]
 			normalized.Needs = expandDependencyKeys(job.Needs, variantKeys)
+			normalized.NeedsOptional = expandOptionalNeeds(job.NeedsOptional, variantKeys)
+			normalized.Needs = pruneMissingOptionalDependencies(normalized.Needs, normalized.NeedsOptional, jobs)
+			normalized.NeedsOptional = retainOptionalNeeds(normalized.NeedsOptional, normalized.Needs)
 			normalized.Requires = expandDependencyKeys(job.Requires, variantKeys)
 			normalized.ArtifactDependencies = expandDependencyKeys(job.Dependencies, variantKeys)
 			normalized.NeedsArtifacts = expandArtifactNeeds(job.NeedsArtifacts, variantKeys)
+			if err := freezeJobSemantics(&normalized, string(file.provider)); err != nil {
+				return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
+			}
 			jobs[key] = normalized
 			dependencies[key] = sortedUnique(append(
 				append([]string{}, normalized.Needs...),
@@ -837,6 +844,7 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		EnvironmentName:      job.EnvironmentName,
 		DeploymentTier:       job.DeploymentTier,
 		Needs:                sortedUnique(job.Needs),
+		NeedsOptional:        copyBoolMap(job.NeedsOptional),
 		Requires:             sortedUnique(job.Requires),
 		ArtifactDependencies: sortedUnique(job.Dependencies),
 		DependenciesDefined:  job.DependenciesDefined,
@@ -989,6 +997,45 @@ func expandDependencyKeys(keys []string, variants map[string][]string) []string 
 	return sortedUnique(expanded)
 }
 
+func expandOptionalNeeds(values map[string]bool, variants map[string][]string) map[string]bool {
+	result := make(map[string]bool)
+	for key, optional := range values {
+		if !optional {
+			continue
+		}
+		matches := variants[key]
+		if len(matches) == 0 {
+			result[key] = true
+			continue
+		}
+		for _, match := range matches {
+			result[match] = true
+		}
+	}
+	return result
+}
+
+func pruneMissingOptionalDependencies(keys []string, optional map[string]bool, jobs map[string]JobDefinition) []string {
+	result := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if _, exists := jobs[key]; !exists && optional[key] {
+			continue
+		}
+		result = append(result, key)
+	}
+	return result
+}
+
+func retainOptionalNeeds(values map[string]bool, needs []string) map[string]bool {
+	result := make(map[string]bool)
+	for _, need := range needs {
+		if values[need] {
+			result[need] = true
+		}
+	}
+	return result
+}
+
 func expandArtifactNeeds(values map[string]bool, variants map[string][]string) map[string]bool {
 	result := make(map[string]bool)
 	for key, artifacts := range values {
@@ -1036,7 +1083,7 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 	metadata := map[string]interface{}{
 		"provider": provider, "sourceKey": job.SourceKey, "stage": job.Stage,
 		"artifactDependencies": job.ArtifactDependencies, "dependenciesDefined": job.DependenciesDefined,
-		"needsArtifacts": job.NeedsArtifacts, "matrix": job.Matrix, "matrixIndex": job.MatrixIndex,
+		"needsArtifacts": job.NeedsArtifacts, "needsOptional": job.NeedsOptional, "matrix": job.Matrix, "matrixIndex": job.MatrixIndex,
 		"matrixTotal": job.MatrixTotal, "matrixLabel": job.MatrixLabel, "condition": job.Condition,
 		"rules": job.Rules, "only": job.Only, "except": job.Except, "when": job.When,
 		"manualConfirmation": job.ManualConfirmation,
