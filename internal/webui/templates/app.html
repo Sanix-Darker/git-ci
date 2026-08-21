@@ -534,7 +534,7 @@
     <div><a href="/app/runs">&lt;- ALL RUNS</a><p class="kicker">RUN / {{short .Run.ID}}</p><h2>{{.Run.WorkflowName}}</h2></div>
     <div class="run-detail-state"><span><i class="dot {{.Run.Dot}}"></i>{{.Run.Status}}</span>{{if .Run.CanCancel}}<form method="post" action="/app/runs/{{.Run.ID}}/cancel" hx-post="/app/runs/{{.Run.ID}}/cancel" hx-target="#run-detail" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">CANCEL</button></form>{{end}}</div>
   </header>
-  <dl class="run-facts"><div><dt>PROJECT</dt><dd>{{.Run.ProjectName}}</dd></div><div><dt>REF</dt><dd>{{.Run.Ref}}</dd></div><div><dt>COMMIT</dt><dd>{{if .Run.CommitSHA}}{{short .Run.CommitSHA}}{{else}}LOCAL{{end}}</dd></div><div><dt>CREATED</dt><dd>{{.Run.CreatedAt}}</dd></div></dl>
+  <dl class="run-facts"><div><dt>PROJECT</dt><dd>{{.Run.ProjectName}}</dd></div><div><dt>TRIGGER</dt><dd>{{.Run.Trigger}}</dd></div><div><dt>REF</dt><dd>{{.Run.Ref}}</dd></div><div><dt>COMMIT</dt><dd>{{if .Run.CommitSHA}}{{short .Run.CommitSHA}}{{else}}LOCAL{{end}}</dd></div><div><dt>CREATED</dt><dd>{{.Run.CreatedAt}}</dd></div></dl>
   {{if or .Artifacts .TestReports}}<section class="run-outputs" aria-label="Run outputs">
     <header><span><b>RUN OUTPUTS</b><small>IMMUTABLE FILES + TEST SIGNAL</small></span><span>{{pad2 (len .Artifacts)}} ARCHIVES / {{pad2 (len .TestReports)}} REPORTS</span></header>
     {{if .Artifacts}}<div class="artifact-grid">{{range .Artifacts}}<a class="artifact-card" href="{{.Download}}"><span>ZIP / {{pad2 .FileCount}} FILES</span><strong>{{.Name}}</strong><code>SHA256 {{short .SHA256}}</code><small>{{.Size}} / DOWNLOAD -&gt;</small></a>{{end}}</div>{{end}}

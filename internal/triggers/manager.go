@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sanix-darker/git-ci/internal/gitrepository"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 )
@@ -196,16 +197,11 @@ func acceptsCommitEvent(raw []byte, event triggerpolicy.Event) (bool, error) {
 }
 
 func changedPaths(ctx context.Context, path, before, after string) ([]string, error) {
-	command := exec.CommandContext(ctx, "git", "-c", "safe.directory="+path, "-C", path, "diff", "--name-only", "--diff-filter=ACDMRTUXB", before, after, "--")
-	output, err := command.CombinedOutput()
+	paths, err := gitrepository.ChangedPaths(ctx, path, before, after, gitrepository.DiffDirect)
 	if err != nil {
-		return nil, fmt.Errorf("triggers: inspect changed paths: %s", strings.TrimSpace(string(output)))
+		return nil, fmt.Errorf("triggers: %w", err)
 	}
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 1 && lines[0] == "" {
-		return nil, nil
-	}
-	return lines, nil
+	return paths, nil
 }
 
 func normalizeBranch(ref, fallback string) (string, error) {

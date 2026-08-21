@@ -796,10 +796,18 @@ func runView(run store.Run, projectName string, workflowNames map[string]string)
 	return webui.RunView{
 		ID: run.ID, ProjectName: projectName, WorkflowName: workflowName,
 		WorkflowKey: stringValue(run.WorkflowKey), Status: strings.ToUpper(string(run.Status)), Dot: statusDot(run.Status),
-		Ref: ref, CommitSHA: stringValue(run.CommitSHA), CreatedAt: run.CreatedAt.UTC().Format("2006-01-02 15:04:05Z"),
+		Trigger: formatTriggerType(run.TriggerType), Ref: ref, CommitSHA: stringValue(run.CommitSHA), CreatedAt: run.CreatedAt.UTC().Format("2006-01-02 15:04:05Z"),
 		CanCancel:   run.Status == store.StatusQueued || run.Status == store.StatusWaiting || run.Status == store.StatusRunning,
 		CreatedUnix: run.CreatedAt.Unix(), DurationSeconds: durationSeconds, DurationLabel: formatRunDuration(durationSeconds),
 	}
+}
+
+func formatTriggerType(trigger string) string {
+	trigger = strings.TrimSpace(trigger)
+	if trigger == "" {
+		return "UNKNOWN"
+	}
+	return strings.ToUpper(strings.ReplaceAll(trigger, "_", " "))
 }
 
 func runFilterFromRequest(request *http.Request) webui.RunFilterView {

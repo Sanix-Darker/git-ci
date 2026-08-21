@@ -72,23 +72,11 @@ func Match(policies []Policy, fallback []string, event Event) bool {
 		policies = fallbackPolicies(fallback)
 	}
 	for _, policy := range policies {
-		if normalizeEvent(policy.Event) != event.Type || (!policy.Evaluable && policy.Condition != "") {
+		_, tag, accepted := matchesEventPolicy(policy, event)
+		if !accepted {
 			continue
 		}
-		if len(policy.Actions) > 0 && !matchesAny(policy.Actions, strings.ToLower(strings.TrimSpace(event.Action))) {
-			continue
-		}
-		branch, tag := refParts(event.Ref)
-		if tag != "" {
-			if !matchesFilter(policy.Tags, policy.TagsIgnore, tag) || len(policy.Branches) > 0 {
-				continue
-			}
-		} else if branch != "" {
-			if !matchesFilter(policy.Branches, policy.BranchesIgnore, branch) || len(policy.Tags) > 0 {
-				continue
-			}
-		}
-		if len(policy.Paths) > 0 || len(policy.PathsIgnore) > 0 {
+		if tag == "" && (len(policy.Paths) > 0 || len(policy.PathsIgnore) > 0) {
 			if !event.PathsKnown || !matchesChangedPaths(policy.Paths, policy.PathsIgnore, event.ChangedPaths) {
 				continue
 			}
@@ -96,6 +84,48 @@ func Match(policies []Policy, fallback []string, event Event) bool {
 		return true
 	}
 	return false
+}
+
+func NeedsChangedPaths(policies []Policy, fallback []string, event Event) bool {
+	event.Type = normalizeEvent(event.Type)
+	if len(policies) == 0 {
+		policies = fallbackPolicies(fallback)
+	}
+	for _, policy := range policies {
+		_, tag, accepted := matchesEventPolicy(policy, event)
+		if accepted && tag == "" && (len(policy.Paths) > 0 || len(policy.PathsIgnore) > 0) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesEventPolicy(policy Policy, event Event) (string, string, bool) {
+	if normalizeEvent(policy.Event) != event.Type || (!policy.Evaluable && policy.Condition != "") {
+		return "", "", false
+	}
+	action := strings.ToLower(strings.TrimSpace(event.Action))
+	if len(policy.Actions) > 0 {
+		if !matchesAny(policy.Actions, action) {
+			return "", "", false
+		}
+	} else if event.Type == "pull_request" && !contains([]string{"opened", "synchronize", "reopened"}, action) {
+		return "", "", false
+	}
+	branch, tag := refParts(event.Ref)
+	if branch == "" && tag == "" && (len(policy.Branches) > 0 || len(policy.BranchesIgnore) > 0 || len(policy.Tags) > 0 || len(policy.TagsIgnore) > 0) {
+		return "", "", false
+	}
+	if tag != "" {
+		if !matchesFilter(policy.Tags, policy.TagsIgnore, tag) || len(policy.Branches) > 0 {
+			return "", "", false
+		}
+	} else if branch != "" {
+		if !matchesFilter(policy.Branches, policy.BranchesIgnore, branch) || len(policy.Tags) > 0 {
+			return "", "", false
+		}
+	}
+	return branch, tag, true
 }
 
 func ResolveManualInputs(policies []Policy, provided map[string]string) (map[string]string, error) {

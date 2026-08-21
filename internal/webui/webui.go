@@ -120,10 +120,10 @@ type WorkflowStepView struct {
 }
 
 type RunView struct {
-	ID, ProjectName, WorkflowName, WorkflowKey, Status, Dot, Ref, CommitSHA, CreatedAt string
-	CanCancel                                                                          bool
-	CreatedUnix, DurationSeconds                                                       int64
-	DurationLabel                                                                      string
+	ID, ProjectName, WorkflowName, WorkflowKey, Status, Dot, Trigger, Ref, CommitSHA, CreatedAt string
+	CanCancel                                                                                   bool
+	CreatedUnix, DurationSeconds                                                                int64
+	DurationLabel                                                                               string
 }
 
 type JobView struct {
