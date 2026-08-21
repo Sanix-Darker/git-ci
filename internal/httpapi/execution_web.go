@@ -556,6 +556,12 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 			job.ChildPipeline = childPipelineView(child, false)
 		}
 		populateRunJobSemanticView(&job, item.Job.Environment)
+		if job.AllowFailure && !hasSemanticBadge(job.Badges, "ALLOW FAILURE") {
+			job.Badges = append(job.Badges, webui.SemanticBadgeView{Label: "ALLOW FAILURE", Tone: "runtime", Hint: "A failed job remains visible but does not fail the workflow"})
+		}
+		if job.AllowFailure && item.Job.Status == store.StatusFailed {
+			job.AllowedFailure = true
+		}
 		if len(item.Job.Attempts) > 1 {
 			for _, attempt := range item.Job.Attempts {
 				hint := strings.ReplaceAll(attempt.FailureKind, "_", " ")
@@ -610,6 +616,9 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 
 func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
 	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if job.AllowFailure {
+		badges = append(badges, webui.SemanticBadgeView{Label: "ALLOW FAILURE", Tone: "runtime", Hint: "A failed job remains visible but does not fail the workflow"})
+	}
 	if len(job.AllowFailureExitCodes) > 0 {
 		badges = append(badges, webui.SemanticBadgeView{Label: "ALLOW EXIT " + formatExitCodes(job.AllowFailureExitCodes), Tone: "runtime", Hint: "Only these process exit codes may fail without failing the pipeline"})
 	}
@@ -735,8 +744,18 @@ func populateRunJobSemanticView(view *webui.RunJobView, environment json.RawMess
 	}
 	view.SourceKey = semantics.SourceKey
 	view.OptionalDependencies = strings.Join(enabledDependencyKeys(semantics.NeedsOptional), ", ")
+	view.AllowFailure = view.AllowFailure || semantics.AllowFailure
 	view.AllowFailureExitCodes = append([]int(nil), semantics.AllowFailureExitCodes...)
 	view.Badges = jobSemanticBadges(semantics)
+}
+
+func hasSemanticBadge(badges []webui.SemanticBadgeView, label string) bool {
+	for _, badge := range badges {
+		if badge.Label == label {
+			return true
+		}
+	}
+	return false
 }
 
 func formatExitCodes(values []int) string {

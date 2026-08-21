@@ -7,17 +7,21 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/sanix-darker/git-ci/internal/executionsemantics"
 	"github.com/sanix-darker/git-ci/pkg/types"
 )
 
 // expandMatrixJobs expands jobs with matrix strategies into concrete job instances.
 // A job with matrix {os: [ubuntu, macos], go: [1.21, 1.22]} becomes 4 jobs.
 // Returns the expanded job map (non-matrix jobs pass through unchanged).
-func expandMatrixJobs(jobs map[string]*types.Job) map[string]*types.Job {
+func expandMatrixJobs(jobs map[string]*types.Job) (map[string]*types.Job, error) {
 	expanded := make(map[string]*types.Job)
 
 	for name, job := range jobs {
 		if job.Strategy == nil || len(job.Strategy.Matrix) == 0 {
+			if err := resolveContinueOnError(job, nil); err != nil {
+				return nil, fmt.Errorf("job %q: %w", name, err)
+			}
 			expanded[name] = job
 			continue
 		}
@@ -35,6 +39,13 @@ func expandMatrixJobs(jobs map[string]*types.Job) map[string]*types.Job {
 		for _, combo := range combinations {
 			expandedName := formatMatrixJobName(name, combo)
 			expandedJob := cloneJob(job)
+			coordinates := make(map[string]string, len(combo))
+			for key, value := range combo {
+				coordinates[key] = fmt.Sprintf("%v", value)
+			}
+			if err := resolveContinueOnError(expandedJob, coordinates); err != nil {
+				return nil, fmt.Errorf("job %q: %w", expandedName, err)
+			}
 
 			// Inject matrix values as environment variables
 			if expandedJob.Environment == nil {
@@ -80,7 +91,20 @@ func expandMatrixJobs(jobs map[string]*types.Job) map[string]*types.Job {
 		job.Needs = newNeeds
 	}
 
-	return expanded
+	return expanded, nil
+}
+
+func resolveContinueOnError(job *types.Job, matrix map[string]string) error {
+	expression := strings.TrimSpace(job.ContinueOnErrorExpression)
+	if expression == "" {
+		return nil
+	}
+	allowed, err := executionsemantics.EvaluateContinueOnError(expression, matrix)
+	if err != nil {
+		return err
+	}
+	job.ContinueOnErr = allowed
+	return nil
 }
 
 // computeCartesianProduct computes all combinations of matrix values
