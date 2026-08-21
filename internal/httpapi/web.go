@@ -68,6 +68,11 @@ var appPages = map[string]pageDefinition{
 		kicker:      "Delivery gates",
 		description: "Environment history, approvals, protected targets, and rollback context.",
 	},
+	"releases": {
+		title:       "Releases",
+		kicker:      "Delivery records",
+		description: "Draft and publish immutable run, tag, artifact, and deployment provenance.",
+	},
 	"compatibility": {
 		title:       "Compatibility",
 		kicker:      "Support contract",
@@ -175,7 +180,7 @@ func (a *API) renderProjectWorkspace(writer http.ResponseWriter, request *http.R
 	}
 	data := webui.PageData{
 		Page: "projects", Title: project.Name, Kicker: "Project workspace",
-		Description: "Workflow graphs, dispatch, commit watch, cron, webhooks, and recent runs for one checkout.",
+		Description: "Workflow graphs, dispatch, commit watch, cron, webhooks, releases, and recent runs for one checkout.",
 		Actor:       principal.Subject, CSRFToken: session.CSRFToken, Version: a.version,
 		Error: message, Notice: notice, Projects: []store.Project{project},
 		Runners: runnerInventoryViews(a.execution.RunnerInventory()),
@@ -186,6 +191,10 @@ func (a *API) renderProjectWorkspace(writer http.ResponseWriter, request *http.R
 	}
 	if err := a.populateProjectAutomationPage(request.Context(), &data, project, workflowNamesByID(data.Workflows)); err != nil {
 		http.Error(writer, "failed to load project automation state", http.StatusInternalServerError)
+		return
+	}
+	if err := a.populateReleasePage(request.Context(), &data, request, project.ID); err != nil {
+		http.Error(writer, "failed to load project releases", http.StatusInternalServerError)
 		return
 	}
 	if len(data.ProjectViews) != 1 {
@@ -374,6 +383,10 @@ func (a *API) renderAppSectionState(writer http.ResponseWriter, request *http.Re
 	}
 	if err := a.populateConfigurationPage(request.Context(), &data); err != nil {
 		http.Error(writer, "failed to load configuration state", http.StatusInternalServerError)
+		return
+	}
+	if err := a.populateReleasePage(request.Context(), &data, request, ""); err != nil {
+		http.Error(writer, "failed to load release state", http.StatusInternalServerError)
 		return
 	}
 	if isHTMX(request) && status >= 400 {

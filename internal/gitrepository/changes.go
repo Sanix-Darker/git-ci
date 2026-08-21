@@ -79,6 +79,55 @@ func ChangedPaths(ctx context.Context, path, before, after string, mode DiffMode
 	return paths, nil
 }
 
+// ResolveTagCommit validates a bare tag name and resolves the existing local
+// tag, including annotated tags, to its full commit object ID. It never mutates
+// refs or contacts a remote.
+func ResolveTagCommit(ctx context.Context, path, tag string) (string, error) {
+	path = strings.TrimSpace(path)
+	tag = strings.TrimSpace(tag)
+	if path == "" {
+		return "", errors.New("git repository: path is required")
+	}
+	if tag == "" || strings.IndexByte(tag, 0) >= 0 {
+		return "", errors.New("git repository: tag is required")
+	}
+	ref := "refs/tags/" + tag
+	if _, err := runGitText(ctx, path, "check-ref-format", ref); err != nil {
+		return "", fmt.Errorf("git repository: invalid release tag %q: %w", tag, err)
+	}
+	resolved, err := runGitText(ctx, path, "rev-parse", "--verify", ref+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("git repository: release tag %q does not resolve to a local commit: %w", tag, err)
+	}
+	resolved = strings.TrimSpace(resolved)
+	if !objectIDPattern.MatchString(resolved) {
+		return "", errors.New("git repository: release tag resolved to an invalid object ID")
+	}
+	return strings.ToLower(resolved), nil
+}
+
+func runGitText(ctx context.Context, path string, arguments ...string) (string, error) {
+	commandArguments := []string{"-c", "safe.directory=" + path, "-C", path}
+	commandArguments = append(commandArguments, arguments...)
+	var stdout, stderr cappedBuffer
+	stdout.limit = 64 << 10
+	stderr.limit = 64 << 10
+	command := exec.CommandContext(ctx, "git", commandArguments...)
+	command.Stdout = &stdout
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		message := strings.TrimSpace(stderr.String())
+		if message == "" {
+			message = err.Error()
+		}
+		return "", errors.New(message)
+	}
+	if stdout.exceeded {
+		return "", errors.New("git output exceeded 65536 bytes")
+	}
+	return stdout.String(), nil
+}
+
 type cappedBuffer struct {
 	bytes.Buffer
 	limit    int

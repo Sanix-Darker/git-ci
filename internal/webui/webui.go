@@ -41,6 +41,10 @@ type PageData struct {
 	Secrets             []SecretView
 	Schedules           []ScheduleView
 	Deployments         []DeploymentView
+	Releases            []ReleaseView
+	ReleaseCandidates   []ReleaseRunView
+	SelectedRelease     *ReleaseDetailView
+	ReleaseFilter       ReleaseFilterView
 	Environments        []EnvironmentView
 	EnvironmentSecrets  []EnvironmentSecretView
 	Approvals           []ApprovalView
@@ -120,10 +124,10 @@ type WorkflowStepView struct {
 }
 
 type RunView struct {
-	ID, ProjectName, WorkflowName, WorkflowKey, Status, Dot, Trigger, Ref, CommitSHA, CreatedAt string
-	CanCancel                                                                                   bool
-	CreatedUnix, DurationSeconds                                                                int64
-	DurationLabel                                                                               string
+	ID, ProjectID, ProjectName, WorkflowName, WorkflowKey, Status, Dot, Trigger, Ref, CommitSHA, CreatedAt string
+	CanCancel                                                                                              bool
+	CreatedUnix, DurationSeconds                                                                           int64
+	DurationLabel                                                                                          string
 }
 
 type JobView struct {
@@ -271,6 +275,26 @@ type DeploymentView struct {
 	CSRFToken, RollbackKey, RollbackHint                                                        string
 	Terminal, CanRollback                                                                       bool
 	RollbackTargets                                                                             []RollbackTargetView
+}
+type ReleaseFilterView struct{ Project, State, Query string }
+type ReleaseView struct {
+	ID, ProjectID, ProjectName, RunID, TagName, TargetCommitSHA, Name, Notes string
+	State, Dot, CreatedBy, CreatedAt, PublishedAt                            string
+	Prerelease                                                               bool
+}
+type ReleaseRunView struct {
+	ID, ProjectID, ProjectName, WorkflowName, Ref, CommitSHA, CreatedAt string
+}
+type ReleaseArtifactView struct {
+	ID, Name, SHA256, Size, Download string
+	FileCount                        int
+}
+type ReleaseDeploymentView struct{ ID, RunID, Environment, Tier, Status, UpdatedAt string }
+type ReleaseDetailView struct {
+	Release     ReleaseView
+	SourceRun   ReleaseRunView
+	Artifacts   []ReleaseArtifactView
+	Deployments []ReleaseDeploymentView
 }
 type RollbackTargetView struct{ ID, Ref, CommitSHA, CreatedAt string }
 type EnvironmentView struct {

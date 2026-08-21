@@ -52,6 +52,7 @@
     {{if eq .Page "secrets"}}{{template "secrets_panel" .}}{{end}}
     {{if eq .Page "schedules"}}{{template "schedules_panel" .}}{{end}}
     {{if eq .Page "deployments"}}{{template "deployments_panel" .}}{{end}}
+    {{if eq .Page "releases"}}{{template "releases_panel" .}}{{end}}
     {{if eq .Page "compatibility"}}{{template "compatibility_panel" .}}{{end}}
     {{if eq .Page "audit"}}{{template "audit_panel" .}}{{end}}
     {{if eq .Page "settings"}}{{template "settings_panel" .}}{{end}}
@@ -301,9 +302,10 @@
       <a class="{{if eq .Page "secrets"}}active{{end}}" href="/app/secrets" hx-get="/app/secrets" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>07</span><b>Secrets</b></a>
       <a class="{{if eq .Page "schedules"}}active{{end}}" href="/app/schedules" hx-get="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>08</span><b>Schedules</b></a>
       <a class="{{if eq .Page "deployments"}}active{{end}}" href="/app/deployments" hx-get="/app/deployments" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>09</span><b>Deployments</b></a>
-      <a class="{{if eq .Page "compatibility"}}active{{end}}" href="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>10</span><b>Compatibility</b><small>{{.Compatibility.Count}}</small></a>
-      <a class="{{if eq .Page "audit"}}active{{end}}" href="/app/audit" hx-get="/app/audit" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>11</span><b>Audit</b><small>{{.Audit.Total}}</small></a>
-      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>12</span><b>Settings</b></a>
+      <a class="{{if eq .Page "releases"}}active{{end}}" href="/app/releases" hx-get="/app/releases" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>10</span><b>Releases</b><small>{{len .Releases}}</small></a>
+      <a class="{{if eq .Page "compatibility"}}active{{end}}" href="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>11</span><b>Compatibility</b><small>{{.Compatibility.Count}}</small></a>
+      <a class="{{if eq .Page "audit"}}active{{end}}" href="/app/audit" hx-get="/app/audit" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>12</span><b>Audit</b><small>{{.Audit.Total}}</small></a>
+      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>13</span><b>Settings</b></a>
     </nav>
   </div>
   <div class="operator">
@@ -418,6 +420,7 @@
 {{end}}
 {{template "workflows_panel" .}}
 {{template "project_automation" .}}
+{{template "project_releases" .}}
 {{template "run_telemetry" .}}
 <section class="surface-card flush-card project-recent-runs"><div class="card-heading padded-heading"><div><p class="kicker">PROJECT HISTORY</p><h2>RECENT RUNS</h2></div><a href="/app/runs?project={{.SelectedProject.ID}}">VIEW ALL -&gt;</a></div>{{template "run_rows" .}}</section>
 {{end}}
@@ -683,4 +686,55 @@
     </details>{{else}}<div class="empty-state empty-state-bordered"><i></i><p>NO AUDIT EVENTS MATCH THIS WINDOW.</p></div>{{end}}
   </div>
 </section>
+{{end}}
+
+{{define "release_create_form"}}
+<form class="config-form release-create-form" method="post" action="{{with .SelectedProject}}/app/projects/{{.ID}}/releases{{else}}/app/releases{{end}}" hx-post="{{with .SelectedProject}}/app/projects/{{.ID}}/releases{{else}}/app/releases{{end}}" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+  <header><p class="kicker">RUN + LOCAL TAG</p><h2>CREATE DRAFT</h2></header>
+  <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+  {{with .SelectedProject}}<input type="hidden" name="projectId" value="{{.ID}}"><input type="hidden" name="returnProject" value="{{.ID}}">{{else}}<label>PROJECT<select name="projectId" required>{{range .Projects}}<option value="{{.ID}}" {{if eq $.ReleaseFilter.Project .ID}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>{{end}}
+  <label>SUCCESSFUL RUN<select name="runId" required>{{range .ReleaseCandidates}}<option value="{{.ID}}">{{.ProjectName}} / {{.WorkflowName}} / {{short .CommitSHA}}</option>{{end}}</select></label>
+  <div class="form-pair"><label>EXISTING TAG<input name="tagName" required placeholder="v1.4.0" autocomplete="off"></label><label>RELEASE NAME<input name="name" required placeholder="Version 1.4.0"></label></div>
+  <label>NOTES<textarea name="notes" rows="6" maxlength="65536" placeholder="What changed, migration notes, rollback context..."></textarea></label>
+  <label class="check-field"><input type="checkbox" name="prerelease"> PRERELEASE</label>
+  <button type="submit" {{if not .ReleaseCandidates}}disabled{{end}}>LOCK PROVENANCE + DRAFT <span>-&gt;</span></button>
+  {{if not .ReleaseCandidates}}<p class="form-hint">A SUCCESSFUL RUN WITH A FULL COMMIT SHA IS REQUIRED.</p>{{end}}
+</form>
+{{end}}
+
+{{define "release_ledger"}}
+<section class="surface-card release-ledger">
+  <div class="card-heading padded-heading"><div><p class="kicker">SQLITE DELIVERY RECORDS</p><h2>RELEASE HISTORY</h2></div><span>{{pad2 (len .Releases)}}</span></div>
+  <div class="release-list">
+    {{range .Releases}}<a href="/app/releases/{{.ID}}" class="release-row"><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.State}}</span><span><strong>{{.Name}}</strong><small>{{.ProjectName}} / {{.TagName}}{{if .Prerelease}} / PRERELEASE{{end}}</small></span><code>{{short .TargetCommitSHA}}</code><time>{{.PublishedAt}}</time><b>-&gt;</b></a>{{else}}<div class="empty-state"><i></i><p>NO RELEASES MATCH THIS VIEW</p></div>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{define "release_detail"}}
+{{with .SelectedRelease}}
+<section class="release-detail">
+  <a class="release-back" href="/app/releases">&lt;- RELEASE LEDGER</a>
+  <header class="release-detail-head"><div><p class="kicker">{{.Release.ProjectName}} / {{.Release.TagName}}</p><h2>{{.Release.Name}}</h2><span class="status-cell"><i class="dot {{.Release.Dot}}"></i>{{.Release.State}}{{if .Release.Prerelease}} / PRERELEASE{{end}}</span></div><code>{{.Release.TargetCommitSHA}}</code></header>
+  <dl class="release-facts"><div><dt>PROJECT</dt><dd><a href="/app/projects/{{.Release.ProjectID}}">{{.Release.ProjectName}}</a></dd></div><div><dt>SOURCE RUN</dt><dd><a href="/app/runs/{{.Release.RunID}}">{{short .Release.RunID}}</a></dd></div><div><dt>TAG</dt><dd>{{.Release.TagName}}</dd></div><div><dt>CREATED</dt><dd>{{.Release.CreatedAt}}</dd></div><div><dt>PUBLISHED</dt><dd>{{.Release.PublishedAt}}</dd></div></dl>
+  {{if eq .Release.State "DRAFT"}}
+  <div class="release-edit-grid">
+    <form class="config-form release-edit" method="post" action="/app/releases/{{.Release.ID}}/update" hx-post="/app/releases/{{.Release.ID}}/update" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button"><header><p class="kicker">DRAFT METADATA</p><h2>EDIT RELEASE</h2></header><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><label>NAME<input name="name" required value="{{.Release.Name}}"></label><label>NOTES<textarea name="notes" rows="9" maxlength="65536">{{.Release.Notes}}</textarea></label><label class="check-field"><input type="checkbox" name="prerelease" {{if .Release.Prerelease}}checked{{end}}> PRERELEASE</label><button type="submit">UPDATE DRAFT -&gt;</button></form>
+    <section class="release-actions"><div><p class="kicker">ONE-WAY TRANSITION</p><h3>PUBLISH</h3><p>Freeze metadata and expose this record as released. GCI will not move or push the Git tag.</p><details><summary>PUBLISH RELEASE -&gt;</summary><form method="post" action="/app/releases/{{.Release.ID}}/publish" hx-post="/app/releases/{{.Release.ID}}/publish" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">CONFIRM PUBLISH</button></form></details></div><div class="release-delete"><p class="kicker"><i class="dot dot-red"></i>DRAFT ONLY</p><h3>DELETE</h3><p>Delete this draft record. The run, tag, artifacts, and deployments remain untouched.</p><details><summary>DELETE DRAFT -&gt;</summary><form method="post" action="/app/releases/{{.Release.ID}}/delete" hx-post="/app/releases/{{.Release.ID}}/delete" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button class="danger-button" type="submit">CONFIRM DELETE</button></form></details></div></section>
+  </div>
+  {{else}}<section class="release-notes"><p class="kicker">FROZEN RELEASE NOTES</p><pre>{{.Release.Notes}}</pre></section>{{end}}
+  <section class="release-links"><article><header><p class="kicker">CHECKSUMMED OUTPUT</p><h3>ARTIFACTS</h3><span>{{pad2 (len .Artifacts)}}</span></header>{{range .Artifacts}}<a href="{{.Download}}"><span><strong>{{.Name}}</strong><small>{{.FileCount}} FILES / {{.Size}}</small></span><code>{{short .SHA256}}</code><b>DOWNLOAD</b></a>{{else}}<div class="empty-state"><i></i><p>NO ARTIFACTS FOR SOURCE RUN</p></div>{{end}}</article><article><header><p class="kicker">DELIVERY HISTORY</p><h3>DEPLOYMENTS</h3><span>{{pad2 (len .Deployments)}}</span></header>{{range .Deployments}}<a href="/app/runs/{{.RunID}}"><span><strong>{{.Environment}}</strong><small>{{.Tier}} / {{.Status}}</small></span><time>{{.UpdatedAt}}</time><b>RUN -&gt;</b></a>{{else}}<div class="empty-state"><i></i><p>NO DEPLOYMENTS FOR SOURCE RUN</p></div>{{end}}</article></section>
+</section>
+{{end}}
+{{end}}
+
+{{define "releases_panel"}}
+{{if .SelectedRelease}}{{template "release_detail" .}}{{else}}
+<form class="release-filters" method="get" action="/app/releases"><label>SEARCH<input name="q" value="{{.ReleaseFilter.Query}}" placeholder="tag, name, notes, project"></label><label>PROJECT<select name="project"><option value="">ALL PROJECTS</option>{{range .Projects}}<option value="{{.ID}}" {{if eq $.ReleaseFilter.Project .ID}}selected{{end}}>{{.Name}}</option>{{end}}</select></label><label>STATE<select name="state"><option value="">ALL STATES</option><option value="draft" {{if eq .ReleaseFilter.State "draft"}}selected{{end}}>DRAFT</option><option value="published" {{if eq .ReleaseFilter.State "published"}}selected{{end}}>PUBLISHED</option></select></label><button type="submit">FILTER -&gt;</button><a href="/app/releases">RESET</a></form>
+<section class="release-layout">{{template "release_create_form" .}}{{template "release_ledger" .}}</section>
+{{end}}
+{{end}}
+
+{{define "project_releases"}}
+<section class="project-releases"><header><div><p class="kicker">RUN -&gt; TAG -&gt; RELEASE</p><h2>DELIVERY RECORDS</h2><p>Turn a successful pipeline into a durable release without changing the repository.</p></div><a href="/app/releases?project={{.SelectedProject.ID}}">VIEW LEDGER -&gt;</a></header><div class="project-release-grid">{{template "release_create_form" .}}{{template "release_ledger" .}}</div></section>
 {{end}}

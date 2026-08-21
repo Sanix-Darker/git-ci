@@ -128,6 +128,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /logout", a.requireWebAuth(http.HandlerFunc(a.handleLogoutWeb)))
 	mux.Handle("GET /app", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
 	mux.Handle("GET /app/{section}", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
+	mux.Handle("GET /app/releases/{release}", a.requireWebAuth(http.HandlerFunc(a.handleReleasePageWeb)))
 	mux.Handle("GET /app/projects/{project}", a.requireWebAuth(http.HandlerFunc(a.handleProjectPageWeb)))
 	mux.Handle("POST /app/projects", a.requireWebAuth(http.HandlerFunc(a.handleCreateProjectWeb)))
 	mux.Handle("POST /app/projects/{project}/unregister", a.requireWebAuth(http.HandlerFunc(a.handleUnregisterProjectWeb)))
@@ -150,6 +151,11 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /app/environment-secrets/{secret}/delete", a.requireWebAuth(http.HandlerFunc(a.handleDeleteEnvironmentSecretWeb)))
 	mux.Handle("POST /app/approvals/{approval}/decision", a.requireWebAuth(http.HandlerFunc(a.handleApprovalDecisionWeb)))
 	mux.Handle("POST /app/deployments/{deployment}/rollback", a.requireWebAuth(http.HandlerFunc(a.handleDeploymentRollbackWeb)))
+	mux.Handle("POST /app/releases", a.requireWebAuth(http.HandlerFunc(a.handleCreateReleaseWeb)))
+	mux.Handle("POST /app/projects/{project}/releases", a.requireWebAuth(http.HandlerFunc(a.handleCreateReleaseWeb)))
+	mux.Handle("POST /app/releases/{release}/update", a.requireWebAuth(http.HandlerFunc(a.handleUpdateReleaseWeb)))
+	mux.Handle("POST /app/releases/{release}/publish", a.requireWebAuth(http.HandlerFunc(a.handlePublishReleaseWeb)))
+	mux.Handle("POST /app/releases/{release}/delete", a.requireWebAuth(http.HandlerFunc(a.handleDeleteReleaseWeb)))
 	mux.Handle("POST /app/jobs/{job}/replay", a.requireWebAuth(http.HandlerFunc(a.handleJobReplayWeb)))
 	mux.Handle("POST /app/jobs/{job}/play", a.requireWebAuth(http.HandlerFunc(a.handleManualJobPlayWeb)))
 	mux.Handle("POST /app/steps/{step}/replay", a.requireWebAuth(http.HandlerFunc(a.handleStepReplayWeb)))
@@ -190,6 +196,13 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /api/v1/projects/{project}/webhooks", a.requireAuth(http.HandlerFunc(a.handleProjectWebhooks)))
 	mux.Handle("GET /api/v1/projects/{project}/deployments", a.requireAuth(http.HandlerFunc(a.handleProjectDeployments)))
 	mux.Handle("POST /api/v1/projects/{project}/deployments", a.requireAuth(http.HandlerFunc(a.handleProjectDeployments)))
+	mux.Handle("GET /api/v1/projects/{project}/releases", a.requireAuth(http.HandlerFunc(a.handleProjectReleases)))
+	mux.Handle("POST /api/v1/projects/{project}/releases", a.requireAuth(http.HandlerFunc(a.handleProjectReleases)))
+	mux.Handle("GET /api/v1/releases/latest", a.requireAuth(http.HandlerFunc(a.handleLatestRelease)))
+	mux.Handle("GET /api/v1/releases/{release}", a.requireAuth(http.HandlerFunc(a.handleRelease)))
+	mux.Handle("PATCH /api/v1/releases/{release}", a.requireAuth(http.HandlerFunc(a.handleRelease)))
+	mux.Handle("DELETE /api/v1/releases/{release}", a.requireAuth(http.HandlerFunc(a.handleRelease)))
+	mux.Handle("POST /api/v1/releases/{release}/publish", a.requireAuth(http.HandlerFunc(a.handlePublishRelease)))
 	mux.Handle("GET /api/v1/deployments/{deployment}", a.requireAuth(http.HandlerFunc(a.handleDeploymentDetail)))
 	mux.Handle("PATCH /api/v1/deployments/{deployment}", a.requireAuth(http.HandlerFunc(a.handleDeployment)))
 	mux.Handle("GET /api/v1/deployments/{deployment}/rollback-options", a.requireAuth(http.HandlerFunc(a.handleDeploymentRollbackOptions)))
@@ -258,7 +271,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "compatibility-report", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "manual-jobs", "automatic-retry", "gitlab-regex-rules", "pull-request-webhooks", "job-replay", "step-replay", "audit"},
+		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "compatibility-report", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "release-objects", "manual-jobs", "automatic-retry", "gitlab-regex-rules", "pull-request-webhooks", "job-replay", "step-replay", "audit"},
 	})
 }
 
