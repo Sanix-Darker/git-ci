@@ -159,13 +159,17 @@ func (a *API) renderProjectWorkspace(writer http.ResponseWriter, request *http.R
 	}
 	data := webui.PageData{
 		Page: "projects", Title: project.Name, Kicker: "Project workspace",
-		Description: "Workflow definitions, dependency graphs, commit triggers, dispatch, and recent runs for one checkout.",
+		Description: "Workflow graphs, dispatch, commit watch, cron, webhooks, and recent runs for one checkout.",
 		Actor:       principal.Subject, CSRFToken: session.CSRFToken, Version: a.version,
 		Error: message, Notice: notice, Projects: []store.Project{project},
 		Runners: runnerInventoryViews(a.execution.RunnerInventory()),
 	}
 	if err := a.populateExecutionPage(request.Context(), &data, ""); err != nil {
 		http.Error(writer, "failed to load project execution state", http.StatusInternalServerError)
+		return
+	}
+	if err := a.populateProjectAutomationPage(request.Context(), &data, project, workflowNamesByID(data.Workflows)); err != nil {
+		http.Error(writer, "failed to load project automation state", http.StatusInternalServerError)
 		return
 	}
 	if len(data.ProjectViews) != 1 {

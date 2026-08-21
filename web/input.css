@@ -130,7 +130,7 @@
 .operator button { width: 100%; border: 1px solid #383838; padding: .55rem; background: #080808; color: #727272; cursor: pointer; font-size: .6rem; font-weight: 900; }
 .operator button:hover { border-color: #fff; color: #fff; }
 .workspace { min-width: 0; padding: clamp(1.5rem, 4vw, 4rem); animation: swap-in 160ms steps(3, end) both; }
-@keyframes swap-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes swap-in { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
 @keyframes swap-in-contained { from { opacity: 0; } to { opacity: 1; } }
 @media (max-width: 720px), (prefers-reduced-motion: reduce) {
   .workspace { animation-name: swap-in-contained; }
@@ -882,6 +882,27 @@
 .commit-trigger dt { color: #777; font-size: 0.55rem; }
 .commit-trigger dd { margin: 0.25rem 0 0; color: #bbb; font-size: 0.62rem; }
 .commit-trigger-error { grid-column: 1 / -1; margin: 0; padding: 0.55rem; border: 1px solid #a33; color: #e06d6d; }
+.project-automation { min-width: 0; max-width: 100%; overflow: hidden; margin: 1rem 0; border: 1px solid #3a3a3a; background: #050505; }
+.project-automation-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding: 1rem; border-bottom: 1px solid #3a3a3a; }
+.project-automation-head h2 { margin: .15rem 0 .45rem; font-size: clamp(1.2rem, 2.5vw, 1.8rem); }
+.project-automation-head p { max-width: 58rem; margin: 0; color: #999; }
+.project-automation-head > b { flex: 0 0 auto; border: 1px solid #555; padding: .55rem; color: #ddd; font-size: .58rem; }
+.automation-ledger { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid #3a3a3a; }
+.automation-ledger article { display: grid; min-width: 0; gap: .35rem; padding: .8rem; transition: background 120ms steps(2, end), transform 120ms steps(2, end); }
+.automation-ledger article + article { border-left: 1px solid #333; }
+.automation-ledger article:hover { background: #0c0c0c; transform: translateY(-2px); }
+.automation-ledger span { display: flex; align-items: center; gap: .4rem; color: #888; font-size: .55rem; font-weight: 900; }
+.automation-ledger strong { overflow: hidden; color: #eee; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+.automation-ledger small { overflow: hidden; color: #686868; font-size: .52rem; text-overflow: ellipsis; white-space: nowrap; }
+.project-automation-grid { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; padding: .75rem; }
+.project-automation-grid + .project-automation-grid { padding-top: 0; }
+.project-automation-grid > * { min-width: 0; max-width: 100%; }
+.project-automation-ledgers .surface-card { align-self: stretch; }
+.project-automation .compact-list article, .project-automation .compact-list article > div { min-width: 0; max-width: 100%; }
+.project-automation .compact-list article > div:last-child { overflow: hidden; }
+.project-automation .compact-list code { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 950px) { .automation-ledger, .project-automation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .automation-ledger article:nth-child(3) { border-left: 0; border-top: 1px solid #333; } .automation-ledger article:nth-child(4) { border-top: 1px solid #333; } }
+@media (max-width: 720px) { .project-automation-head { align-items: start; } .automation-ledger, .project-automation-grid { grid-template-columns: minmax(0, 1fr); } .automation-ledger article + article { border-top: 1px solid #333; border-left: 0; } .project-automation-grid { padding: .65rem; } .project-automation-grid + .project-automation-grid { padding-top: 0; } }
 .provider-block { min-width: 4.5rem; padding: 0.55rem; border: 1px solid #555; text-align: center; font-size: 0.6rem; }
 .definition-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
 .definition-facts > div { min-width: 0; padding: 0.65rem; border: 1px solid #333; }
