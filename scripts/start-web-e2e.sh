@@ -50,6 +50,16 @@ jobs:
         run: |
           printf '%s\n' "$TOKEN"
           printf 'secret=%s\n' "$TOKEN" >> "$GITHUB_STEP_SUMMARY"
+          runtime_mask="${TOKEN}-runtime"
+          printf '::add-mask::%s\n' "$runtime_mask"
+          printf 'dynamic=%s\n' "$runtime_mask"
+          printf 'dynamic=%s\n' "$runtime_mask" >> "$GITHUB_STEP_SUMMARY"
+          printf '::notice file=src/app.go,line=12,col=4,title=Compile hint::masked %s\n' "$runtime_mask"
+          printf '::stop-commands::pause-token-123\n'
+          printf '::warning::ignored warning\n'
+          printf '::pause-token-123::\n'
+          printf '::warning file=src/app.go,line=13::real warning\n'
+          printf '::error file=src/app.go,line=14,title=Static check::diagnostic error\n'
   deploy:
     needs: [test]
     runs-on: ubuntu-latest

@@ -5,6 +5,10 @@ new major path; unversioned and removed aliases are not compatibility surfaces.
 `GET /api/v1` returns the API identifier and capability document. The running
 service version is exposed by `GET /healthz`.
 
+The execution graph exposes durable `step-summaries` and `step-annotations`.
+Workers advertise `workflow-commands` support for GitHub-compatible `add-mask`,
+`stop-commands`, `notice`, `warning`, and `error` stdout commands.
+
 ## Authentication
 
 For scripts, use the admin token as a bearer credential:

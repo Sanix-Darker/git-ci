@@ -152,8 +152,26 @@ jobs:
 	if summarizedGraph.Jobs[0].Steps[0].Summary != summary {
 		t.Fatalf("step summary = %q, want %q", summarizedGraph.Jobs[0].Steps[0].Summary, summary)
 	}
+	line, column := 9, 3
+	annotation, err := fixture.store.AppendStepAnnotation(t.Context(), store.AppendStepAnnotationParams{
+		StepID: graph.Jobs[0].Steps[0].ID, Level: store.AnnotationWarning,
+		Message: "unsafe <script>alert(1)</script>", Title: "Compile warning", File: "src/<main>.go",
+		StartLine: &line, StartColumn: &column,
+	})
+	if err != nil {
+		t.Fatalf("append step annotation: %v", err)
+	}
+	annotationResponse := fixture.request(t, http.MethodGet, "/api/v1/runs/"+run.ID, nil, "", cookie, "", nil)
+	if annotationResponse.Code != http.StatusOK {
+		t.Fatalf("annotation graph status = %d, body=%s", annotationResponse.Code, annotationResponse.Body.String())
+	}
+	var annotatedGraph store.RunGraph
+	decodeResponse(t, annotationResponse, &annotatedGraph)
+	if len(annotatedGraph.Jobs[0].Steps[0].Annotations) != 1 || annotatedGraph.Jobs[0].Steps[0].Annotations[0].ID != annotation.ID {
+		t.Fatalf("step annotations = %#v", annotatedGraph.Jobs[0].Steps[0].Annotations)
+	}
 	runPage := fixture.request(t, http.MethodGet, "/app/runs/"+run.ID, nil, "", cookie, "", nil)
-	if runPage.Code != http.StatusOK || !strings.Contains(runPage.Body.String(), "STEP SUMMARY") || !strings.Contains(runPage.Body.String(), "&lt;script&gt;") || strings.Contains(runPage.Body.String(), "<script>") {
+	if runPage.Code != http.StatusOK || !strings.Contains(runPage.Body.String(), "STEP SUMMARY") || !strings.Contains(runPage.Body.String(), "Annotations for Prepare") || !strings.Contains(runPage.Body.String(), "src/&lt;main&gt;.go:9:3") || !strings.Contains(runPage.Body.String(), "&lt;script&gt;") || strings.Contains(runPage.Body.String(), "<script>") {
 		t.Fatalf("run summary page status = %d, body=%s", runPage.Code, runPage.Body.String())
 	}
 

@@ -527,6 +527,16 @@
         <section class="step-detail">
           <header><span><i class="dot {{.Dot}}"></i>{{.Name}}{{template "semantic_badges" .Badges}}</span><span class="step-actions"><b>{{.Status}}</b>{{template "play_control" .Replay}}</span></header>
           {{if .Command}}<code class="step-command">$ {{.Command}}</code>{{end}}
+          {{if .Annotations}}
+          <section class="step-annotations" aria-label="Annotations for {{.Name}}">
+            {{range .Annotations}}
+            <article class="step-annotation step-annotation-{{.Level}}">
+              <header><span><i class="dot {{.Dot}}"></i><strong>{{.Level}}</strong></span>{{if .Title}}<b>{{.Title}}</b>{{end}}{{if .Location}}<code>{{.Location}}</code>{{end}}</header>
+              <p>{{.Message}}</p>
+            </article>
+            {{end}}
+          </section>
+          {{end}}
           {{if .Summary}}<details class="step-summary" open aria-label="Step summary for {{.Name}}"><summary><span>STEP SUMMARY</span><small>MARKDOWN / SQLITE</small></summary><pre>{{.Summary}}</pre></details>{{end}}
           <div class="log-console log-console-lazy" aria-label="Logs for {{.Name}}" aria-busy="true" hx-get="/app/runs/{{.RunID}}/steps/{{.ID}}/logs" hx-trigger="revealed" hx-swap="outerHTML">
             <div class="log-skeleton" aria-hidden="true"><i></i><i></i><i></i></div>
