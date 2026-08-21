@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
@@ -71,6 +72,11 @@ var appPages = map[string]pageDefinition{
 		title:       "Compatibility",
 		kicker:      "Support contract",
 		description: "Code-backed GitHub Actions and GitLab CI support boundaries, evidence, and planned gaps.",
+	},
+	"audit": {
+		title:       "Audit",
+		kicker:      "Operations ledger",
+		description: "Search immutable actor, action, resource, and project events across the SQLite control plane.",
 	},
 	"settings": {
 		title:       "Settings",
@@ -347,6 +353,20 @@ func (a *API) renderAppSectionState(writer http.ResponseWriter, request *http.Re
 		}
 		data.Compatibility = report
 		data.CompatibilityFilter = report.Filter
+	}
+	if section == "audit" {
+		filter, window, filterErr := auditFilterFromRequest(request, 100, time.Now().UTC())
+		if filterErr != nil {
+			data.Error = filterErr.Error()
+			filter, window, _ = auditFilterFromRequest(&http.Request{URL: &url.URL{}}, 100, time.Now().UTC())
+		}
+		report, reportErr := a.store.ListAudit(request.Context(), filter)
+		if reportErr != nil {
+			http.Error(writer, "failed to query audit events", http.StatusInternalServerError)
+			return
+		}
+		data.Audit = auditView(report, window)
+		data.AuditFilter = auditFilterView(report.Filter, window)
 	}
 	if err := a.populateExecutionPage(request.Context(), &data, ""); err != nil {
 		http.Error(writer, "failed to load execution state", http.StatusInternalServerError)

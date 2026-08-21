@@ -155,6 +155,7 @@ func (a *API) routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/session/login", a.handleLogin)
 	mux.Handle("GET /api/v1", a.requireAuth(http.HandlerFunc(a.handleAPIRoot)))
 	mux.Handle("GET /api/v1/compatibility", a.requireAuth(http.HandlerFunc(a.handleCompatibility)))
+	mux.Handle("GET /api/v1/audit", a.requireAuth(http.HandlerFunc(a.handleAudit)))
 	mux.Handle("GET /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleSession)))
 	mux.Handle("DELETE /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleLogout)))
 	mux.Handle("GET /api/v1/project-candidates", a.requireAuth(http.HandlerFunc(a.handleProjectCandidates)))

@@ -140,6 +140,21 @@ and workflow catalog; automated trigger sources remain disabled until rearmed.
 
 ## Replay
 
+## Audit ledger
+
+Query immutable control-plane events by `range` (`1h`, `24h`, `7d`, `30d`, or
+`all`), `project`, `actor`, `action`, `resource`, and free-text `q`. Results are
+newest-first, paginated with `limit` and `offset`, and include the same twelve
+histogram buckets and filter facets used by `/app/audit`.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer ${GCI_TOKEN}" \
+  "${GCI_URL}/api/v1/audit?range=24h&action=run.queued&limit=50"
+```
+
+## Replay
+
 Inspect eligibility first. The response discloses dependency closure, whether a
 successful source needs explicit confirmation, and whether a protected
 environment can introduce an approval gate.

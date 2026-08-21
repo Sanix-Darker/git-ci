@@ -51,6 +51,8 @@ type PageData struct {
 	Telemetry           RunTelemetryView
 	Compatibility       compatibility.Report
 	CompatibilityFilter compatibility.Filter
+	Audit               AuditView
+	AuditFilter         AuditFilterView
 }
 
 type ProjectView struct {
@@ -218,6 +220,24 @@ type RunTelemetryView struct {
 	Window, PassRate                 string
 	Total, Succeeded, Failed, Active int
 	Volume, Duration                 []HistogramBarView
+}
+
+type AuditFilterView struct {
+	Range, Query, Project, Actor, Action, ResourceType string
+}
+
+type AuditView struct {
+	Window, ActorsLabel string
+	Total, Count        int
+	Items               []AuditEventView
+	Buckets             []HistogramBarView
+	Actors              []string
+	Actions             []string
+	ResourceTypes       []string
+}
+
+type AuditEventView struct {
+	ID, ProjectID, Action, Actor, ResourceType, ResourceID, Metadata, CreatedAt string
 }
 
 type StepLogView struct {
