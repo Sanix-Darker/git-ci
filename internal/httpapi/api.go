@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/sanix-darker/git-ci/internal/auth"
@@ -153,6 +154,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /app/steps/{step}/replay", a.requireWebAuth(http.HandlerFunc(a.handleStepReplayWeb)))
 	mux.HandleFunc("POST /api/v1/session/login", a.handleLogin)
 	mux.Handle("GET /api/v1", a.requireAuth(http.HandlerFunc(a.handleAPIRoot)))
+	mux.Handle("GET /api/v1/compatibility", a.requireAuth(http.HandlerFunc(a.handleCompatibility)))
 	mux.Handle("GET /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleSession)))
 	mux.Handle("DELETE /api/v1/session", a.requireAuth(http.HandlerFunc(a.handleLogout)))
 	mux.Handle("GET /api/v1/project-candidates", a.requireAuth(http.HandlerFunc(a.handleProjectCandidates)))
@@ -253,7 +255,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
+		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "compatibility-report", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
 	})
 }
 
@@ -430,6 +432,16 @@ func (a *API) createProject(writer http.ResponseWriter, request *http.Request) {
 	}); err != nil {
 		writeError(writer, http.StatusInternalServerError, "audit_failed", "project created but audit recording failed")
 		return
+	}
+	workflows, syncErr := a.execution.SyncProject(request.Context(), project.ID)
+	if syncErr != nil {
+		writer.Header().Set("X-GCI-Workflow-Discovery", "failed")
+		writer.Header().Set("X-GCI-Workflow-Count", "0")
+		a.recordExecutionAudit(request, "workflow.sync_failed", "project", project.ID)
+	} else {
+		writer.Header().Set("X-GCI-Workflow-Discovery", "succeeded")
+		writer.Header().Set("X-GCI-Workflow-Count", strconv.Itoa(len(workflows)))
+		a.recordExecutionAudit(request, "workflow.synced", "project", project.ID)
 	}
 	writeJSON(writer, http.StatusCreated, project)
 }

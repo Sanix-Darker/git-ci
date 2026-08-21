@@ -429,3 +429,34 @@ test("@responsive operator surfaces preserve padding, mobile records, and reduce
   expect(playSize.height).toBeGreaterThanOrEqual(44);
   expect(["0s", "0.001s", "1ms"]).toContain(playSize.transition);
 });
+
+test("@responsive compatibility center exposes honest provider filters", async ({ page }) => {
+  await page.goto("/login");
+  const token = (await fs.readFile(tokenPath, "utf8")).trim();
+  await page.getByLabel("Token").fill(token);
+  await page.getByRole("button", { name: /ENTER CONTROL PLANE/ }).click();
+  await page.getByRole("link", { name: /Compatibility/ }).click();
+  await expect(page).toHaveURL(/\/app\/compatibility$/);
+  await expect(page.getByRole("heading", { name: "COMPATIBILITY", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Compatibility summary")).toContainText("SUPPORTED");
+  const apiResponse = await page.request.get("/api/v1/compatibility?provider=github&state=partial&q=actions");
+  expect(apiResponse.status()).toBe(200);
+  const apiReport = await apiResponse.json();
+  expect(apiReport.count).toBeGreaterThan(0);
+  const filters = page.locator("form.compatibility-filters");
+  await filters.getByLabel("PROVIDER").selectOption("github");
+  await filters.getByLabel("STATE").selectOption("partial");
+  await filters.getByLabel("SEARCH").fill("actions");
+  await filters.getByRole("button", { name: /APPLY FILTERS/ }).click();
+  await expect(page).toHaveURL(/provider=github/);
+  const entries = page.locator(".compatibility-entry");
+  await expect(entries.first()).toBeVisible();
+  expect(await entries.count()).toBe(apiReport.count);
+  for (const entry of await entries.all()) {
+    await expect(entry).toHaveAttribute("data-provider", "github");
+    await expect(entry).toHaveAttribute("data-state", "partial");
+  }
+  const layout = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth - innerWidth, gradient: getComputedStyle(document.body).backgroundImage }));
+  expect(layout.overflow).toBeLessThanOrEqual(0);
+  expect(layout.gradient).toBe("none");
+});

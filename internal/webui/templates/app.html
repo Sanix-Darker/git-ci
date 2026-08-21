@@ -52,6 +52,7 @@
     {{if eq .Page "secrets"}}{{template "secrets_panel" .}}{{end}}
     {{if eq .Page "schedules"}}{{template "schedules_panel" .}}{{end}}
     {{if eq .Page "deployments"}}{{template "deployments_panel" .}}{{end}}
+    {{if eq .Page "compatibility"}}{{template "compatibility_panel" .}}{{end}}
     {{if eq .Page "settings"}}{{template "settings_panel" .}}{{end}}
   </main>
 </div>
@@ -284,7 +285,8 @@
       <a class="{{if eq .Page "secrets"}}active{{end}}" href="/app/secrets" hx-get="/app/secrets" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>07</span><b>Secrets</b></a>
       <a class="{{if eq .Page "schedules"}}active{{end}}" href="/app/schedules" hx-get="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>08</span><b>Schedules</b></a>
       <a class="{{if eq .Page "deployments"}}active{{end}}" href="/app/deployments" hx-get="/app/deployments" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>09</span><b>Deployments</b></a>
-      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>10</span><b>Settings</b></a>
+      <a class="{{if eq .Page "compatibility"}}active{{end}}" href="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>10</span><b>Compatibility</b><small>{{.Compatibility.Count}}</small></a>
+      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>11</span><b>Settings</b></a>
     </nav>
   </div>
   <div class="operator">
@@ -431,7 +433,7 @@
 {{define "workflows_panel"}}
 <section class="resource-head">
   <div><p class="kicker">PIPELINE CATALOG</p><h2>WORKFLOWS BEFORE THEY RUN</h2><p>The visible graph and dispatch are built from the same normalized definition.</p></div>
-  <span class="count-block"><b>{{len .Workflows}}</b> DEFINITIONS</span>
+  <div class="resource-head-actions"><a href="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true">SUPPORT MATRIX -&gt;</a><span class="count-block"><b>{{len .Workflows}}</b> DEFINITIONS</span></div>
 </section>
 <section class="action-strip">
   <div><p class="kicker">DISCOVERY</p><strong>READ PROVIDER FILES FROM REGISTERED CHECKOUTS</strong></div>
@@ -602,5 +604,32 @@
   <div class="future-index">{{if eq .Page "secrets"}}06{{else if eq .Page "schedules"}}07{{else if eq .Page "deployments"}}08{{else}}09{{end}}</div>
   <div><p class="kicker">PLANNED DOMAIN</p><h2>{{upper .Title}}</h2><p>{{.Description}}</p></div>
   <span class="state-tag"><i class="dot dot-blue"></i>CONTRACT NEXT</span>
+</section>
+{{end}}
+
+{{define "compatibility_panel"}}
+<section class="compatibility-summary" aria-label="Compatibility summary">
+  <article><span>TOTAL CONTRACT</span><strong>{{pad2 .Compatibility.Counts.Total}}</strong><small>REGISTRY {{.Compatibility.Version}}</small></article>
+  <article><span><i class="dot dot-green"></i>SUPPORTED</span><strong>{{pad2 .Compatibility.Counts.Supported}}</strong><meter min="0" max="{{.Compatibility.Counts.Total}}" value="{{.Compatibility.Counts.Supported}}">{{.Compatibility.Counts.Supported}}</meter></article>
+  <article><span><i class="dot dot-blue"></i>PARTIAL</span><strong>{{pad2 .Compatibility.Counts.Partial}}</strong><meter min="0" max="{{.Compatibility.Counts.Total}}" value="{{.Compatibility.Counts.Partial}}">{{.Compatibility.Counts.Partial}}</meter></article>
+  <article><span><i class="dot"></i>PLANNED</span><strong>{{pad2 .Compatibility.Counts.Planned}}</strong><meter min="0" max="{{.Compatibility.Counts.Total}}" value="{{.Compatibility.Counts.Planned}}">{{.Compatibility.Counts.Planned}}</meter></article>
+  <article><span><i class="dot dot-red"></i>UNSUPPORTED</span><strong>{{pad2 .Compatibility.Counts.Unsupported}}</strong><meter min="0" max="{{.Compatibility.Counts.Total}}" value="{{.Compatibility.Counts.Unsupported}}">{{.Compatibility.Counts.Unsupported}}</meter></article>
+</section>
+<form class="compatibility-filters" method="get" action="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator">
+  <label>SEARCH<input type="search" name="q" value="{{.CompatibilityFilter.Search}}" placeholder="CAPABILITY, LIMIT, OR EVIDENCE" autocomplete="off"></label>
+  <label>PROVIDER<select name="provider"><option value="">ALL</option><option value="shared" {{if eq .CompatibilityFilter.Provider "shared"}}selected{{end}}>SHARED</option><option value="github" {{if eq .CompatibilityFilter.Provider "github"}}selected{{end}}>GITHUB</option><option value="gitlab" {{if eq .CompatibilityFilter.Provider "gitlab"}}selected{{end}}>GITLAB</option></select></label>
+  <label>STATE<select name="state"><option value="">ALL</option><option value="supported" {{if eq .CompatibilityFilter.State "supported"}}selected{{end}}>SUPPORTED</option><option value="partial" {{if eq .CompatibilityFilter.State "partial"}}selected{{end}}>PARTIAL</option><option value="planned" {{if eq .CompatibilityFilter.State "planned"}}selected{{end}}>PLANNED</option><option value="unsupported" {{if eq .CompatibilityFilter.State "unsupported"}}selected{{end}}>UNSUPPORTED</option></select></label>
+  <label>CATEGORY<select name="category"><option value="">ALL</option>{{range .Compatibility.Categories}}<option value="{{.}}" {{if eq $.CompatibilityFilter.Category .}}selected{{end}}>{{upper .}}</option>{{end}}</select></label>
+  <button type="submit">APPLY FILTERS -&gt;</button><a href="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true">RESET</a>
+</form>
+<section class="compatibility-ledger" aria-label="Provider compatibility entries">
+  <header><span><b>{{pad2 .Compatibility.Count}}</b> MATCHES</span><span>SHARED {{pad2 .Compatibility.Counts.Shared}} / GITHUB {{pad2 .Compatibility.Counts.GitHub}} / GITLAB {{pad2 .Compatibility.Counts.GitLab}}</span></header>
+  <div class="compatibility-list">
+    {{range .Compatibility.Items}}<article class="compatibility-entry" data-provider="{{.Provider}}" data-state="{{.State}}">
+      <header><span><i class="dot {{if eq .State "supported"}}dot-green{{else if eq .State "partial"}}dot-blue{{else if eq .State "unsupported"}}dot-red{{end}}"></i>{{upper .State}}</span><code>{{upper .Provider}} / {{upper .Category}}</code></header>
+      <div><h3>{{.Capability}}</h3><p>{{.Summary}}</p>{{if .Limitation}}<p class="compatibility-limit">BOUNDARY / {{.Limitation}}</p>{{end}}</div>
+      <footer><span>{{range .Evidence}}<b>{{upper .}}</b>{{end}}</span>{{if .Reference}}<a href="{{.Reference}}" rel="noreferrer">OFFICIAL REFERENCE -&gt;</a>{{end}}</footer>
+    </article>{{else}}<div class="empty-state empty-state-bordered"><i></i><p>NO CAPABILITIES MATCH THESE FILTERS.</p></div>{{end}}
+  </div>
 </section>
 {{end}}
