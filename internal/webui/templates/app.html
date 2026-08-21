@@ -53,6 +53,7 @@
     {{if eq .Page "schedules"}}{{template "schedules_panel" .}}{{end}}
     {{if eq .Page "deployments"}}{{template "deployments_panel" .}}{{end}}
     {{if eq .Page "compatibility"}}{{template "compatibility_panel" .}}{{end}}
+    {{if eq .Page "audit"}}{{template "audit_panel" .}}{{end}}
     {{if eq .Page "settings"}}{{template "settings_panel" .}}{{end}}
   </main>
 </div>
@@ -286,7 +287,8 @@
       <a class="{{if eq .Page "schedules"}}active{{end}}" href="/app/schedules" hx-get="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>08</span><b>Schedules</b></a>
       <a class="{{if eq .Page "deployments"}}active{{end}}" href="/app/deployments" hx-get="/app/deployments" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>09</span><b>Deployments</b></a>
       <a class="{{if eq .Page "compatibility"}}active{{end}}" href="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>10</span><b>Compatibility</b><small>{{.Compatibility.Count}}</small></a>
-      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>11</span><b>Settings</b></a>
+      <a class="{{if eq .Page "audit"}}active{{end}}" href="/app/audit" hx-get="/app/audit" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>11</span><b>Audit</b><small>{{.Audit.Total}}</small></a>
+      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>12</span><b>Settings</b></a>
     </nav>
   </div>
   <div class="operator">
@@ -630,6 +632,39 @@
       <div><h3>{{.Capability}}</h3><p>{{.Summary}}</p>{{if .Limitation}}<p class="compatibility-limit">BOUNDARY / {{.Limitation}}</p>{{end}}</div>
       <footer><span>{{range .Evidence}}<b>{{upper .}}</b>{{end}}</span>{{if .Reference}}<a href="{{.Reference}}" rel="noreferrer">OFFICIAL REFERENCE -&gt;</a>{{end}}</footer>
     </article>{{else}}<div class="empty-state empty-state-bordered"><i></i><p>NO CAPABILITIES MATCH THESE FILTERS.</p></div>{{end}}
+  </div>
+</section>
+{{end}}
+
+{{define "audit_panel"}}
+<section class="audit-control">
+  <form class="audit-filters" method="get" action="/app/audit" hx-get="/app/audit" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator">
+    <input type="hidden" name="range" value="{{.AuditFilter.Range}}">
+    <div class="range-picker" role="group" aria-label="Audit time range">
+      <a class="{{if eq .AuditFilter.Range "1h"}}active{{end}}" href="/app/audit?range=1h&amp;q={{urlquery .AuditFilter.Query}}&amp;actor={{urlquery .AuditFilter.Actor}}&amp;action={{urlquery .AuditFilter.Action}}&amp;resource={{urlquery .AuditFilter.ResourceType}}">1H</a>
+      <a class="{{if eq .AuditFilter.Range "24h"}}active{{end}}" href="/app/audit?range=24h&amp;q={{urlquery .AuditFilter.Query}}&amp;actor={{urlquery .AuditFilter.Actor}}&amp;action={{urlquery .AuditFilter.Action}}&amp;resource={{urlquery .AuditFilter.ResourceType}}">24H</a>
+      <a class="{{if eq .AuditFilter.Range "7d"}}active{{end}}" href="/app/audit?range=7d&amp;q={{urlquery .AuditFilter.Query}}&amp;actor={{urlquery .AuditFilter.Actor}}&amp;action={{urlquery .AuditFilter.Action}}&amp;resource={{urlquery .AuditFilter.ResourceType}}">7D</a>
+      <a class="{{if eq .AuditFilter.Range "30d"}}active{{end}}" href="/app/audit?range=30d&amp;q={{urlquery .AuditFilter.Query}}&amp;actor={{urlquery .AuditFilter.Actor}}&amp;action={{urlquery .AuditFilter.Action}}&amp;resource={{urlquery .AuditFilter.ResourceType}}">30D</a>
+      <a class="{{if eq .AuditFilter.Range "all"}}active{{end}}" href="/app/audit?range=all&amp;q={{urlquery .AuditFilter.Query}}&amp;actor={{urlquery .AuditFilter.Actor}}&amp;action={{urlquery .AuditFilter.Action}}&amp;resource={{urlquery .AuditFilter.ResourceType}}">ALL</a>
+    </div>
+    <label>SEARCH<input type="search" name="q" value="{{.AuditFilter.Query}}" placeholder="ACTION, ACTOR, RESOURCE, METADATA" autocomplete="off"></label>
+    <label>ACTOR<input name="actor" value="{{.AuditFilter.Actor}}" list="audit-actors" autocomplete="off"><datalist id="audit-actors">{{range .Audit.Actors}}<option value="{{.}}">{{end}}</datalist></label>
+    <label>ACTION<input name="action" value="{{.AuditFilter.Action}}" list="audit-actions" autocomplete="off"><datalist id="audit-actions">{{range .Audit.Actions}}<option value="{{.}}">{{end}}</datalist></label>
+    <label>RESOURCE<input name="resource" value="{{.AuditFilter.ResourceType}}" list="audit-resources" autocomplete="off"><datalist id="audit-resources">{{range .Audit.ResourceTypes}}<option value="{{.}}">{{end}}</datalist></label>
+    <button type="submit">APPLY FILTERS -&gt;</button><a class="audit-reset" href="/app/audit">RESET</a>
+  </form>
+</section>
+<section class="audit-observability">
+  <article class="histogram-card audit-histogram"><header><span>AUDIT EVENTS / {{.Audit.Window}}</span><b>{{pad2 .Audit.Total}}</b></header><div class="histogram-bars" aria-label="Audit event histogram">{{range .Audit.Buckets}}<span class="histogram-column" title="{{.Label}} / {{.Count}} events"><i class="histogram-fill level-{{.Level}}"></i><small>{{.Label}}</small></span>{{end}}</div></article>
+  <dl class="audit-facts"><div><dt>MATCHES</dt><dd>{{pad2 .Audit.Total}}</dd></div><div><dt>PAGE</dt><dd>{{pad2 .Audit.Count}}</dd></div><div><dt>ACTORS</dt><dd>{{pad2 (len .Audit.Actors)}}</dd></div><div><dt>ACTIONS</dt><dd>{{pad2 (len .Audit.Actions)}}</dd></div></dl>
+</section>
+<section class="audit-ledger" aria-label="Audit event ledger">
+  <header><span><b>{{pad2 .Audit.Count}}</b> SHOWN / {{pad2 .Audit.Total}} MATCHES</span><span>IMMUTABLE SQLITE EVENT STREAM</span></header>
+  <div class="audit-events">
+    {{range .Audit.Items}}<details class="audit-event" data-action="{{.Action}}" data-actor="{{.Actor}}">
+      <summary><span><i class="dot dot-blue"></i><b>{{.Action}}</b></span><span>{{upper .Actor}}</span><span>{{upper .ResourceType}}{{if .ResourceID}} / <code>{{.ResourceID}}</code>{{end}}</span><time>{{.CreatedAt}}</time></summary>
+      <div><dl><div><dt>EVENT ID</dt><dd><code>{{.ID}}</code></dd></div><div><dt>PROJECT ID</dt><dd><code>{{if .ProjectID}}{{.ProjectID}}{{else}}GLOBAL{{end}}</code></dd></div></dl><pre>{{.Metadata}}</pre></div>
+    </details>{{else}}<div class="empty-state empty-state-bordered"><i></i><p>NO AUDIT EVENTS MATCH THIS WINDOW.</p></div>{{end}}
   </div>
 </section>
 {{end}}

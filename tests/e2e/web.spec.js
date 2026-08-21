@@ -460,3 +460,32 @@ test("@responsive compatibility center exposes honest provider filters", async (
   expect(layout.overflow).toBeLessThanOrEqual(0);
   expect(layout.gradient).toBe("none");
 });
+
+test("@responsive audit ledger filters immutable events and renders time buckets", async ({ page }) => {
+  await page.goto("/login");
+  const token = (await fs.readFile(tokenPath, "utf8")).trim();
+  await page.getByLabel("Token").fill(token);
+  await page.getByRole("button", { name: /ENTER CONTROL PLANE/ }).click();
+  await page.getByRole("link", { name: /Audit/ }).click();
+  await expect(page).toHaveURL(/\/app\/audit$/);
+  await expect(page.getByRole("heading", { name: "AUDIT", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Audit event histogram")).toBeVisible();
+  const apiResponse = await page.request.get("/api/v1/audit?range=24h&q=session.login&limit=100");
+  expect(apiResponse.status()).toBe(200);
+  const apiReport = await apiResponse.json();
+  expect(apiReport.total).toBeGreaterThan(0);
+  expect(apiReport.buckets).toHaveLength(12);
+  const filters = page.locator("form.audit-filters");
+  await filters.getByLabel("SEARCH").fill("session.login");
+  await filters.getByRole("button", { name: /APPLY FILTERS/ }).click();
+  await expect(page).toHaveURL(/q=session\.login/);
+  const events = page.locator(".audit-event");
+  await expect(events.first()).toBeVisible();
+  expect(await events.count()).toBe(apiReport.count);
+  await expect(events.first()).toHaveAttribute("data-action", "session.login");
+  await events.first().locator("summary").click();
+  await expect(events.first().locator("pre")).toBeVisible();
+  const layout = await page.evaluate(() => ({ overflow: document.documentElement.scrollWidth - innerWidth, gradient: getComputedStyle(document.body).backgroundImage }));
+  expect(layout.overflow).toBeLessThanOrEqual(0);
+  expect(layout.gradient).toBe("none");
+});
