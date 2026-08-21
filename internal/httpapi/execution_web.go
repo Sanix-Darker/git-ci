@@ -522,7 +522,7 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 			}
 			view := webui.RunStepView{
 				ID: step.ID, RunID: runID, Name: step.Name, Status: strings.ToUpper(string(step.Status)),
-				Dot: statusDot(step.Status), Command: stringValue(step.Command), Terminal: detail.Terminal, Replay: stepReplay,
+				Dot: statusDot(step.Status), Command: stringValue(step.Command), Summary: step.Summary, Terminal: detail.Terminal, Replay: stepReplay,
 			}
 			view.Badges = frozenStepBadges(step.Environment)
 			job.Steps = append(job.Steps, view)

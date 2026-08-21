@@ -244,6 +244,15 @@
 .step-detail > header span { display: flex; align-items: center; gap: .55rem; }
 .step-detail > header b { color: #727272; font-size: .54rem; }
 .step-command { display: block; overflow-x: auto; border-top: 1px solid #272727; padding: .75rem 1rem; color: #b8b8b8; font-family: inherit; font-size: .59rem; white-space: nowrap; }
+.step-summary { border-top: 1px solid #383838; background: #0c0c0c; }
+.step-summary > summary { display: flex; min-height: 38px; align-items: center; justify-content: space-between; padding: 0 1rem; color: #fff; cursor: pointer; font-size: .56rem; font-weight: 900; letter-spacing: .08em; list-style: none; transition: background-color 120ms steps(2, end), padding-left 120ms steps(2, end); }
+.step-summary > summary::-webkit-details-marker { display: none; }
+.step-summary > summary::before { margin-right: .55rem; color: #727272; content: "+"; }
+.step-summary[open] > summary::before { content: "-"; }
+.step-summary > summary:hover { padding-left: 1.25rem; background: #161616; }
+.step-summary > summary span { margin-right: auto; }
+.step-summary > summary small { color: #727272; font-size: .48rem; }
+.step-summary > pre { max-height: 320px; margin: 0; overflow: auto; border-top: 1px solid #272727; padding: 1rem; color: #d0d0d0; font: inherit; font-size: .66rem; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
 .log-console { overflow: auto; max-height: 360px; border-top: 1px solid #383838; background: #050505; }
 .log-console > div { display: grid; grid-template-columns: 42px 62px minmax(0, 1fr); min-height: 28px; align-items: start; border-bottom: 1px solid #161616; color: #b8b8b8; font-size: .58rem; }
 .log-console > div > span, .log-console > div > b { padding: .4rem .55rem; color: #727272; font-size: .5rem; }

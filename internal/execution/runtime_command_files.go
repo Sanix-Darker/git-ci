@@ -14,6 +14,8 @@ const (
 	maxGitHubRuntimeFileBytes = 64 << 10
 	maxGitHubRuntimeEntries   = 256
 	maxGitHubRuntimeLineBytes = 4 << 10
+	maxGitHubStepSummaryBytes = 1 << 20
+	maxGitHubStepSummaries    = 20
 )
 
 var runtimeEnvironmentNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -27,6 +29,7 @@ type githubRuntimeFiles struct {
 	output      githubCommandFile
 	environment githubCommandFile
 	path        githubCommandFile
+	summary     githubCommandFile
 }
 
 func prepareGitHubRuntimeFiles(workspace, stepID string, container bool) (githubRuntimeFiles, error) {
@@ -50,15 +53,35 @@ func prepareGitHubRuntimeFiles(workspace, stepID string, container bool) (github
 		files.cleanup()
 		return githubRuntimeFiles{}, err
 	}
+	if err := prepare("summary", &files.summary); err != nil {
+		files.cleanup()
+		return githubRuntimeFiles{}, err
+	}
 	return files, nil
 }
 
 func (files githubRuntimeFiles) cleanup() {
-	for _, path := range []string{files.output.hostPath, files.environment.hostPath, files.path.hostPath} {
+	for _, path := range []string{files.output.hostPath, files.environment.hostPath, files.path.hostPath, files.summary.hostPath} {
 		if path != "" {
 			_ = os.Remove(path)
 		}
 	}
+}
+
+func (context *runtimeOutputContext) reserveGitHubStepSummary() bool {
+	if context.summaryCount >= maxGitHubStepSummaries {
+		return false
+	}
+	context.summaryCount++
+	return true
+}
+
+func parseGitHubStepSummary(path string) (string, error) {
+	contents, err := readGitHubRuntimeFileWithLimit(path, "GITHUB_STEP_SUMMARY", maxGitHubStepSummaryBytes)
+	if err != nil {
+		return "", err
+	}
+	return strings.ReplaceAll(string(contents), "\r\n", "\n"), nil
 }
 
 func (context *runtimeOutputContext) consumeGitHubRuntimeFiles(environmentPath, pathPath string) ([]string, int, error) {
@@ -193,6 +216,10 @@ func parseGitHubPathFile(path string) ([]string, error) {
 }
 
 func readGitHubRuntimeFile(path, label string) ([]byte, error) {
+	return readGitHubRuntimeFileWithLimit(path, label, maxGitHubRuntimeFileBytes)
+}
+
+func readGitHubRuntimeFileWithLimit(path, label string, limit int64) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return nil, err
@@ -200,8 +227,8 @@ func readGitHubRuntimeFile(path, label string) ([]byte, error) {
 	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("execution: %s must remain a regular non-symlink file", label)
 	}
-	if info.Size() > maxGitHubRuntimeFileBytes {
-		return nil, fmt.Errorf("execution: %s exceeds %d bytes", label, maxGitHubRuntimeFileBytes)
+	if info.Size() > limit {
+		return nil, fmt.Errorf("execution: %s exceeds %d bytes", label, limit)
 	}
 	contents, err := os.ReadFile(path)
 	if err != nil {

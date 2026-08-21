@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sanix-darker/git-ci/internal/store"
@@ -137,6 +138,23 @@ jobs:
 	}
 	if graph.Jobs[1].Job.Status != store.StatusQueued || string(graph.Jobs[1].Job.DependencyKeys) != `["prepare"]` || len(graph.Jobs[1].Steps) != 1 {
 		t.Fatalf("second graph job = %#v, want queued verify dependency snapshot", graph.Jobs[1])
+	}
+	summary := "# API summary\n\n<script>alert(\"no\")</script>"
+	if _, err := fixture.store.SetStepSummary(t.Context(), graph.Jobs[0].Steps[0].ID, summary); err != nil {
+		t.Fatalf("set step summary: %v", err)
+	}
+	summaryResponse := fixture.request(t, http.MethodGet, "/api/v1/runs/"+run.ID, nil, "", cookie, "", nil)
+	if summaryResponse.Code != http.StatusOK {
+		t.Fatalf("summary graph status = %d, body=%s", summaryResponse.Code, summaryResponse.Body.String())
+	}
+	var summarizedGraph store.RunGraph
+	decodeResponse(t, summaryResponse, &summarizedGraph)
+	if summarizedGraph.Jobs[0].Steps[0].Summary != summary {
+		t.Fatalf("step summary = %q, want %q", summarizedGraph.Jobs[0].Steps[0].Summary, summary)
+	}
+	runPage := fixture.request(t, http.MethodGet, "/app/runs/"+run.ID, nil, "", cookie, "", nil)
+	if runPage.Code != http.StatusOK || !strings.Contains(runPage.Body.String(), "STEP SUMMARY") || !strings.Contains(runPage.Body.String(), "&lt;script&gt;") || strings.Contains(runPage.Body.String(), "<script>") {
+		t.Fatalf("run summary page status = %d, body=%s", runPage.Code, runPage.Body.String())
 	}
 
 	if _, err := fixture.store.AppendLogLine(t.Context(), store.AppendLogLineParams{StepID: graph.Jobs[0].Steps[0].ID, Stream: store.LogStreamStdout, Message: "prepare output"}); err != nil {

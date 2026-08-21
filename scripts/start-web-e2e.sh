@@ -31,6 +31,7 @@ jobs:
         run: |
           mkdir -p dist .gci-cache
           printf 'tests passed\n'
+          printf '# Test summary\n\n- suite: passed\n- artifact: alpha-build\n' >> "$GITHUB_STEP_SUMMARY"
           printf 'e2e artifact\n' > dist/app.txt
           printf 'cached\n' > .gci-cache/dependency
       - name: Cache dependencies
@@ -46,7 +47,9 @@ jobs:
       - name: Secret mask
         env:
           TOKEN: "${{ secrets.DEPLOY_TOKEN }}"
-        run: printf '%s\n' "$TOKEN"
+        run: |
+          printf '%s\n' "$TOKEN"
+          printf 'secret=%s\n' "$TOKEN" >> "$GITHUB_STEP_SUMMARY"
   deploy:
     needs: [test]
     runs-on: ubuntu-latest

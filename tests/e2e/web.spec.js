@@ -165,6 +165,12 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   const prepareLogs = page.getByLabel("Logs for Prepare");
   const testLogs = page.getByLabel("Logs for Test");
   const secretLogs = page.getByLabel("Logs for Secret mask");
+	const testSummary = page.getByLabel("Step summary for Test");
+	const secretSummary = page.getByLabel("Step summary for Secret mask");
+	await expect(testSummary).toContainText("Test summary");
+	await expect(testSummary).toContainText("artifact: alpha-build");
+	await expect(secretSummary).toContainText("secret=***");
+	await expect(secretSummary).not.toContainText("e2e-super-secret");
   await prepareLogs.scrollIntoViewIfNeeded();
   await expect(prepareLogs).toContainText("prepared");
   await testLogs.scrollIntoViewIfNeeded();
@@ -172,6 +178,12 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await secretLogs.scrollIntoViewIfNeeded();
   await expect(secretLogs).toContainText("***");
   await expect(secretLogs).not.toContainText("e2e-super-secret");
+	const graphResponse = await page.request.get(`/api/v1/runs/${runID}`, { headers: authorization });
+	expect(graphResponse.ok()).toBeTruthy();
+	const graphPayload = await graphResponse.json();
+	const summarizedSteps = graphPayload.jobs.flatMap((job) => job.steps).filter((step) => step.summary);
+	expect(summarizedSteps.some((step) => step.summary.includes("# Test summary"))).toBeTruthy();
+	expect(JSON.stringify(graphPayload)).not.toContain("e2e-super-secret");
   const sourceRunURL = page.url();
   const testJob = page.locator("article.job-detail").filter({ has: page.getByRole("heading", { name: "Test", exact: true }) });
   await testJob.getByRole("button", { name: "REPLAY STEP" }).first().click();
