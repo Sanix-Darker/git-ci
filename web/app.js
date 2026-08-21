@@ -112,6 +112,30 @@
         empty.hidden = visible !== 0;
       });
     });
+    root.querySelectorAll("[data-project-active-search-region]:not([data-search-ready])").forEach((region) => {
+      region.dataset.searchReady = "true";
+      const input = region.querySelector("[data-project-active-search]");
+      const list = region.parentElement.querySelector("[data-project-active-list]");
+      const count = region.querySelector("[data-project-active-visible-count]");
+      if (!input || !list || !count) return;
+      const cards = Array.from(list.querySelectorAll("[data-project-active-card]"));
+      const empty = document.createElement("p");
+      empty.className = "empty-state project-search-empty";
+      empty.textContent = "NO REGISTERED PROJECT MATCHES";
+      empty.hidden = true;
+      list.append(empty);
+      input.addEventListener("input", () => {
+        const query = input.value.trim().toLocaleLowerCase();
+        let visible = 0;
+        cards.forEach((card) => {
+          const matches = !query || card.dataset.projectSearchValue.toLocaleLowerCase().includes(query);
+          card.hidden = !matches;
+          if (matches) visible += 1;
+        });
+        count.textContent = String(visible);
+        empty.hidden = visible !== 0;
+      });
+    });
   };
 
   const installWorkflowAccordions = (root = document) => {
