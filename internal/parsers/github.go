@@ -205,20 +205,25 @@ func (p *GithubParser) convertJob(jobID string, ghJob *GithubJob, globalDefaults
 	if err != nil {
 		return nil, fmt.Errorf("invalid environment: %w", err)
 	}
+	continueOnError, continueOnErrorExpression, err := p.parseJobContinueOnError(ghJob.ContinueOnError)
+	if err != nil {
+		return nil, fmt.Errorf("invalid continue-on-error: %w", err)
+	}
 
 	runnerHint, runnerLabels, runnerGroup := p.parseRunsOn(ghJob.RunsOn)
 	job := &types.Job{
-		Name:            p.getJobName(jobID, ghJob),
-		RunsOn:          runnerHint,
-		RunnerLabels:    runnerLabels,
-		RunnerGroup:     runnerGroup,
-		Environment:     ghJob.Env,
-		EnvironmentName: environmentName,
-		If:              ghJob.If,
-		TimeoutMin:      ghJob.TimeoutMinutes,
-		ContinueOnErr:   p.parseContinueOnError(ghJob.ContinueOnError),
-		Needs:           p.parseNeeds(ghJob.Needs),
-		Outputs:         ghJob.Outputs,
+		Name:                      p.getJobName(jobID, ghJob),
+		RunsOn:                    runnerHint,
+		RunnerLabels:              runnerLabels,
+		RunnerGroup:               runnerGroup,
+		Environment:               ghJob.Env,
+		EnvironmentName:           environmentName,
+		If:                        ghJob.If,
+		TimeoutMin:                ghJob.TimeoutMinutes,
+		ContinueOnErr:             continueOnError,
+		ContinueOnErrorExpression: continueOnErrorExpression,
+		Needs:                     p.parseNeeds(ghJob.Needs),
+		Outputs:                   ghJob.Outputs,
 	}
 	if ghJob.Concurrency != nil {
 		job.Concurrency = &types.Concurrency{
@@ -493,10 +498,27 @@ func (p *GithubParser) parseContinueOnError(continueOnError interface{}) bool {
 	case bool:
 		return v
 	case string:
-		// Handle expressions like "${{ failure() }}"
-		return strings.Contains(v, "true") || strings.Contains(v, "failure()")
+		normalized := strings.Join(strings.Fields(v), " ")
+		return normalized == "true" || normalized == "${{ true }}"
 	}
 	return false
+}
+
+func (p *GithubParser) parseJobContinueOnError(value interface{}) (bool, string, error) {
+	switch typed := value.(type) {
+	case nil:
+		return false, "", nil
+	case bool:
+		return typed, "", nil
+	case string:
+		expression := strings.TrimSpace(typed)
+		if expression == "" {
+			return false, "", fmt.Errorf("expression must not be empty")
+		}
+		return false, expression, nil
+	default:
+		return false, "", fmt.Errorf("expected a boolean or expression, got %T", value)
+	}
 }
 
 func (p *GithubParser) parseContainer(container interface{}) (*types.Container, error) {
@@ -668,6 +690,10 @@ func (p *GithubParser) parseReusableWorkflow(jobID string, ghJob *GithubJob) (*t
 	if err != nil {
 		return nil, fmt.Errorf("invalid environment: %w", err)
 	}
+	continueOnError, continueOnErrorExpression, err := p.parseJobContinueOnError(ghJob.ContinueOnError)
+	if err != nil {
+		return nil, fmt.Errorf("invalid continue-on-error: %w", err)
+	}
 
 	call := &types.WorkflowCall{
 		Uses: ghJob.Uses,
@@ -677,15 +703,16 @@ func (p *GithubParser) parseReusableWorkflow(jobID string, ghJob *GithubJob) (*t
 		call.With[key] = value
 	}
 	job := &types.Job{
-		Name:            p.getJobName(jobID, ghJob),
-		RunsOn:          "ubuntu-latest", // Default for reusable workflows
-		RunnerLabels:    []string{"ubuntu-latest"},
-		EnvironmentName: environmentName,
-		Needs:           p.parseNeeds(ghJob.Needs),
-		If:              ghJob.If,
-		TimeoutMin:      ghJob.TimeoutMinutes,
-		ContinueOnErr:   p.parseContinueOnError(ghJob.ContinueOnError),
-		WorkflowCall:    call,
+		Name:                      p.getJobName(jobID, ghJob),
+		RunsOn:                    "ubuntu-latest", // Default for reusable workflows
+		RunnerLabels:              []string{"ubuntu-latest"},
+		EnvironmentName:           environmentName,
+		Needs:                     p.parseNeeds(ghJob.Needs),
+		If:                        ghJob.If,
+		TimeoutMin:                ghJob.TimeoutMinutes,
+		ContinueOnErr:             continueOnError,
+		ContinueOnErrorExpression: continueOnErrorExpression,
+		WorkflowCall:              call,
 		Steps: []types.Step{
 			{
 				Name: fmt.Sprintf("Call reusable workflow: %s", ghJob.Uses),

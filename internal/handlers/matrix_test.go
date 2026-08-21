@@ -110,7 +110,10 @@ func TestExpandMatrixJobs_NoMatrix(t *testing.T) {
 		"test": {Name: "Test", Steps: []types.Step{{Run: "echo hi"}}},
 	}
 
-	expanded := expandMatrixJobs(jobs)
+	expanded, err := expandMatrixJobs(jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(expanded) != 1 {
 		t.Errorf("expected 1 job (no expansion), got %d", len(expanded))
 	}
@@ -129,7 +132,10 @@ func TestExpandMatrixJobs_WithMatrix(t *testing.T) {
 		},
 	}
 
-	expanded := expandMatrixJobs(jobs)
+	expanded, err := expandMatrixJobs(jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(expanded) != 2 {
 		t.Errorf("expected 2 expanded jobs, got %d", len(expanded))
 	}
@@ -158,7 +164,10 @@ func TestExpandMatrixJobs_WithHyphenatedMatrixKey(t *testing.T) {
 		},
 	}
 
-	expanded := expandMatrixJobs(jobs)
+	expanded, err := expandMatrixJobs(jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(expanded) != 1 {
 		t.Fatalf("expected 1 expanded job, got %d", len(expanded))
 	}
@@ -194,7 +203,10 @@ func TestExpandMatrixJobs_NeedsFixup(t *testing.T) {
 		},
 	}
 
-	expanded := expandMatrixJobs(jobs)
+	expanded, err := expandMatrixJobs(jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// build should expand to 2, deploy stays as 1
 	if len(expanded) != 3 {
 		t.Errorf("expected 3 total jobs, got %d", len(expanded))
@@ -207,6 +219,41 @@ func TestExpandMatrixJobs_NeedsFixup(t *testing.T) {
 				t.Errorf("expected deploy to need 2 expanded build jobs, got %d: %v", len(job.Needs), job.Needs)
 			}
 		}
+	}
+}
+
+func TestExpandMatrixJobs_ContinueOnErrorExpression(t *testing.T) {
+	jobs := map[string]*types.Job{
+		"test": {
+			Name:                      "Test",
+			ContinueOnErrorExpression: "${{ matrix.experimental }}",
+			Strategy: &types.Strategy{Matrix: map[string][]interface{}{
+				"experimental": {false, true},
+			}},
+			Steps: []types.Step{{Run: "exit 1"}},
+		},
+	}
+
+	expanded, err := expandMatrixJobs(jobs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(expanded) != 2 {
+		t.Fatalf("expected 2 expanded jobs, got %d", len(expanded))
+	}
+	decisions := map[string]bool{}
+	for _, job := range expanded {
+		decisions[job.Environment["experimental"]] = job.ContinueOnErr
+	}
+	if decisions["false"] || !decisions["true"] {
+		t.Fatalf("unexpected continue-on-error decisions: %#v", decisions)
+	}
+
+	invalid := map[string]*types.Job{
+		"test": {Name: "Test", ContinueOnErrorExpression: "${{ matrix.missing }}"},
+	}
+	if _, err := expandMatrixJobs(invalid); err == nil {
+		t.Fatal("expected missing matrix context to fail closed")
 	}
 }
 

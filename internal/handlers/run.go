@@ -57,7 +57,10 @@ func CmdRun(c *cli.Context) error {
 	}
 
 	// Expand matrix strategies into concrete job instances
-	jobs = expandMatrixJobs(jobs)
+	jobs, err = expandMatrixJobs(jobs)
+	if err != nil {
+		return err
+	}
 
 	// Check if running in parallel
 	if c.Bool("parallel") {

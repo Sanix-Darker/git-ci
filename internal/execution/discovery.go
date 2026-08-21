@@ -630,6 +630,13 @@ func normalizeDefinitionRecursive(
 			if err != nil {
 				return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
 			}
+			if expression := strings.TrimSpace(job.ContinueOnErrorExpression); expression != "" {
+				allowed, err := executionsemantics.EvaluateContinueOnError(expression, variant.Values)
+				if err != nil {
+					return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
+				}
+				normalized.AllowFailure = allowed
+			}
 			normalized.SourceKey = sourceKey
 			normalized.SourceKey = sourceKey
 			normalized.RunnerRequirements, normalized.RunnerGroup = runnerRequirements(file.provider, job)
