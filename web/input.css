@@ -898,6 +898,16 @@
 .commit-trigger dt { color: #777; font-size: 0.55rem; }
 .commit-trigger dd { margin: 0.25rem 0 0; color: #bbb; font-size: 0.62rem; }
 .commit-trigger-error { grid-column: 1 / -1; margin: 0; padding: 0.55rem; border: 1px solid #a33; color: #e06d6d; }
+.project-danger { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, .7fr); gap: 1rem; align-items: end; margin-top: .65rem; padding: .85rem; border: 1px solid #713535; background: #070707; }
+.project-danger h3 { margin: .2rem 0 .45rem; color: #eee; font-size: .82rem; letter-spacing: .06em; }
+.project-danger p { max-width: 52rem; margin: 0; color: #929292; font-size: .66rem; line-height: 1.55; }
+.project-danger .kicker { display: flex; align-items: center; gap: .45rem; color: #c65c5c; }
+.project-unregister { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .55rem; align-items: end; }
+.project-unregister label span { display: block; margin-bottom: .35rem; color: #a2a2a2; font-size: .58rem; font-weight: 900; letter-spacing: .05em; }
+.project-unregister input { width: 100%; min-height: 42px; border: 1px solid #666; border-radius: 0; background: #0d0d0d; color: #eee; padding: .65rem; font: inherit; }
+.project-unregister input:focus { border-color: #c65c5c; outline: 1px solid #c65c5c; outline-offset: 2px; }
+.project-unregister button { min-height: 42px; border-color: #8c3434; color: #e06d6d; transition: transform 120ms steps(2, end), border-color 120ms steps(2, end), color 120ms steps(2, end); }
+.project-unregister button:hover, .project-unregister button:focus-visible { border-color: #e06d6d; color: #fff; transform: translateX(3px); }
 .project-automation { min-width: 0; max-width: 100%; overflow: hidden; margin: 1rem 0; border: 1px solid #3a3a3a; background: #050505; }
 .project-automation-head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding: 1rem; border-bottom: 1px solid #3a3a3a; }
 .project-automation-head h2 { margin: .15rem 0 .45rem; font-size: clamp(1.2rem, 2.5vw, 1.8rem); }
@@ -918,7 +928,7 @@
 .project-automation .compact-list article > div:last-child { overflow: hidden; }
 .project-automation .compact-list code { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 950px) { .automation-ledger, .project-automation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .automation-ledger article:nth-child(3) { border-left: 0; border-top: 1px solid #333; } .automation-ledger article:nth-child(4) { border-top: 1px solid #333; } }
-@media (max-width: 720px) { .project-automation-head { align-items: start; } .automation-ledger, .project-automation-grid { grid-template-columns: minmax(0, 1fr); } .automation-ledger article + article { border-top: 1px solid #333; border-left: 0; } .project-automation-grid { padding: .65rem; } .project-automation-grid + .project-automation-grid { padding-top: 0; } }
+@media (max-width: 720px) { .project-danger, .project-unregister { grid-template-columns: minmax(0, 1fr); } .project-unregister button { width: 100%; } .project-automation-head { align-items: start; } .automation-ledger, .project-automation-grid { grid-template-columns: minmax(0, 1fr); } .automation-ledger article + article { border-top: 1px solid #333; border-left: 0; } .project-automation-grid { padding: .65rem; } .project-automation-grid + .project-automation-grid { padding-top: 0; } }
 .provider-block { min-width: 4.5rem; padding: 0.55rem; border: 1px solid #555; text-align: center; font-size: 0.6rem; }
 .definition-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
 .definition-facts > div { min-width: 0; padding: 0.65rem; border: 1px solid #333; }

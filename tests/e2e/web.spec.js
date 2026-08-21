@@ -359,6 +359,28 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
 
   await page.goto("/app/projects");
   await expect(page.locator(".project-rows")).toContainText("alpha-service");
+  const projectsBeforeLifecycle = await (await page.request.get("/api/v1/projects", { headers: authorization })).json();
+  const betaProject = projectsBeforeLifecycle.items.find((item) => item.slug === "beta-worker");
+  expect(betaProject).toBeTruthy();
+  await page.goto(`/app/projects/${betaProject.id}`);
+  await expect(page.getByRole("heading", { level: 2, name: "beta-worker", exact: true })).toBeVisible();
+  const unregisterForm = page.locator("form.project-unregister");
+  await unregisterForm.getByLabel("CONFIRM PROJECT SLUG").fill("beta-worker");
+  await unregisterForm.getByRole("button", { name: /UNREGISTER PROJECT/ }).click();
+  await expect(page).toHaveURL(/\/app\/projects\?notice=PROJECT(?:\+|%20)UNREGISTERED$/);
+  await expect(page.getByRole("status").filter({ hasText: "PROJECT UNREGISTERED" })).toBeVisible();
+  await expect(page.locator(".project-rows")).not.toContainText("beta-worker");
+  const inactiveProjects = await (await page.request.get("/api/v1/projects?state=inactive", { headers: authorization })).json();
+  expect(inactiveProjects.items.find((item) => item.id === betaProject.id)?.active).toBe(false);
+  const returnedCandidate = page.locator("article.candidate", { hasText: "beta-worker" });
+  await expect(returnedCandidate).toBeVisible();
+  await returnedCandidate.getByRole("button", { name: /REGISTER/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "PROJECT REGISTERED" })).toBeVisible();
+  await expect(page.locator(".project-rows")).toContainText("beta-worker");
+  const projectsAfterLifecycle = await (await page.request.get("/api/v1/projects", { headers: authorization })).json();
+  const reactivatedBeta = projectsAfterLifecycle.items.find((item) => item.slug === "beta-worker");
+  expect(reactivatedBeta.id).toBe(betaProject.id);
+  expect(reactivatedBeta.active).toBe(true);
 
   await page.getByRole("button", { name: "LOG OUT" }).click();
   await expect(page).toHaveURL(/\/login$/);

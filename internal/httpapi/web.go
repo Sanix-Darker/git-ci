@@ -128,7 +128,7 @@ func (a *API) handleAppPage(writer http.ResponseWriter, request *http.Request) {
 		http.NotFound(writer, request)
 		return
 	}
-	a.renderAppSection(writer, request, section, "", http.StatusOK)
+	a.renderAppSectionState(writer, request, section, "", strings.TrimSpace(request.URL.Query().Get("notice")), http.StatusOK)
 }
 
 func (a *API) handleProjectPageWeb(writer http.ResponseWriter, request *http.Request) {
@@ -152,7 +152,11 @@ func (a *API) renderProjectWorkspace(writer http.ResponseWriter, request *http.R
 		http.Error(writer, "failed to load project", http.StatusInternalServerError)
 		return
 	}
-	allProjects, err := a.store.ListProjects(request.Context())
+	if !project.Active {
+		a.redirectWeb(writer, request, "/app/projects?notice=PROJECT%20IS%20NOT%20REGISTERED")
+		return
+	}
+	allProjects, err := a.store.ListActiveProjects(request.Context())
 	if err != nil {
 		http.Error(writer, "failed to list projects", http.StatusInternalServerError)
 		return
@@ -232,7 +236,7 @@ func (a *API) handleCreateProjectWeb(writer http.ResponseWriter, request *http.R
 	principal := request.Context().Value(principalContextKey{}).(auth.Principal)
 	if _, err := a.store.RecordAudit(request.Context(), store.AuditEvent{
 		ProjectID:    project.ID,
-		Action:       "project.created",
+		Action:       "project.registered",
 		Actor:        principal.Subject,
 		ResourceType: "project",
 		ResourceID:   project.ID,
@@ -254,6 +258,43 @@ func (a *API) handleCreateProjectWeb(writer http.ResponseWriter, request *http.R
 	a.renderAppSectionState(writer, request, "projects", "", notice, http.StatusOK)
 }
 
+func (a *API) handleUnregisterProjectWeb(writer http.ResponseWriter, request *http.Request) {
+	project, err := a.store.GetProject(request.Context(), request.PathValue("project"))
+	if err != nil {
+		var notFound *store.ErrNotFound
+		if errors.As(err, &notFound) {
+			http.NotFound(writer, request)
+			return
+		}
+		http.Error(writer, "failed to load project", http.StatusInternalServerError)
+		return
+	}
+	confirmSlug := request.FormValue("confirmSlug")
+	if confirmSlug != project.Slug {
+		a.renderProjectWorkspace(writer, request, project.ID, "Type the project slug exactly to unregister it.", "", http.StatusUnprocessableEntity)
+		return
+	}
+	project, err = a.store.DeactivateProject(request.Context(), project.ID, confirmSlug)
+	if err != nil {
+		var conflict *store.ErrConflict
+		if errors.As(err, &conflict) && conflict.Field == "activeRuns" {
+			a.renderProjectWorkspace(writer, request, project.ID, "Stop queued or running jobs before unregistering this project.", "", http.StatusConflict)
+			return
+		}
+		http.Error(writer, "failed to unregister project", http.StatusInternalServerError)
+		return
+	}
+	principal := request.Context().Value(principalContextKey{}).(auth.Principal)
+	if _, err := a.store.RecordAudit(request.Context(), store.AuditEvent{
+		ProjectID: project.ID, Action: "project.unregistered", Actor: principal.Subject,
+		ResourceType: "project", ResourceID: project.ID,
+	}); err != nil {
+		http.Error(writer, "project unregistered but audit recording failed", http.StatusInternalServerError)
+		return
+	}
+	a.redirectWeb(writer, request, "/app/projects?notice=PROJECT%20UNREGISTERED")
+}
+
 func (a *API) renderAppSection(writer http.ResponseWriter, request *http.Request, section, message string, status int) {
 	a.renderAppSectionState(writer, request, section, message, "", status)
 }
@@ -265,7 +306,7 @@ func (a *API) renderAppSectionState(writer http.ResponseWriter, request *http.Re
 		a.webUnauthorized(writer, request)
 		return
 	}
-	items, err := a.store.ListProjects(request.Context())
+	items, err := a.store.ListActiveProjects(request.Context())
 	if err != nil {
 		http.Error(writer, "failed to list projects", http.StatusInternalServerError)
 		return
