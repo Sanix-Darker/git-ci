@@ -9,7 +9,11 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
+
+// MaxStepSummaryBytes is the durable per-step Markdown summary limit.
+const MaxStepSummaryBytes = 1 << 20
 
 const (
 	workflowColumns = `
@@ -79,6 +83,7 @@ const (
 		timeout_minutes,
 		shell,
 		allow_failure,
+		summary,
 		started_at,
 		finished_at,
 		created_at,
@@ -270,6 +275,7 @@ type Step struct {
 	TimeoutMinutes   int             `json:"timeoutMinutes"`
 	Shell            *string         `json:"shell,omitempty"`
 	AllowFailure     bool            `json:"allowFailure"`
+	Summary          string          `json:"summary,omitempty"`
 	StartedAt        *time.Time      `json:"startedAt,omitempty"`
 	FinishedAt       *time.Time      `json:"finishedAt,omitempty"`
 	CreatedAt        time.Time       `json:"createdAt"`
@@ -1005,6 +1011,45 @@ func (s *Store) TransitionStep(ctx context.Context, stepID string, next Status) 
 	}
 	if err != nil {
 		return Step{}, fmt.Errorf("store: transition step: %w", err)
+	}
+	return updated, nil
+}
+
+// SetStepSummary replaces the durable Markdown summary for one step. The
+// execution layer redacts secrets before calling this storage boundary.
+func (s *Store) SetStepSummary(ctx context.Context, stepID, summary string) (Step, error) {
+	if err := requireContext(ctx); err != nil {
+		return Step{}, err
+	}
+	db, err := s.dbHandle()
+	if err != nil {
+		return Step{}, err
+	}
+	stepID, err = normalizeRequiredText("step ID", stepID)
+	if err != nil {
+		return Step{}, err
+	}
+	if !utf8.ValidString(summary) || strings.IndexByte(summary, 0) >= 0 {
+		return Step{}, invalidInput("step summary", "must be valid UTF-8 without null bytes")
+	}
+	if len(summary) > MaxStepSummaryBytes {
+		return Step{}, invalidInput("step summary", fmt.Sprintf("must not exceed %d bytes", MaxStepSummaryBytes))
+	}
+
+	updated, err := scanStep(db.QueryRowContext(ctx, `
+		UPDATE steps
+		SET summary = ?, updated_at = ?
+		WHERE id = ?
+		RETURNING `+stepColumns,
+		summary,
+		nowUTC().UnixMilli(),
+		stepID,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Step{}, &ErrNotFound{Resource: "step", Key: stepID}
+	}
+	if err != nil {
+		return Step{}, fmt.Errorf("store: set step summary: %w", err)
 	}
 	return updated, nil
 }
@@ -1902,6 +1947,7 @@ func scanStep(scanner executionScanner) (Step, error) {
 		timeoutMinutes   int
 		shell            sql.NullString
 		allowFailure     int64
+		summary          string
 		environment      string
 		startedAt        sql.NullInt64
 		finishedAt       sql.NullInt64
@@ -1922,6 +1968,7 @@ func scanStep(scanner executionScanner) (Step, error) {
 		&timeoutMinutes,
 		&shell,
 		&allowFailure,
+		&summary,
 		&startedAt,
 		&finishedAt,
 		&createdAt,
@@ -1937,6 +1984,7 @@ func scanStep(scanner executionScanner) (Step, error) {
 	step.TimeoutMinutes = timeoutMinutes
 	step.Shell = nullStringPointer(shell)
 	step.AllowFailure = allowFailure != 0
+	step.Summary = summary
 	step.StartedAt = nullTimePointer(startedAt)
 	step.FinishedAt = nullTimePointer(finishedAt)
 	step.CreatedAt = timeFromMillis(createdAt)

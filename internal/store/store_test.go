@@ -85,8 +85,8 @@ func TestOpenFreshDatabaseMigratesAndConfiguresSQLite(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 11 {
-		t.Errorf("migration count = %d, want 11", migrations)
+	if migrations != 12 {
+		t.Errorf("migration count = %d, want 12", migrations)
 	}
 }
 

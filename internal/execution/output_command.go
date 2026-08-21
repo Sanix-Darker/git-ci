@@ -32,6 +32,7 @@ type runtimeOutputContext struct {
 	stepBytes    int
 	environment  map[string]string
 	paths        []string
+	summaryCount int
 	dotenvJobs   map[string]map[string]string
 	dotenvStages map[string]string
 	dotenvOrder  []string
@@ -50,6 +51,7 @@ func (context *runtimeOutputContext) beginJob(dependencies []string) {
 	context.stepBytes = 0
 	context.environment = make(map[string]string)
 	context.paths = nil
+	context.summaryCount = 0
 }
 
 func (context *runtimeOutputContext) recordDotenv(job store.Job, semantics *frozenJobSemantics, variables map[string]string) {

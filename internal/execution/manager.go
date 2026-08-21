@@ -1091,15 +1091,16 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 		environmentLayers = []any{jobEnvironment, outputContext.dotenvEnvironment(semantics), run.Environment}
 	}
 	environmentLayers = append(environmentLayers, baseEnvironment, outputContext.runtimeEnvironment(), step.Environment, map[string]string{
-		"CI":               "true",
-		"GCI_RUN_ID":       run.ID,
-		"GCI_JOB_ID":       job.ID,
-		"GCI_PROJECT_DIR":  projectDirectory,
-		"GITHUB_WORKSPACE": projectDirectory,
-		"CI_PROJECT_DIR":   projectDirectory,
-		"GITHUB_OUTPUT":    runtimeFiles.output.runtimePath,
-		"GITHUB_ENV":       runtimeFiles.environment.runtimePath,
-		"GITHUB_PATH":      runtimeFiles.path.runtimePath,
+		"CI":                  "true",
+		"GCI_RUN_ID":          run.ID,
+		"GCI_JOB_ID":          job.ID,
+		"GCI_PROJECT_DIR":     projectDirectory,
+		"GITHUB_WORKSPACE":    projectDirectory,
+		"CI_PROJECT_DIR":      projectDirectory,
+		"GITHUB_OUTPUT":       runtimeFiles.output.runtimePath,
+		"GITHUB_ENV":          runtimeFiles.environment.runtimePath,
+		"GITHUB_PATH":         runtimeFiles.path.runtimePath,
+		"GITHUB_STEP_SUMMARY": runtimeFiles.summary.runtimePath,
 	})
 	environment := mergedEnvironment(secretValues, environmentLayers...)
 	environment = prependGitHubPaths(environment, outputContext.runtimePaths())
@@ -1109,11 +1110,26 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 	finishCommand := func(commandErr error) (map[string]string, error) {
 		outputs, outputErr := parseGitHubOutput(runtimeFiles.output.hostPath)
 		environmentNames, pathCount, runtimeErr := outputContext.consumeGitHubRuntimeFiles(runtimeFiles.environment.hostPath, runtimeFiles.path.hostPath)
+		summary, summaryErr := parseGitHubStepSummary(runtimeFiles.summary.hostPath)
 		if len(environmentNames) > 0 {
 			_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, "environment variables exported: "+strings.Join(environmentNames, ", "))
 		}
 		if pathCount > 0 {
 			_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, fmt.Sprintf("PATH entries prepended: %d", pathCount))
+		}
+		switch {
+		case summaryErr != nil:
+			_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, "step summary ignored: "+summaryErr.Error())
+		case strings.TrimSpace(summary) == "":
+		case !outputContext.reserveGitHubStepSummary():
+			_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, fmt.Sprintf("step summary ignored: job limit is %d", maxGitHubStepSummaries))
+		default:
+			redacted := redactSecrets(summary, secretValues)
+			if _, persistErr := m.store.SetStepSummary(context.WithoutCancel(ctx), step.ID, redacted); persistErr != nil {
+				_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, "step summary ignored: "+persistErr.Error())
+			} else {
+				_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, fmt.Sprintf("step summary captured: %d bytes", len(redacted)))
+			}
 		}
 		return outputs, errors.Join(commandErr, outputErr, runtimeErr)
 	}

@@ -159,10 +159,10 @@ type RunJobView struct {
 }
 
 type RunStepView struct {
-	ID, RunID, Name, Status, Dot, Command string
-	Terminal                              bool
-	Replay                                ReplayControlView
-	Badges                                []SemanticBadgeView
+	ID, RunID, Name, Status, Dot, Command, Summary string
+	Terminal                                       bool
+	Replay                                         ReplayControlView
+	Badges                                         []SemanticBadgeView
 }
 
 type ReplayControlView struct {
