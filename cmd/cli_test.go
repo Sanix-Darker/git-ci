@@ -716,6 +716,32 @@ func TestCliApp_VersionFlag(t *testing.T) {
 	}
 }
 
+func TestSetupEnvironmentUsesCompiledVersionOverStaleEnvironment(t *testing.T) {
+	originalVersion := Version
+	Version = "v9.8.7"
+	t.Cleanup(func() { Version = originalVersion })
+	t.Setenv("GIT_CI_VERSION", "v0.1.0-stale")
+
+	setupEnvironment()
+
+	if got := os.Getenv("GIT_CI_VERSION"); got != Version {
+		t.Fatalf("GIT_CI_VERSION = %q, want compiled version %q", got, Version)
+	}
+}
+
+func TestSetupEnvironmentPreservesDevelopmentOverride(t *testing.T) {
+	originalVersion := Version
+	Version = "dev"
+	t.Cleanup(func() { Version = originalVersion })
+	t.Setenv("GIT_CI_VERSION", "local-build")
+
+	setupEnvironment()
+
+	if got := os.Getenv("GIT_CI_VERSION"); got != "local-build" {
+		t.Fatalf("GIT_CI_VERSION = %q, want development override", got)
+	}
+}
+
 func TestCliApp_UnknownSubcommand(t *testing.T) {
 	out, err := runGoRunCommandOutput(t, []string{"banana"})
 	if !strings.Contains(out, "No help topic for 'banana'") {

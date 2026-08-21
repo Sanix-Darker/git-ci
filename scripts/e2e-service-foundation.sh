@@ -9,6 +9,7 @@ project_path="${project_root}/fixture"
 state_dir="${work_root}/state"
 static_dir="${work_root}/site"
 binary="${work_root}/gci"
+service_version="v9.8.7-e2e"
 port="${GCI_SERVICE_E2E_PORT:-18087}"
 base_url="http://127.0.0.1:${port}"
 service_pid=""
@@ -78,7 +79,8 @@ printf '%s\n' '<!doctype html><title>gci e2e</title><p>service-home</p>' >"${sta
 printf '%s\n' 'OK' >"${static_dir}/healthz"
 
 cd "${repo_root}"
-go build -o "${binary}" ./cmd
+go build -ldflags="-X main.Version=${service_version}" -o "${binary}" ./cmd
+export GIT_CI_VERSION="v0.0.1-stale"
 
 if "${binary}" --workdir "${project_root}" serve \
   --listen ":18088" --state-dir "${state_dir}-public" \
@@ -107,8 +109,17 @@ assert_status GET /app 303
 
 login_page="$(curl --silent "${base_url}/login")"
 if [[ "${login_page}" != *'OPERATOR GATE'* ]] || [[ "${login_page}" != *'htmx.min.js'* ]]; then
-  echo "login page is missing the HTMX operator surface" >&2
-  exit 1
+	echo "login page is missing the HTMX operator surface" >&2
+	exit 1
+fi
+health_payload="$(curl --silent "${base_url}/healthz")"
+if [[ "${health_payload}" != *"\"version\":\"${service_version}\""* ]]; then
+	echo "health endpoint did not prefer compiled version ${service_version}: ${health_payload}" >&2
+	exit 1
+fi
+if [[ "${login_page}" != *"/ui/assets/app.css?v=${service_version}"* ]]; then
+	echo "login page did not use compiled version as its asset cache key" >&2
+	exit 1
 fi
 
 create_payload="$(printf '{"slug":"fixture","path":"%s","defaultBranch":"master"}' "${project_path}")"
