@@ -385,6 +385,9 @@ func (p *GithubParser) getStepName(step GithubStep, index int) string {
 			firstLine = strings.TrimPrefix(firstLine, "npm ")
 			firstLine = strings.TrimPrefix(firstLine, "yarn ")
 			firstLine = strings.TrimPrefix(firstLine, "make ")
+			if strings.Contains(firstLine, "${{") {
+				return "Run command"
+			}
 
 			if len([]rune(firstLine)) > 50 {
 				firstLine = string([]rune(firstLine)[:47]) + "..."

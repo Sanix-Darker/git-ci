@@ -1045,9 +1045,9 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 		return nil, err
 	}
 	if step.Action != nil {
-		handled, err := m.executeBuiltinAction(ctx, run, job, step, workspacePath)
+		handled, outputs, err := m.executeBuiltinAction(ctx, run, job, step, workspacePath)
 		if handled {
-			return nil, err
+			return outputs, err
 		}
 		return nil, fmt.Errorf("unsupported action %q", *step.Action)
 	}

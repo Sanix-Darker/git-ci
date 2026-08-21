@@ -316,6 +316,27 @@ func TestGithubParser_Validate(t *testing.T) {
 	}
 }
 
+func TestGithubParserDoesNotBreakRuntimeExpressionStepNames(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime-expression.yml")
+	if err := os.WriteFile(path, []byte(`name: Runtime expression names
+on: workflow_dispatch
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ steps.restore-cache.outputs.cache-hit }}" = true
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pipeline, err := NewGithubParser().Parse(path)
+	if err != nil {
+		t.Fatalf("parse workflow: %v", err)
+	}
+	if got := pipeline.Jobs["test"].Steps[0].Name; got != "Run command" {
+		t.Fatalf("generated step name = %q", got)
+	}
+}
+
 func writeGithubWorkflow(t *testing.T, environment string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "workflow.yml")
