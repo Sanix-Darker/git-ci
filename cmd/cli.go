@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/sanix-darker/git-ci/internal/handlers"
@@ -477,15 +478,24 @@ func beforeAction(c *cli.Context) error {
 func setupEnvironment() {
 	// Set default environment variables
 	defaults := map[string]string{
-		"GIT_CI":         "true",
-		"CI":             "true",
-		"GIT_CI_VERSION": Version,
+		"GIT_CI": "true",
+		"CI":     "true",
 	}
 
 	for key, value := range defaults {
 		if os.Getenv(key) == "" {
 			_ = os.Setenv(key, value)
 		}
+	}
+
+	// A tagged binary is the authority for its own service and asset version.
+	// Preserve an explicit override only for unversioned development builds.
+	compiledVersion := strings.TrimSpace(Version)
+	if compiledVersion == "" {
+		compiledVersion = "dev"
+	}
+	if compiledVersion != "dev" || os.Getenv("GIT_CI_VERSION") == "" {
+		_ = os.Setenv("GIT_CI_VERSION", compiledVersion)
 	}
 }
 
