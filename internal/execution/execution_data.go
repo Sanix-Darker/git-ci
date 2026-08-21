@@ -206,14 +206,20 @@ func (m *Manager) saveCache(ctx context.Context, run store.Run, workspace, key s
 }
 
 func (m *Manager) captureJobArtifact(ctx context.Context, run store.Run, job store.Job, steps []store.Step, workspace string, config *types.ArtifactConfig, succeeded bool) error {
-	if config == nil || !artifactWhenMatches(config.When, succeeded) {
+	if config == nil {
 		return nil
 	}
-	paths := append([]string(nil), config.Paths...)
+	paths := make([]string, 0, len(config.Paths)+len(config.Reports))
+	if artifactWhenMatches(config.When, succeeded) {
+		paths = append(paths, config.Paths...)
+	}
 	for kind, reportPath := range config.Reports {
-		if strings.EqualFold(kind, "junit") {
+		if strings.EqualFold(kind, "junit") || strings.EqualFold(kind, "dotenv") {
 			paths = append(paths, actionPathList(reportPath)...)
 		}
+	}
+	if len(paths) == 0 {
+		return nil
 	}
 	copy := *config
 	copy.Paths = paths

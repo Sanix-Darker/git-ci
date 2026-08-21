@@ -995,6 +995,18 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 		}
 	}
 	if semantics != nil && semantics.Artifacts != nil {
+		variables, found, dotenvErr := loadGitLabDotenvReport(workspacePath, semantics.Artifacts)
+		if dotenvErr != nil {
+			status = store.StatusFailed
+			if len(item.Steps) > 0 {
+				_ = m.appendSystem(ctx, item.Steps[len(item.Steps)-1].ID, "dotenv report failed: "+dotenvErr.Error())
+			}
+		} else if found {
+			outputContext.recordDotenv(item.Job, semantics, variables)
+			if len(item.Steps) > 0 {
+				_ = m.appendSystem(ctx, item.Steps[len(item.Steps)-1].ID, "dotenv variables inherited: "+strings.Join(sortedOutputNames(variables), ", "))
+			}
+		}
 		if err := m.captureJobArtifact(ctx, run, item.Job, item.Steps, workspacePath, semantics.Artifacts, status == store.StatusSucceeded); err != nil {
 			status = store.StatusFailed
 			if len(item.Steps) > 0 {
@@ -1073,7 +1085,11 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 	if err != nil {
 		return nil, err
 	}
-	environment := mergedEnvironment(secretValues, run.Environment, jobEnvironment, baseEnvironment, step.Environment, map[string]string{
+	environmentLayers := []any{run.Environment, jobEnvironment}
+	if semantics != nil && semantics.Provider == string(ProviderGitLabCI) {
+		environmentLayers = []any{jobEnvironment, outputContext.dotenvEnvironment(semantics), run.Environment}
+	}
+	environmentLayers = append(environmentLayers, baseEnvironment, step.Environment, map[string]string{
 		"CI":               "true",
 		"GCI_RUN_ID":       run.ID,
 		"GCI_JOB_ID":       job.ID,
@@ -1082,6 +1098,7 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 		"CI_PROJECT_DIR":   projectDirectory,
 		"GITHUB_OUTPUT":    runtimeOutputPath,
 	})
+	environment := mergedEnvironment(secretValues, environmentLayers...)
 	if runtime != nil {
 		environment = runtime.resolveEnvironment(environment)
 	}
@@ -1310,27 +1327,31 @@ func dependenciesSatisfied(dependencies []string, statuses map[string]store.Stat
 }
 
 type frozenJobSemantics struct {
-	Provider      string                               `json:"provider"`
-	SourceKey     string                               `json:"sourceKey"`
-	Matrix        map[string]string                    `json:"matrix"`
-	MatrixIndex   int                                  `json:"matrixIndex"`
-	MatrixTotal   int                                  `json:"matrixTotal"`
-	MatrixLabel   string                               `json:"matrixLabel"`
-	Condition     executionsemantics.ConditionContract `json:"condition"`
-	Rules         []RuleDefinition                     `json:"rules"`
-	Only          *OnlyExceptDefinition                `json:"only"`
-	Except        *OnlyExceptDefinition                `json:"except"`
-	When          string                               `json:"when"`
-	Concurrency   *ConcurrencyDefinition               `json:"concurrency"`
-	Interruptible bool                                 `json:"interruptible"`
-	FailFast      bool                                 `json:"failFast"`
-	MaxParallel   int                                  `json:"maxParallel"`
-	WorkflowCall  *types.WorkflowCall                  `json:"workflowCall"`
-	Container     *types.Container                     `json:"container"`
-	Services      map[string]*types.Service            `json:"services"`
-	Artifacts     *types.ArtifactConfig                `json:"artifacts"`
-	Cache         *types.CacheConfig                   `json:"cache"`
-	Outputs       map[string]string                    `json:"outputs"`
+	Provider             string                               `json:"provider"`
+	SourceKey            string                               `json:"sourceKey"`
+	Stage                string                               `json:"stage"`
+	ArtifactDependencies []string                             `json:"artifactDependencies"`
+	DependenciesDefined  bool                                 `json:"dependenciesDefined"`
+	NeedsArtifacts       map[string]bool                      `json:"needsArtifacts"`
+	Matrix               map[string]string                    `json:"matrix"`
+	MatrixIndex          int                                  `json:"matrixIndex"`
+	MatrixTotal          int                                  `json:"matrixTotal"`
+	MatrixLabel          string                               `json:"matrixLabel"`
+	Condition            executionsemantics.ConditionContract `json:"condition"`
+	Rules                []RuleDefinition                     `json:"rules"`
+	Only                 *OnlyExceptDefinition                `json:"only"`
+	Except               *OnlyExceptDefinition                `json:"except"`
+	When                 string                               `json:"when"`
+	Concurrency          *ConcurrencyDefinition               `json:"concurrency"`
+	Interruptible        bool                                 `json:"interruptible"`
+	FailFast             bool                                 `json:"failFast"`
+	MaxParallel          int                                  `json:"maxParallel"`
+	WorkflowCall         *types.WorkflowCall                  `json:"workflowCall"`
+	Container            *types.Container                     `json:"container"`
+	Services             map[string]*types.Service            `json:"services"`
+	Artifacts            *types.ArtifactConfig                `json:"artifacts"`
+	Cache                *types.CacheConfig                   `json:"cache"`
+	Outputs              map[string]string                    `json:"outputs"`
 }
 
 type workflowConcurrencySnapshot struct {

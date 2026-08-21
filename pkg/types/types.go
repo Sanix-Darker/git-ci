@@ -74,10 +74,12 @@ type Job struct {
 	Services  map[string]*Service `yaml:"services,omitempty" json:"services,omitempty"`
 
 	// Dependencies and ordering
-	Needs        []string `yaml:"needs,omitempty" json:"needs,omitempty"`               // GitHub/GitLab
-	Dependencies []string `yaml:"dependencies,omitempty" json:"dependencies,omitempty"` // GitLab
-	Stage        string   `yaml:"stage,omitempty" json:"stage,omitempty"`               // GitLab
-	Requires     []string `yaml:"requires,omitempty" json:"requires,omitempty"`         // CircleCI
+	Needs               []string        `yaml:"needs,omitempty" json:"needs,omitempty"`               // GitHub/GitLab
+	Dependencies        []string        `yaml:"dependencies,omitempty" json:"dependencies,omitempty"` // GitLab
+	NeedsArtifacts      map[string]bool `yaml:"needs-artifacts,omitempty" json:"needs-artifacts,omitempty"`
+	DependenciesDefined bool            `yaml:"dependencies-defined,omitempty" json:"dependencies-defined,omitempty"`
+	Stage               string          `yaml:"stage,omitempty" json:"stage,omitempty"`       // GitLab
+	Requires            []string        `yaml:"requires,omitempty" json:"requires,omitempty"` // CircleCI
 
 	// Conditionals
 	If     string      `yaml:"if,omitempty" json:"if,omitempty"`         // GitHub
