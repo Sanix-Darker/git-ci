@@ -48,6 +48,7 @@
     {{if eq .Page "workflows"}}{{template "workflows_panel" .}}{{end}}
     {{if eq .Page "runs"}}{{template "runs_panel" .}}{{end}}
     {{if eq .Page "jobs"}}{{template "jobs_panel" .}}{{end}}
+    {{if eq .Page "runners"}}{{template "runners_panel" .}}{{end}}
     {{if eq .Page "secrets"}}{{template "secrets_panel" .}}{{end}}
     {{if eq .Page "schedules"}}{{template "schedules_panel" .}}{{end}}
     {{if eq .Page "deployments"}}{{template "deployments_panel" .}}{{end}}
@@ -199,13 +200,16 @@
 </section>
 {{end}}
 
-{{define "settings_panel"}}
+{{define "runners_panel"}}
 <section class="surface-card runner-inventory" aria-labelledby="runner-inventory-title">
   <div class="card-heading padded-heading"><div><p class="kicker">EXECUTION CAPACITY</p><h2 id="runner-inventory-title">LOCAL RUNNER</h2></div><span>{{pad2 (len .Runners)}} ONLINE NODE</span></div>
   <div class="compact-list">
     {{range .Runners}}<article data-runner-card><div><i class="dot {{.Dot}}"></i><span><strong>{{upper .Name}}</strong><small>{{.Status}} / {{.Mode}} / CAPACITY {{.MaxParallel}}</small></span></div><div><code>{{.OS}} / {{.Architecture}} / GROUP {{upper .Group}}</code>{{range .Labels}}<b class="semantic-chip">{{upper .}}</b>{{end}}{{range .Tags}}<b class="semantic-chip runtime">TAG {{.}}</b>{{end}}{{if .DockerAvailable}}<b class="semantic-chip runtime">DOCKER READY</b>{{else}}<b class="semantic-chip danger">NO DOCKER</b>{{end}}</div></article>{{else}}<div class="empty-state"><i></i><p>NO RUNNER INVENTORY</p></div>{{end}}
   </div>
 </section>
+{{end}}
+
+{{define "settings_panel"}}
 <section class="surface-card alert-preview" aria-labelledby="email-alerts-title">
   <div class="card-heading">
     <div><p class="kicker">NOTIFICATIONS</p><h2 id="email-alerts-title">EMAIL ALERTS</h2></div>
@@ -258,10 +262,11 @@
     </nav>
     <p class="sidebar-label sidebar-label-spaced">CONFIGURE</p>
     <nav class="main-nav" aria-label="Configuration">
-      <a class="{{if eq .Page "secrets"}}active{{end}}" href="/app/secrets" hx-get="/app/secrets" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>06</span><b>Secrets</b></a>
-      <a class="{{if eq .Page "schedules"}}active{{end}}" href="/app/schedules" hx-get="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>07</span><b>Schedules</b></a>
-      <a class="{{if eq .Page "deployments"}}active{{end}}" href="/app/deployments" hx-get="/app/deployments" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>08</span><b>Deployments</b></a>
-      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>09</span><b>Settings</b></a>
+      <a class="{{if eq .Page "runners"}}active{{end}}" href="/app/runners" hx-get="/app/runners" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>06</span><b>Runners</b><small>{{len .Runners}}</small></a>
+      <a class="{{if eq .Page "secrets"}}active{{end}}" href="/app/secrets" hx-get="/app/secrets" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>07</span><b>Secrets</b></a>
+      <a class="{{if eq .Page "schedules"}}active{{end}}" href="/app/schedules" hx-get="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>08</span><b>Schedules</b></a>
+      <a class="{{if eq .Page "deployments"}}active{{end}}" href="/app/deployments" hx-get="/app/deployments" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>09</span><b>Deployments</b></a>
+      <a class="{{if eq .Page "settings"}}active{{end}}" href="/app/settings" hx-get="/app/settings" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator"><span>10</span><b>Settings</b></a>
     </nav>
   </div>
   <div class="operator">
