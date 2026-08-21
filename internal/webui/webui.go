@@ -31,6 +31,7 @@ type PageData struct {
 	Notice             string
 	Projects           []store.Project
 	ProjectViews       []ProjectView
+	SelectedProject    *ProjectView
 	Candidates         []projects.Project
 	Workflows          []WorkflowView
 	Runs               []RunView
@@ -50,10 +51,11 @@ type PageData struct {
 }
 
 type ProjectView struct {
-	ID, Name, Slug, CanonicalPath, Health, HealthDetail, Dot string
-	WorkflowCount                                            int
-	Workflows                                                []WorkflowView
-	CommitTrigger                                            CommitTriggerView
+	ID, Name, Slug, CanonicalPath, Health, HealthDetail, Dot, CSRFToken string
+	WorkflowCount                                                       int
+	Workflows                                                           []WorkflowView
+	CommitTrigger                                                       CommitTriggerView
+	Workspace                                                           bool
 }
 
 type CommitTriggerView struct {

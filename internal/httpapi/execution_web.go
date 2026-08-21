@@ -20,13 +20,23 @@ import (
 )
 
 func (a *API) handleSyncWorkflowsWeb(writer http.ResponseWriter, request *http.Request) {
-	_, err := a.execution.SyncProject(request.Context(), request.PathValue("project"))
+	projectID := request.PathValue("project")
+	returnProject := projectWorkspaceReturn(request)
+	_, err := a.execution.SyncProject(request.Context(), projectID)
 	if err != nil {
+		if returnProject == projectID {
+			a.renderProjectWorkspace(writer, request, projectID, err.Error(), "", http.StatusUnprocessableEntity)
+			return
+		}
 		a.renderAppSection(writer, request, "workflows", err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
-	a.recordExecutionAudit(request, "workflow.synced", "project", request.PathValue("project"))
+	a.recordExecutionAudit(request, "workflow.synced", "project", projectID)
 	writer.Header().Set("HX-Trigger", "workflowsSynced")
+	if returnProject == projectID {
+		a.renderProjectWorkspace(writer, request, projectID, "", "WORKFLOWS SYNCED / GRAPH REFRESHED", http.StatusOK)
+		return
+	}
 	a.renderAppSection(writer, request, "workflows", "", http.StatusOK)
 }
 
@@ -44,6 +54,10 @@ func (a *API) handleEnqueueRunWeb(writer http.ResponseWriter, request *http.Requ
 	}
 	run, err := a.execution.EnqueueWorkflowWithInputs(request.Context(), request.PathValue("workflow"), request.FormValue("ref"), request.FormValue("commitSha"), inputs)
 	if err != nil {
+		if projectID := projectWorkspaceReturn(request); projectID != "" {
+			a.renderProjectWorkspace(writer, request, projectID, err.Error(), "", http.StatusUnprocessableEntity)
+			return
+		}
 		a.renderAppSection(writer, request, "workflows", err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
@@ -155,7 +169,7 @@ func (a *API) populateExecutionPage(ctx context.Context, data *webui.PageData, s
 		health, healthDetail, dot := projectCheckoutHealth(path)
 		projectView := webui.ProjectView{
 			ID: project.ID, Name: project.Name, Slug: project.Slug, CanonicalPath: path,
-			Health: health, HealthDetail: healthDetail, Dot: dot,
+			Health: health, HealthDetail: healthDetail, Dot: dot, CSRFToken: data.CSRFToken,
 			CommitTrigger: webui.CommitTriggerView{Ref: project.DefaultBranch, Status: "OFF", Dot: "dot-blue"},
 		}
 		policy, policyErr := a.store.GetProjectCommitTrigger(ctx, project.ID)

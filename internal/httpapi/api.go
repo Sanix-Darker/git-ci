@@ -127,6 +127,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /logout", a.requireWebAuth(http.HandlerFunc(a.handleLogoutWeb)))
 	mux.Handle("GET /app", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
 	mux.Handle("GET /app/{section}", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
+	mux.Handle("GET /app/projects/{project}", a.requireWebAuth(http.HandlerFunc(a.handleProjectPageWeb)))
 	mux.Handle("POST /app/projects", a.requireWebAuth(http.HandlerFunc(a.handleCreateProjectWeb)))
 	mux.Handle("POST /app/projects/{project}/workflows/sync", a.requireWebAuth(http.HandlerFunc(a.handleSyncWorkflowsWeb)))
 	mux.Handle("POST /app/projects/{project}/commit-trigger", a.requireWebAuth(http.HandlerFunc(a.handleProjectCommitTriggerWeb)))
