@@ -95,8 +95,9 @@ type GitlabJob struct {
 	InheritVariables *bool                  `yaml:"inherit,omitempty"`
 
 	// Dependencies
-	Needs        interface{} `yaml:"needs,omitempty"`
-	Dependencies []string    `yaml:"dependencies,omitempty"`
+	Needs               interface{} `yaml:"needs,omitempty"`
+	Dependencies        []string    `yaml:"dependencies,omitempty"`
+	DependenciesDefined bool        `yaml:"-"`
 
 	// Artifacts and cache
 	Artifacts *GitlabArtifacts `yaml:"artifacts,omitempty"`
@@ -376,8 +377,11 @@ func (p *GitlabParser) parseJob(jobData map[string]interface{}) *GitlabJob {
 		job.Needs = needs
 	}
 
-	if dependencies, ok := jobData["dependencies"].([]interface{}); ok {
-		job.Dependencies = p.parseStringArray(dependencies)
+	if dependencies, defined := jobData["dependencies"]; defined {
+		job.DependenciesDefined = true
+		if values, ok := dependencies.([]interface{}); ok {
+			job.Dependencies = p.parseStringArray(values)
+		}
 	}
 
 	// Parse rules
@@ -596,6 +600,9 @@ func (p *GitlabParser) convertJob(
 
 	// Parse needs
 	job.Needs = p.parseNeeds(glJob.Needs)
+	job.NeedsArtifacts = p.parseNeedsArtifacts(glJob.Needs)
+	job.Dependencies = append([]string(nil), glJob.Dependencies...)
+	job.DependenciesDefined = glJob.DependenciesDefined
 	if len(job.Needs) == 0 && len(glJob.Dependencies) > 0 {
 		job.Needs = glJob.Dependencies
 	}
@@ -904,6 +911,32 @@ func (p *GitlabParser) parseNeeds(needs interface{}) []string {
 		}
 	}
 
+	return result
+}
+
+func (p *GitlabParser) parseNeedsArtifacts(needs interface{}) map[string]bool {
+	result := make(map[string]bool)
+	switch values := needs.(type) {
+	case string:
+		result[values] = true
+	case []interface{}:
+		for _, value := range values {
+			switch need := value.(type) {
+			case string:
+				result[need] = true
+			case map[string]interface{}:
+				job, ok := need["job"].(string)
+				if !ok || job == "" {
+					continue
+				}
+				artifacts := true
+				if configured, ok := need["artifacts"].(bool); ok {
+					artifacts = configured
+				}
+				result[job] = artifacts
+			}
+		}
+	}
 	return result
 }
 

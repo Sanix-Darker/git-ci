@@ -30,16 +30,68 @@ type runtimeOutputContext struct {
 	steps        map[string]map[string]string
 	dependencies []string
 	stepBytes    int
+	dotenvJobs   map[string]map[string]string
+	dotenvStages map[string]string
+	dotenvOrder  []string
 }
 
 func newRuntimeOutputContext() *runtimeOutputContext {
-	return &runtimeOutputContext{jobs: make(map[string]map[string]string)}
+	return &runtimeOutputContext{
+		jobs: make(map[string]map[string]string), dotenvJobs: make(map[string]map[string]string),
+		dotenvStages: make(map[string]string),
+	}
 }
 
 func (context *runtimeOutputContext) beginJob(dependencies []string) {
 	context.dependencies = append([]string(nil), dependencies...)
 	context.steps = make(map[string]map[string]string)
 	context.stepBytes = 0
+}
+
+func (context *runtimeOutputContext) recordDotenv(job store.Job, semantics *frozenJobSemantics, variables map[string]string) {
+	if len(variables) == 0 {
+		return
+	}
+	key := pointerValue(job.Key)
+	if _, exists := context.dotenvJobs[key]; !exists {
+		context.dotenvOrder = append(context.dotenvOrder, key)
+	}
+	context.dotenvJobs[key] = copyStringMap(variables)
+	if semantics != nil {
+		context.dotenvStages[key] = semantics.Stage
+	}
+}
+
+func (context *runtimeOutputContext) dotenvEnvironment(semantics *frozenJobSemantics) map[string]string {
+	if semantics == nil || semantics.Provider != string(ProviderGitLabCI) {
+		return nil
+	}
+	selected := make(map[string]bool)
+	switch {
+	case semantics.DependenciesDefined:
+		for _, dependency := range semantics.ArtifactDependencies {
+			selected[dependency] = true
+		}
+	case len(context.dependencies) > 0:
+		for _, dependency := range context.dependencies {
+			artifacts, configured := semantics.NeedsArtifacts[dependency]
+			selected[dependency] = !configured || artifacts
+		}
+	default:
+		for _, dependency := range context.dotenvOrder {
+			selected[dependency] = context.dotenvStages[dependency] != semantics.Stage
+		}
+	}
+	result := make(map[string]string)
+	for _, dependency := range context.dotenvOrder {
+		if !selected[dependency] {
+			continue
+		}
+		for name, value := range context.dotenvJobs[dependency] {
+			result[name] = value
+		}
+	}
+	return result
 }
 
 func (context *runtimeOutputContext) recordStep(key string, outputs map[string]string) error {
