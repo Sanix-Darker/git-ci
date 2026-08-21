@@ -1395,6 +1395,7 @@ type frozenJobSemantics struct {
 	ArtifactDependencies []string                             `json:"artifactDependencies"`
 	DependenciesDefined  bool                                 `json:"dependenciesDefined"`
 	NeedsArtifacts       map[string]bool                      `json:"needsArtifacts"`
+	NeedsOptional        map[string]bool                      `json:"needsOptional"`
 	Matrix               map[string]string                    `json:"matrix"`
 	MatrixIndex          int                                  `json:"matrixIndex"`
 	MatrixTotal          int                                  `json:"matrixTotal"`
@@ -1439,7 +1440,7 @@ func evaluateJobExecution(run store.Run, job store.Job, dependencies []string, s
 		decision.Reason = "execution metadata is invalid: " + err.Error()
 		return decision
 	}
-	ready, successful, failed := dependencyState(dependencies, statuses, allowed)
+	ready, successful, failed := dependencyState(dependencies, statuses, allowed, semantics.NeedsOptional)
 	if !ready {
 		decision.Reason = "a required job has not completed"
 		return decision
@@ -1597,7 +1598,7 @@ func usesStatusFunction(expression string) bool {
 	return false
 }
 
-func dependencyState(dependencies []string, statuses map[string]store.Status, allowed map[string]bool) (ready, successful, failed bool) {
+func dependencyState(dependencies []string, statuses map[string]store.Status, allowed map[string]bool, optional map[string]bool) (ready, successful, failed bool) {
 	ready = true
 	successful = true
 	for _, dependency := range dependencies {
@@ -1607,7 +1608,7 @@ func dependencyState(dependencies []string, statuses map[string]store.Status, al
 			successful = false
 			continue
 		}
-		if status == store.StatusSucceeded || status == store.StatusFailed && allowed[dependency] || status == store.StatusManual && allowed[dependency] {
+		if status == store.StatusSucceeded || status == store.StatusFailed && allowed[dependency] || status == store.StatusManual && allowed[dependency] || status == store.StatusSkipped && optional[dependency] {
 			continue
 		}
 		successful = false

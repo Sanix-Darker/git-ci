@@ -623,6 +623,7 @@ func (p *GitlabParser) convertJob(
 
 	// Parse needs
 	job.Needs = p.parseNeeds(glJob.Needs)
+	job.NeedsOptional = p.parseNeedsOptional(glJob.Needs)
 	job.NeedsArtifacts = p.parseNeedsArtifacts(glJob.Needs)
 	job.Dependencies = append([]string(nil), glJob.Dependencies...)
 	job.DependenciesDefined = glJob.DependenciesDefined
@@ -937,6 +938,26 @@ func (p *GitlabParser) parseNeeds(needs interface{}) []string {
 		}
 	}
 
+	return result
+}
+
+func (p *GitlabParser) parseNeedsOptional(needs interface{}) map[string]bool {
+	result := make(map[string]bool)
+	values, ok := needs.([]interface{})
+	if !ok {
+		return result
+	}
+	for _, value := range values {
+		need, ok := value.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		job, jobOK := need["job"].(string)
+		optional, optionalOK := need["optional"].(bool)
+		if jobOK && job != "" && optionalOK {
+			result[job] = optional
+		}
+	}
 	return result
 }
 
@@ -1570,7 +1591,7 @@ func (p *GitlabParser) Validate(pipeline *types.Pipeline) error {
 
 		// Validate job dependencies exist
 		for _, need := range job.Needs {
-			if _, exists := pipeline.Jobs[need]; !exists {
+			if _, exists := pipeline.Jobs[need]; !exists && !job.NeedsOptional[need] {
 				errors = append(errors, fmt.Sprintf("job '%s' depends on non-existent job '%s'", jobName, need))
 			}
 		}
