@@ -82,11 +82,12 @@ type Job struct {
 	Requires            []string        `yaml:"requires,omitempty" json:"requires,omitempty"` // CircleCI
 
 	// Conditionals
-	If     string      `yaml:"if,omitempty" json:"if,omitempty"`         // GitHub
-	Only   *OnlyExcept `yaml:"only,omitempty" json:"only,omitempty"`     // GitLab
-	Except *OnlyExcept `yaml:"except,omitempty" json:"except,omitempty"` // GitLab
-	Rules  []Rule      `yaml:"rules,omitempty" json:"rules,omitempty"`   // GitLab
-	When   string      `yaml:"when,omitempty" json:"when,omitempty"`     // GitLab/CircleCI
+	If                 string      `yaml:"if,omitempty" json:"if,omitempty"`         // GitHub
+	Only               *OnlyExcept `yaml:"only,omitempty" json:"only,omitempty"`     // GitLab
+	Except             *OnlyExcept `yaml:"except,omitempty" json:"except,omitempty"` // GitLab
+	Rules              []Rule      `yaml:"rules,omitempty" json:"rules,omitempty"`   // GitLab
+	When               string      `yaml:"when,omitempty" json:"when,omitempty"`     // GitLab/CircleCI
+	ManualConfirmation string      `yaml:"manual_confirmation,omitempty" json:"manual_confirmation,omitempty"`
 
 	// Execution control
 	TimeoutMin    int          `yaml:"timeout-minutes,omitempty" json:"timeout-minutes,omitempty"`

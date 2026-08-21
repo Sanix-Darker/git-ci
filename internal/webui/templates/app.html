@@ -156,6 +156,21 @@
 </span>{{else}}<span class="play-control is-disabled"><button type="button" aria-label="{{.Label}}" title="{{upper .Hint}}" disabled><span>&gt;</span></button></span>{{end}}
 {{end}}
 
+{{define "manual_play_control"}}
+{{if .Enabled}}<details class="manual-play-atom">
+  <summary role="button" aria-label="{{.Label}}" title="{{upper .Hint}}"><span>&gt;</span><b>PLAY</b></summary>
+  <div class="manual-play-panel">
+    <header><span><strong>{{.Label}}</strong><small>{{.Mode}}</small></span><i class="dot {{if .Blocking}}dot-red{{else}}dot-green{{end}}"></i></header>
+    {{if .Confirmation}}<p class="manual-confirmation">{{.Confirmation}}</p>{{end}}
+    <form method="post" action="{{.Action}}" hx-post="{{.Action}}" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="idempotencyKey" value="{{.IdempotencyKey}}"><input type="hidden" name="sourceRunId" value="{{.SourceRunID}}"><input type="hidden" name="confirmed" value="true">
+      <label><span>VARIABLES <em>PLAIN / NOT SECRET</em></span><textarea name="variables" rows="3" placeholder="TARGET=production&#10;DRY_RUN=false"></textarea></label>
+      <button type="submit" aria-label="CONFIRM {{.Label}}">CONFIRM <span>&gt;</span></button>
+    </form>
+  </div>
+</details>{{else}}<span class="manual-play-disabled" title="{{upper .Hint}}"><span>&gt;</span><b>{{.Mode}}</b></span>{{end}}
+{{end}}
+
 {{define "deployments_panel"}}
 <section class="delivery-stack">
   <section class="surface-card approval-surface">
@@ -528,12 +543,12 @@
   {{with .Lineage}}<aside class="run-provenance" aria-label="Run provenance"><div><p class="kicker">PROVENANCE</p><strong>{{.Kind}}</strong></div><a href="/app/runs/{{.SourceRunID}}">SOURCE RUN / {{short .SourceRunID}}</a><code>{{if .SourceStepID}}STEP {{short .SourceStepID}}{{else if .SourceJobID}}JOB {{short .SourceJobID}}{{end}}</code><small>{{.Actor}} / {{.CreatedAt}}</small></aside>{{end}}
   <div class="pipeline-graph" aria-label="Pipeline dependency graph">
     <header class="graph-key"><span><b>IMMUTABLE RUN DAG</b><small>LIVE SQLITE SNAPSHOT</small></span><span>{{pad2 (len .Jobs)}} NODES / {{pad2 .EdgeCount}} EDGES</span></header>
-    {{range .GraphRows}}<section class="pipeline-stage"><header><span>STAGE {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>{{.Status}}</span>{{template "play_control" .Replay}}</header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small>{{template "semantic_badges" .Badges}}</article>{{end}}</div></section>{{end}}
+    {{range .GraphRows}}<section class="pipeline-stage"><header><span>STAGE {{pad2 .Level}}</span><small>{{pad2 (len .Jobs)}} JOBS</small></header><div class="pipeline-stage-nodes">{{range .Jobs}}<article class="run-node"><header><span><i class="dot {{.Dot}}"></i>{{.Status}}</span>{{if .Manual.Present}}{{template "manual_play_control" .Manual}}{{else}}{{template "play_control" .Replay}}{{end}}</header><strong>{{.Name}}</strong><code>{{.Key}}</code><small>{{if .Dependencies}}AFTER {{upper .Dependencies}}{{else}}ROOT JOB{{end}}</small>{{template "semantic_badges" .Badges}}</article>{{end}}</div></section>{{end}}
   </div>
   <div class="job-details">
     {{range .Jobs}}
     <article class="job-detail">
-      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3>{{template "semantic_badges" .Badges}}</div><div class="job-meta"><span>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowFailure}} / ALLOW FAILURE{{end}}</span>{{template "play_control" .Replay}}</div></header>
+      <header><div><span class="status-cell"><i class="dot {{.Dot}}"></i>{{.Status}}</span><h3>{{.Name}}</h3>{{template "semantic_badges" .Badges}}</div><div class="job-meta"><span>{{if .Runner}}{{.Runner}}{{else}}LOCAL{{end}}{{if .AllowFailure}} / ALLOW FAILURE{{end}}{{if .ManualPlayedBy}} / PLAYED BY {{.ManualPlayedBy}} AT {{.ManualPlayedAt}}{{end}}</span>{{if .Manual.Present}}{{template "manual_play_control" .Manual}}{{else}}{{template "play_control" .Replay}}{{end}}</div></header>
       <div class="step-list">
         {{range .Steps}}
         <section class="step-detail">

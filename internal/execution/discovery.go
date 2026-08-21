@@ -85,6 +85,7 @@ type JobDefinition struct {
 	Only                 *OnlyExceptDefinition                `json:"only,omitempty"`
 	Except               *OnlyExceptDefinition                `json:"except,omitempty"`
 	When                 string                               `json:"when,omitempty"`
+	ManualConfirmation   string                               `json:"manualConfirmation,omitempty"`
 	Concurrency          *ConcurrencyDefinition               `json:"concurrency,omitempty"`
 	Interruptible        bool                                 `json:"interruptible,omitempty"`
 	FailFast             bool                                 `json:"failFast,omitempty"`
@@ -694,6 +695,7 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		Only:                 normalizeOnlyExcept(job.Only),
 		Except:               normalizeOnlyExcept(job.Except),
 		When:                 job.When,
+		ManualConfirmation:   strings.TrimSpace(job.ManualConfirmation),
 		Concurrency:          normalizeConcurrency(job.Concurrency),
 		Interruptible:        job.Interruptible,
 		WorkflowCall:         copyWorkflowCall(job.WorkflowCall),
@@ -880,7 +882,8 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 		"needsArtifacts": job.NeedsArtifacts, "matrix": job.Matrix, "matrixIndex": job.MatrixIndex,
 		"matrixTotal": job.MatrixTotal, "matrixLabel": job.MatrixLabel, "condition": job.Condition,
 		"rules": job.Rules, "only": job.Only, "except": job.Except, "when": job.When,
-		"concurrency": job.Concurrency, "interruptible": job.Interruptible,
+		"manualConfirmation": job.ManualConfirmation,
+		"concurrency":        job.Concurrency, "interruptible": job.Interruptible,
 		"failFast": job.FailFast, "maxParallel": job.MaxParallel,
 		"workflowCall": job.WorkflowCall, "container": job.Container, "services": job.Services,
 		"artifacts": job.Artifacts, "cache": job.Cache, "outputs": job.Outputs,

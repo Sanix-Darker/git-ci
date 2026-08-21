@@ -481,6 +481,21 @@
 .play-control.is-disabled button { border-color: #272727; color: #484848; cursor: not-allowed; }
 .replay-atom { position: relative; display: inline-flex; align-items: center; gap: .45rem; }
 .replay-atom > em { max-width: 92px; color: #565656; font-size: .42rem; font-style: normal; font-weight: 900; line-height: 1.25; }
+.manual-play-atom { position: relative; z-index: 8; }
+.manual-play-atom > summary { display: flex; align-items: center; gap: .35rem; min-height: 34px; border: 1px solid #fff; padding: 0 .55rem; background: #fff; color: #080808; cursor: pointer; font-size: .5rem; font-weight: 900; list-style: none; transition: transform 100ms steps(2, end), background 100ms steps(2, end); }
+.manual-play-atom > summary::-webkit-details-marker { display: none; }
+.manual-play-atom > summary:hover { transform: translateX(3px); background: #b8b8b8; }
+.manual-play-panel { position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: min(360px, calc(100vw - 48px)); border: 1px solid #fff; background: #080808; color: #fff; box-shadow: 8px 8px 0 #242424; }
+.manual-play-panel > header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #383838; padding: .75rem; }
+.manual-play-panel > header span { display: grid; gap: .2rem; }
+.manual-play-panel > header small, .manual-play-panel label span, .manual-play-panel label em { color: #727272; font-size: .5rem; font-style: normal; }
+.manual-confirmation { margin: 0; border-bottom: 1px solid #383838; padding: .75rem; color: #b8b8b8; font-size: .65rem; }
+.manual-play-panel form { display: grid; gap: .65rem; padding: .75rem; }
+.manual-play-panel label { display: grid; gap: .4rem; }
+.manual-play-panel label span { display: flex; justify-content: space-between; }
+.manual-play-panel textarea { width: 100%; resize: vertical; border: 1px solid #565656; background: #111; padding: .65rem; color: #fff; font: 600 .62rem/1.5 var(--font-mono); }
+.manual-play-panel button { min-height: 38px; border: 1px solid #fff; background: #fff; color: #080808; cursor: pointer; font-size: .56rem; font-weight: 900; }
+.manual-play-disabled { display: inline-flex; align-items: center; gap: .4rem; min-height: 34px; border: 1px solid #383838; padding: 0 .5rem; color: #727272; font-size: .46rem; }
 .replay-confirm { position: relative; }
 .replay-confirm-panel { position: absolute; z-index: 15; top: calc(100% + 8px); right: 0; display: grid; width: 290px; gap: .65rem; border: 1px solid #b8b8b8; padding: .85rem; background: #080808; box-shadow: 6px 6px 0 #202020; color: #d8d8d8; }
 .replay-confirm-panel p { margin: 0; color: #727272; font-size: .5rem; font-weight: 900; line-height: 1.5; }
@@ -508,6 +523,8 @@
   .run-provenance { grid-template-columns: 1fr; align-items: start; padding: 1rem; }
 }
 @media (prefers-reduced-motion: reduce) { .approval-card, .approval-card:hover, .rollback-control button, .rollback-control button:hover, .play-control button, .play-control button:hover, .replay-confirm > summary, .replay-confirm > summary:hover { transition: none !important; transform: none !important; } }
+@media (max-width: 720px) { .manual-play-panel { position: fixed; top: auto; right: 12px; bottom: 12px; left: 12px; width: auto; } }
+@media (prefers-reduced-motion: reduce) { .manual-play-atom > summary, .manual-play-atom > summary:hover { transition: none !important; transform: none !important; } }
 
 /* Operator motion, telemetry, and loading atoms */
 .workspace { position: relative; }

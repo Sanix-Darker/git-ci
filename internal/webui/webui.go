@@ -158,10 +158,12 @@ type RunLineageView struct {
 
 type RunJobView struct {
 	ID, Key, SourceKey, Name, Status, Dot, Runner, Dependencies string
+	ManualPlayedBy, ManualPlayedAt                              string
 	AllowFailure                                                bool
 	DependencyKeys                                              []string
 	Steps                                                       []RunStepView
 	Replay                                                      ReplayControlView
+	Manual                                                      ManualPlayControlView
 	Badges                                                      []SemanticBadgeView
 }
 
@@ -181,6 +183,12 @@ type ReplayControlView struct {
 	Action, CSRFToken, IdempotencyKey, SourceRunID, SourceJobID string
 	Label, Hint, Mode, Consequence, CommitSHA                   string
 	Enabled, RequiresConfirmation                               bool
+}
+
+type ManualPlayControlView struct {
+	Action, CSRFToken, IdempotencyKey, SourceRunID   string
+	Label, Hint, Mode, Confirmation                  string
+	Present, Enabled, Blocking, RequiresConfirmation bool
 }
 
 type LogView struct {

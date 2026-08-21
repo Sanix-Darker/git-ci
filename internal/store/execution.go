@@ -106,6 +106,7 @@ type Status string
 const (
 	StatusQueued    Status = "queued"
 	StatusWaiting   Status = "waiting"
+	StatusManual    Status = "manual"
 	StatusRunning   Status = "running"
 	StatusSucceeded Status = "succeeded"
 	StatusFailed    Status = "failed"
@@ -258,6 +259,8 @@ type Job struct {
 	FinishedAt      *time.Time      `json:"finishedAt,omitempty"`
 	CreatedAt       time.Time       `json:"createdAt"`
 	UpdatedAt       time.Time       `json:"updatedAt"`
+	ManualState     *ManualJobState `json:"manualState,omitempty"`
+	ManualPlay      *ManualJobPlay  `json:"manualPlay,omitempty"`
 }
 
 // Step is a durable step snapshot and its mutable lifecycle fields.
@@ -799,6 +802,9 @@ func (s *Store) GetRunGraph(ctx context.Context, runID string) (RunGraph, error)
 			step := &graph.Jobs[jobIndex].Steps[stepIndex]
 			step.Annotations = annotations[step.ID]
 		}
+	}
+	if err := attachManualJobs(ctx, db, &graph); err != nil {
+		return RunGraph{}, err
 	}
 	return graph, nil
 }
@@ -1712,14 +1718,14 @@ func validateAcyclicDependencies(jobs []EnqueueJob) error {
 
 func validateStatus(status Status) error {
 	if !validStatus(status) {
-		return invalidInput("status", "must be queued, waiting, running, succeeded, failed, cancelled, or skipped")
+		return invalidInput("status", "must be queued, waiting, manual, running, succeeded, failed, cancelled, or skipped")
 	}
 	return nil
 }
 
 func validStatus(status Status) bool {
 	switch status {
-	case StatusQueued, StatusWaiting, StatusRunning, StatusSucceeded, StatusFailed, StatusCancelled, StatusSkipped:
+	case StatusQueued, StatusWaiting, StatusManual, StatusRunning, StatusSucceeded, StatusFailed, StatusCancelled, StatusSkipped:
 		return true
 	default:
 		return false
@@ -1738,9 +1744,11 @@ func validLogStream(stream LogStream) bool {
 func canTransition(current, next Status) bool {
 	switch current {
 	case StatusQueued:
-		return next == StatusWaiting || next == StatusRunning || next == StatusFailed || next == StatusCancelled || next == StatusSkipped
+		return next == StatusWaiting || next == StatusManual || next == StatusRunning || next == StatusFailed || next == StatusCancelled || next == StatusSkipped
 	case StatusWaiting:
 		return next == StatusQueued || next == StatusFailed || next == StatusCancelled || next == StatusSkipped
+	case StatusManual:
+		return next == StatusQueued || next == StatusCancelled || next == StatusSkipped
 	case StatusRunning:
 		return next == StatusSucceeded || next == StatusFailed || next == StatusCancelled || next == StatusSkipped
 	default:

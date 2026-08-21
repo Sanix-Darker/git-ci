@@ -10,9 +10,10 @@ binary="$runtime/gci"
 port="${GCI_WEB_E2E_PORT:-18089}"
 
 rm -rf "$runtime"
-mkdir -p "$project_root/alpha-service/.github/workflows" "$project_root/beta-worker" "$state_dir"
+mkdir -p "$project_root/alpha-service/.github/workflows" "$project_root/beta-worker" "$project_root/manual-service" "$state_dir"
 printf '%s\n' '# alpha service' >"$project_root/alpha-service/README.md"
 printf '%s\n' '# beta worker' >"$project_root/beta-worker/README.md"
+printf '%s\n' '# manual service' >"$project_root/manual-service/README.md"
 cat >"$project_root/alpha-service/.github/workflows/ci.yml" <<'YAML'
 name: Alpha CI
 on:
@@ -227,6 +228,26 @@ jobs:
       - name: Probe GPU
         run: printf 'gpu ready\n'
 YAML
+cat >"$project_root/manual-service/.gitlab-ci.yml" <<'YAML'
+stages: [build, deploy, verify]
+manual-prepare:
+  stage: build
+  script:
+    - printf 'manual prepared\n'
+manual-release:
+  stage: deploy
+  needs: [manual-prepare]
+  when: manual
+  allow_failure: false
+  manual_confirmation: Release this commit to production?
+  script:
+    - printf 'release %s\n' "$RELEASE_NOTE"
+manual-verify:
+  stage: verify
+  needs: [manual-release]
+  script:
+    - printf 'manual verified\n'
+YAML
 cat >"$project_root/beta-worker/.gitlab-ci.yml" <<'YAML'
 stages: [test]
 default:
@@ -245,7 +266,7 @@ worker-test:
       junit: report.xml
 YAML
 
-for project in "$project_root/alpha-service" "$project_root/beta-worker"; do
+for project in "$project_root/alpha-service" "$project_root/beta-worker" "$project_root/manual-service"; do
 	git -C "$project" init --quiet --initial-branch=main
 	git -C "$project" config user.email git-ci@example.invalid
 	git -C "$project" config user.name "git-ci E2E"
