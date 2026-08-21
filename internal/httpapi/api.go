@@ -251,7 +251,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
+		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
 	})
 }
 

@@ -25,6 +25,8 @@ type workflowCommandState struct {
 	dynamicMasks int
 	stopToken    string
 	counts       map[string]int
+	sections     map[string][]workflowLogSection
+	sectionCount map[string]int
 }
 
 type workflowCommand struct {
@@ -36,11 +38,33 @@ type workflowCommand struct {
 type workflowCommandResult struct {
 	line       string
 	annotation *store.AppendStepAnnotationParams
+	section    *workflowLogSectionEvent
 	diagnostic string
 }
 
+type workflowLogSection struct {
+	ID, Name, MatchName string
+	Provider            store.LogSectionProvider
+	Depth               int
+	Collapsed           bool
+}
+
+type workflowLogSectionEvent struct {
+	workflowLogSection
+	Start bool
+}
+
+type gitLabSectionMarker struct {
+	Start     bool
+	Name      string
+	Header    string
+	Collapsed bool
+}
+
 func newWorkflowCommandState(secrets map[string]string) *workflowCommandState {
-	state := &workflowCommandState{counts: make(map[string]int)}
+	state := &workflowCommandState{
+		counts: make(map[string]int), sections: make(map[string][]workflowLogSection), sectionCount: make(map[string]int),
+	}
 	for _, secret := range secrets {
 		state.addMaskLocked(secret, false)
 	}
@@ -74,6 +98,27 @@ func (state *workflowCommandState) process(stepID string, stream store.LogStream
 			state.stopToken = ""
 			result.line = "::***::"
 		}
+		return result
+	}
+	if marker, candidate, err := parseGitLabSectionMarker(line); candidate {
+		if err != nil {
+			result.line = "gitlab section marker ignored"
+			result.diagnostic = "workflow command ignored: invalid GitLab log section marker"
+			return result
+		}
+		var event workflowLogSectionEvent
+		if marker.Start {
+			event, err = state.startSectionLocked(stepID, store.LogSectionGitLab, marker.Name, marker.Header, marker.Collapsed)
+		} else {
+			event, err = state.endSectionLocked(stepID, store.LogSectionGitLab, marker.Name)
+		}
+		if err != nil {
+			result.line = "gitlab section marker ignored"
+			result.diagnostic = "workflow command ignored: invalid GitLab log section nesting"
+			return result
+		}
+		result.line = event.Name
+		result.section = &event
 		return result
 	}
 	command, candidate, err := parseWorkflowCommand(line)
@@ -120,8 +165,58 @@ func (state *workflowCommandState) process(stepID string, stream store.LogStream
 		state.counts[stepID]++
 		result.annotation = &annotation
 		result.line = state.redactLocked(line)
+	case "group":
+		event, sectionErr := state.startSectionLocked(stepID, store.LogSectionGitHub, command.data, command.data, false)
+		if sectionErr != nil {
+			result.line = "github log group ignored"
+			result.diagnostic = "workflow command ignored: invalid GitHub log group"
+			return result
+		}
+		result.line = event.Name
+		result.section = &event
+	case "endgroup":
+		event, sectionErr := state.endSectionLocked(stepID, store.LogSectionGitHub, "")
+		if sectionErr != nil {
+			result.line = "github log group ignored"
+			result.diagnostic = "workflow command ignored: unmatched GitHub endgroup"
+			return result
+		}
+		result.line = event.Name
+		result.section = &event
 	}
 	return result
+}
+
+func (state *workflowCommandState) startSectionLocked(stepID string, provider store.LogSectionProvider, matchName, displayName string, collapsed bool) (workflowLogSectionEvent, error) {
+	displayName = strings.TrimSpace(state.redactLocked(stripANSIControl(displayName)))
+	matchName = strings.TrimSpace(stripANSIControl(matchName))
+	if displayName == "" || matchName == "" || len(displayName) > store.MaxLogSectionNameSize || len(matchName) > store.MaxLogSectionNameSize {
+		return workflowLogSectionEvent{}, fmt.Errorf("invalid log section name")
+	}
+	stack := state.sections[stepID]
+	if len(stack) >= store.MaxLogSectionDepth || state.sectionCount[stepID] >= store.MaxStepLogSections {
+		return workflowLogSectionEvent{}, fmt.Errorf("log section limit reached")
+	}
+	state.sectionCount[stepID]++
+	section := workflowLogSection{
+		ID: fmt.Sprintf("%s:section:%d", stepID, state.sectionCount[stepID]), Name: displayName,
+		MatchName: matchName, Provider: provider, Depth: len(stack), Collapsed: collapsed,
+	}
+	state.sections[stepID] = append(stack, section)
+	return workflowLogSectionEvent{workflowLogSection: section, Start: true}, nil
+}
+
+func (state *workflowCommandState) endSectionLocked(stepID string, provider store.LogSectionProvider, matchName string) (workflowLogSectionEvent, error) {
+	stack := state.sections[stepID]
+	if len(stack) == 0 {
+		return workflowLogSectionEvent{}, fmt.Errorf("no open log section")
+	}
+	section := stack[len(stack)-1]
+	if section.Provider != provider || (matchName != "" && section.MatchName != matchName) {
+		return workflowLogSectionEvent{}, fmt.Errorf("log section does not match")
+	}
+	state.sections[stepID] = stack[:len(stack)-1]
+	return workflowLogSectionEvent{workflowLogSection: section}, nil
 }
 
 func (state *workflowCommandState) annotationLocked(stepID string, command workflowCommand) (store.AppendStepAnnotationParams, error) {
@@ -276,7 +371,97 @@ func workflowCommandName(line string) string {
 }
 
 func isSupportedWorkflowCommand(name string) bool {
-	return name == "add-mask" || name == "stop-commands" || name == "notice" || name == "warning" || name == "error"
+	return name == "add-mask" || name == "stop-commands" || name == "notice" || name == "warning" || name == "error" || name == "group" || name == "endgroup"
+}
+
+func parseGitLabSectionMarker(line string) (gitLabSectionMarker, bool, error) {
+	const prefix = "\x1b[0Ksection_"
+	if !strings.HasPrefix(line, prefix) {
+		return gitLabSectionMarker{}, false, nil
+	}
+	markerText, header := line, ""
+	if split := strings.IndexByte(line, '\r'); split >= 0 {
+		markerText, header = line[:split], line[split+1:]
+	}
+	remainder := strings.TrimPrefix(markerText, prefix)
+	kindEnd := strings.IndexByte(remainder, ':')
+	if kindEnd < 0 {
+		return gitLabSectionMarker{}, true, fmt.Errorf("missing marker kind")
+	}
+	kind, remainder := strings.ToLower(remainder[:kindEnd]), remainder[kindEnd+1:]
+	timestampEnd := strings.IndexByte(remainder, ':')
+	if timestampEnd < 0 || !allDigits(remainder[:timestampEnd]) {
+		return gitLabSectionMarker{}, true, fmt.Errorf("invalid marker timestamp")
+	}
+	nameAndAttributes := strings.TrimSpace(remainder[timestampEnd+1:])
+	attributes := ""
+	if attributeStart := strings.IndexByte(nameAndAttributes, '['); attributeStart >= 0 {
+		if !strings.HasSuffix(nameAndAttributes, "]") {
+			return gitLabSectionMarker{}, true, fmt.Errorf("invalid marker attributes")
+		}
+		attributes = nameAndAttributes[attributeStart+1 : len(nameAndAttributes)-1]
+		nameAndAttributes = nameAndAttributes[:attributeStart]
+	}
+	if !validGitLabSectionName(nameAndAttributes) {
+		return gitLabSectionMarker{}, true, fmt.Errorf("invalid marker name")
+	}
+	marker := gitLabSectionMarker{Name: nameAndAttributes}
+	switch kind {
+	case "start":
+		marker.Start = true
+		marker.Header = strings.TrimSpace(stripANSIControl(header))
+		if marker.Header == "" {
+			marker.Header = marker.Name
+		}
+		for _, attribute := range strings.Split(attributes, ",") {
+			marker.Collapsed = marker.Collapsed || strings.EqualFold(strings.TrimSpace(attribute), "collapsed=true")
+		}
+	case "end":
+	default:
+		return gitLabSectionMarker{}, true, fmt.Errorf("invalid marker kind")
+	}
+	return marker, true, nil
+}
+
+func stripANSIControl(value string) string {
+	var output strings.Builder
+	for index := 0; index < len(value); index++ {
+		if value[index] == '\x1b' && index+1 < len(value) && value[index+1] == '[' {
+			index += 2
+			for index < len(value) && (value[index] < '@' || value[index] > '~') {
+				index++
+			}
+			continue
+		}
+		if value[index] != '\r' && (value[index] >= ' ' || value[index] == '\t') {
+			output.WriteByte(value[index])
+		}
+	}
+	return output.String()
+}
+
+func allDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func validGitLabSectionName(value string) bool {
+	if value == "" || len(value) > store.MaxLogSectionNameSize {
+		return false
+	}
+	for _, character := range value {
+		if !unicode.IsLetter(character) && !unicode.IsDigit(character) && character != '_' && character != '-' && character != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func validStopToken(value string) bool {

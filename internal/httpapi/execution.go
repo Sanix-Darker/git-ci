@@ -93,6 +93,7 @@ func (a *API) handleRunLogs(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	lines := make([]store.LogLine, 0)
+	sections := make([]store.StepLogSection, 0)
 	for _, job := range graph.Jobs {
 		for _, step := range job.Steps {
 			stepLines, err := a.store.ListLogLines(request.Context(), step.ID)
@@ -101,10 +102,17 @@ func (a *API) handleRunLogs(writer http.ResponseWriter, request *http.Request) {
 				return
 			}
 			lines = append(lines, stepLines...)
+			stepSections, err := a.store.ListStepLogSections(request.Context(), step.ID)
+			if err != nil {
+				a.writeStoreError(writer, err, "failed to list log sections")
+				return
+			}
+			sections = append(sections, stepSections...)
 		}
 	}
 	sort.Slice(lines, func(i, j int) bool { return lines[i].Sequence < lines[j].Sequence })
-	writeJSON(writer, http.StatusOK, map[string]any{"items": lines, "count": len(lines)})
+	sort.Slice(sections, func(i, j int) bool { return sections[i].StartSequence < sections[j].StartSequence })
+	writeJSON(writer, http.StatusOK, map[string]any{"items": lines, "count": len(lines), "sections": sections, "sectionCount": len(sections)})
 }
 
 func (a *API) writeStoreError(writer http.ResponseWriter, err error, message string) {

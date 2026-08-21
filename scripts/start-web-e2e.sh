@@ -60,6 +60,12 @@ jobs:
           printf '::pause-token-123::\n'
           printf '::warning file=src/app.go,line=13::real warning\n'
           printf '::error file=src/app.go,line=14,title=Static check::diagnostic error\n'
+          printf '::group::Runtime diagnostics\n'
+          printf 'github group payload\n'
+          printf '::endgroup::\n'
+          printf '\033[0Ksection_start:1:gitlab_setup[collapsed=true]\r\033[0KGitLab setup\n'
+          printf 'gitlab section payload\n'
+          printf '\033[0Ksection_end:2:gitlab_setup\r\033[0K\n'
   deploy:
     needs: [test]
     runs-on: ubuntu-latest

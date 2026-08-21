@@ -182,6 +182,17 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
 	await expect(secretLogs).toContainText("dynamic=***");
 	await expect(secretLogs).not.toContainText("***-runtime");
   await expect(secretLogs).not.toContainText("e2e-super-secret");
+	const logGroups = secretLogs.locator(".log-group");
+	await expect(logGroups).toHaveCount(2);
+	await expect(logGroups.nth(0).locator("summary")).toContainText("Runtime diagnostics");
+	await expect(logGroups.nth(0)).toHaveAttribute("open", "");
+	await expect(logGroups.nth(0)).toContainText("github group payload");
+	await expect(logGroups.nth(1).locator("summary")).toContainText("GitLab setup");
+	await expect(logGroups.nth(1)).not.toHaveAttribute("open", "");
+	await logGroups.nth(1).locator("summary").click();
+	await expect(logGroups.nth(1)).toContainText("gitlab section payload");
+	await expect(secretLogs).not.toContainText("section_start");
+	await expect(secretLogs).not.toContainText("::group::");
 	const annotations = page.getByLabel("Annotations for Secret mask");
 	await expect(annotations.locator(".step-annotation")).toHaveCount(3);
 	await expect(annotations).toContainText("Compile hint");

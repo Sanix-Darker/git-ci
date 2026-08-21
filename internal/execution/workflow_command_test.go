@@ -26,11 +26,34 @@ func TestWorkflowCommandStateMasksStopsAndBuildsAnnotations(t *testing.T) {
 	if result.annotation == nil || result.annotation.Level != store.AnnotationWarning || result.annotation.File != "src,app.go" || result.annotation.Title != "Compile:hint" || result.annotation.StartLine == nil || *result.annotation.StartLine != 12 || result.annotation.Message != "bad\nline" {
 		t.Fatalf("annotation = %#v", result.annotation)
 	}
+	group := state.process("step", store.LogStreamStdout, "::GrOuP::Compile static-secret")
+	if group.section == nil || !group.section.Start || group.section.Provider != store.LogSectionGitHub || group.section.Name != "Compile ***" || group.line != "Compile ***" {
+		t.Fatalf("group start = %#v", group)
+	}
+	end := state.process("step", store.LogStreamStdout, "::endgroup::")
+	if end.section == nil || end.section.Start || end.section.ID != group.section.ID {
+		t.Fatalf("group end = %#v", end)
+	}
+}
+
+func TestWorkflowCommandStateParsesGitLabCollapsedSections(t *testing.T) {
+	state := newWorkflowCommandState(nil)
+	start := state.process("step", store.LogStreamStdout, "\x1b[0Ksection_start:1700000000:compile[collapsed=true]\r\x1b[0K\x1b[36mCompile project\x1b[0m")
+	if start.section == nil || !start.section.Start || start.section.Provider != store.LogSectionGitLab || !start.section.Collapsed || start.section.Name != "Compile project" || strings.Contains(start.line, "\x1b") {
+		t.Fatalf("GitLab section start = %#v", start)
+	}
+	end := state.process("step", store.LogStreamStdout, "\x1b[0Ksection_end:1700000001:compile\r\x1b[0K")
+	if end.section == nil || end.section.Start || end.section.ID != start.section.ID {
+		t.Fatalf("GitLab section end = %#v", end)
+	}
+	if unmatched := state.process("step", store.LogStreamStdout, "::endgroup::"); unmatched.diagnostic == "" {
+		t.Fatalf("unmatched endgroup = %#v", unmatched)
+	}
 }
 
 func TestWorkflowCommandStateRejectsUnsafeCommands(t *testing.T) {
 	state := newWorkflowCommandState(nil)
-	for _, line := range []string{"::add-mask", "::stop-commands::bad token", "::warning line=no::message", "::error::"} {
+	for _, line := range []string{"::add-mask", "::stop-commands::bad token", "::warning line=no::message", "::error::", "::group::"} {
 		result := state.process("step", store.LogStreamStdout, line)
 		if result.diagnostic == "" {
 			t.Fatalf("unsafe command %q had no diagnostic: %#v", line, result)

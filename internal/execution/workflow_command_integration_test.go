@@ -13,7 +13,7 @@ func TestE2EWorkflowCommandsMaskAcrossStepsAndPersistAnnotations(t *testing.T) {
 	writeManagerWorkflow(t, filepath.Join(root, ".github", "workflows", "commands.yml"), strings.Join([]string{
 		"name: Commands", "on: workflow_dispatch", "jobs:", "  first:", "    runs-on: linux", "    steps:",
 		"      - name: Register", "        run: |", "          value='runtime-mask-value'", "          printf '::add-mask::%s\\n' \"$value\"", "          printf 'first=%s\\n' \"$value\"",
-		"      - name: Diagnose", "        run: |", "          printf 'summary=%s\\n' 'runtime-mask-value' >> \"$GITHUB_STEP_SUMMARY\"", "          printf '::notice file=src/app.go,line=12,col=4,title=Compile hint::masked runtime-mask-value\\n'", "          printf '::stop-commands::pause-token-123\\n'", "          printf '::warning::ignored warning\\n'", "          printf '::pause-token-123::\\n'", "          printf '::warning file=src/app.go,line=13::real warning\\n'", "          printf '::error file=src/app.go,line=14::diagnostic error\\n'",
+		"      - name: Diagnose", "        run: |", "          printf 'summary=%s\\n' 'runtime-mask-value' >> \"$GITHUB_STEP_SUMMARY\"", "          printf '::notice file=src/app.go,line=12,col=4,title=Compile hint::masked runtime-mask-value\\n'", "          printf '::stop-commands::pause-token-123\\n'", "          printf '::warning::ignored warning\\n'", "          printf '::pause-token-123::\\n'", "          printf '::warning file=src/app.go,line=13::real warning\\n'", "          printf '::error file=src/app.go,line=14::diagnostic error\\n'", "          printf '::group::GitHub block\\n'", "          printf 'github body\\n'", "          printf '::endgroup::\\n'", "          printf '\\033[0Ksection_start:1:gitlab_setup[collapsed=true]\\r\\033[0KGitLab setup\\n'", "          printf 'gitlab body\\n'", "          printf '\\033[0Ksection_end:2:gitlab_setup\\r\\033[0K\\n'",
 		"  second:", "    runs-on: linux", "    needs: first", "    steps:", "      - name: Isolated", "        run: printf 'isolated=%s\\n' 'runtime-mask-value'",
 	}, "\n"))
 	workflow := syncManagerWorkflow(t, ctx, manager, project.ID)
@@ -31,6 +31,10 @@ func TestE2EWorkflowCommandsMaskAcrossStepsAndPersistAnnotations(t *testing.T) {
 	}
 	if diagnose.Annotations[0].Message != "masked ***" || diagnose.Annotations[1].Message != "real warning" || diagnose.Annotations[2].Level != store.AnnotationError {
 		t.Fatalf("annotations = %#v", diagnose.Annotations)
+	}
+	sections, err := database.ListStepLogSections(ctx, diagnose.ID)
+	if err != nil || len(sections) != 2 || sections[0].Provider != store.LogSectionGitHub || sections[0].EndSequence == nil || sections[1].Provider != store.LogSectionGitLab || !sections[1].Collapsed || sections[1].EndSequence == nil {
+		t.Fatalf("log sections = %#v, %v", sections, err)
 	}
 	for _, step := range graph.Jobs[0].Steps {
 		lines, err := database.ListLogLines(ctx, step.ID)

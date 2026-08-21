@@ -554,9 +554,11 @@
 
 {{define "semantic_badges"}}{{if .}}<span class="semantic-badges">{{range .}}<b class="semantic-chip {{.Tone}}" title="{{.Hint}}">{{.Label}}</b>{{end}}</span>{{end}}{{end}}
 
+{{define "log_entries"}}{{range .}}{{if .Group}}<details class="log-group" {{if .Group.Open}}open{{end}}><summary><span><i class="dot {{.Group.Dot}}"></i><b>{{upper .Group.Provider}}</b>{{.Group.Name}}</span><small>{{pad2 .Group.LineCount}} LINES</small></summary><div class="log-group-body">{{template "log_entries" .Group.Entries}}</div></details>{{else if .Line}}<div class="log-line"><span>{{pad2 .Line.Sequence}}</span><b>{{.Line.Stream}}</b><pre>{{.Line.Message}}</pre></div>{{end}}{{end}}{{end}}
+
 {{define "step_logs"}}
 <div class="log-console log-console-loaded" aria-label="Logs for {{.StepName}}" aria-busy="false" data-terminal="{{.Terminal}}" {{if not .Terminal}}hx-get="/app/runs/{{.RunID}}/steps/{{.StepID}}/logs" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
-  {{range .Logs}}<div><span>{{pad2 .Sequence}}</span><b>{{.Stream}}</b><pre>{{.Message}}</pre></div>{{else}}<p>WAITING FOR OUTPUT</p>{{end}}
+  {{if .Entries}}{{template "log_entries" .Entries}}{{else}}{{range .Logs}}<div class="log-line"><span>{{pad2 .Sequence}}</span><b>{{.Stream}}</b><pre>{{.Message}}</pre></div>{{else}}<p>WAITING FOR OUTPUT</p>{{end}}{{end}}
 </div>
 {{end}}
 

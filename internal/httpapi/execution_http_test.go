@@ -175,23 +175,36 @@ jobs:
 		t.Fatalf("run summary page status = %d, body=%s", runPage.Code, runPage.Body.String())
 	}
 
-	if _, err := fixture.store.AppendLogLine(t.Context(), store.AppendLogLineParams{StepID: graph.Jobs[0].Steps[0].ID, Stream: store.LogStreamStdout, Message: "prepare output"}); err != nil {
+	prepareLine, err := fixture.store.AppendLogLine(t.Context(), store.AppendLogLineParams{StepID: graph.Jobs[0].Steps[0].ID, Stream: store.LogStreamStdout, Message: "prepare output"})
+	if err != nil {
 		t.Fatalf("append stdout log: %v", err)
 	}
 	if _, err := fixture.store.AppendLogLine(t.Context(), store.AppendLogLineParams{StepID: graph.Jobs[1].Steps[0].ID, Stream: store.LogStreamStderr, Message: "verify warning"}); err != nil {
 		t.Fatalf("append stderr log: %v", err)
+	}
+	section, err := fixture.store.StartStepLogSection(t.Context(), store.StartStepLogSectionParams{ID: "api-section", StepID: graph.Jobs[0].Steps[0].ID, Provider: store.LogSectionGitHub, Name: "Prepare group", StartSequence: prepareLine.Sequence})
+	if err != nil {
+		t.Fatalf("start API log section: %v", err)
+	}
+	if _, err := fixture.store.FinishStepLogSection(t.Context(), store.FinishStepLogSectionParams{ID: section.ID, StepID: section.StepID, EndSequence: prepareLine.Sequence}); err != nil {
+		t.Fatalf("finish API log section: %v", err)
 	}
 	logs := fixture.request(t, http.MethodGet, "/api/v1/runs/"+run.ID+"/logs", nil, "", cookie, "", nil)
 	if logs.Code != http.StatusOK {
 		t.Fatalf("run logs status = %d, body=%s", logs.Code, logs.Body.String())
 	}
 	var logsPayload struct {
-		Items []store.LogLine `json:"items"`
-		Count int             `json:"count"`
+		Items        []store.LogLine        `json:"items"`
+		Count        int                    `json:"count"`
+		Sections     []store.StepLogSection `json:"sections"`
+		SectionCount int                    `json:"sectionCount"`
 	}
 	decodeResponse(t, logs, &logsPayload)
 	if logsPayload.Count != 2 || len(logsPayload.Items) != 2 || logsPayload.Items[0].Sequence != 1 || logsPayload.Items[0].Message != "prepare output" || logsPayload.Items[1].Sequence != 2 || logsPayload.Items[1].Stream != store.LogStreamStderr {
 		t.Fatalf("run logs = %#v, want ordered durable logs", logsPayload)
+	}
+	if logsPayload.SectionCount != 1 || len(logsPayload.Sections) != 1 || logsPayload.Sections[0].Name != "Prepare group" {
+		t.Fatalf("run log sections = %#v", logsPayload.Sections)
 	}
 
 	cancelMissingCSRF := fixture.request(t, http.MethodPost, "/api/v1/runs/"+run.ID+"/cancel", nil, "", cookie, "", nil)
