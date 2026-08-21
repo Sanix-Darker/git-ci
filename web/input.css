@@ -131,6 +131,10 @@
 .operator button:hover { border-color: #fff; color: #fff; }
 .workspace { min-width: 0; padding: clamp(1.5rem, 4vw, 4rem); animation: swap-in 160ms steps(3, end) both; }
 @keyframes swap-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes swap-in-contained { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 720px), (prefers-reduced-motion: reduce) {
+  .workspace { animation-name: swap-in-contained; }
+}
 .workspace-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 3rem; margin-bottom: 3rem; border-bottom: 1px solid #383838; padding-bottom: 2rem; }
 .workspace-header h1 { margin: .5rem 0 0; font-family: var(--font-display); font-size: clamp(2.8rem, 6vw, 6rem); letter-spacing: -.055em; line-height: .85; }
 .workspace-header > p { max-width: 48ch; margin: 0; color: #727272; }
@@ -265,6 +269,8 @@
 .compact-list form { display: inline-flex; }
 .compact-list button { border: 1px solid #383838; padding: .4rem .55rem; background: #080808; color: #727272; cursor: pointer; font-size: .52rem; font-weight: 900; }
 .compact-list button:hover { border-color: #fff; color: #fff; }
+.runner-inventory .compact-list article > div:last-child { flex-wrap: wrap; justify-content: flex-end; }
+.runner-inventory .compact-list article > div:last-child code { overflow-wrap: anywhere; }
 .schedule-list article > div:last-child { flex-wrap: wrap; justify-content: flex-end; }
 .deployment-table .data-head, .deployment-table .data-row { grid-template-columns: .8fr 1.2fr 1fr .7fr 1.15fr 24px; }
 .service-ledger { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 1rem; border: 1px solid #383838; }
@@ -321,6 +327,8 @@
   .form-pair, .service-ledger { grid-template-columns: 1fr; }
   .service-ledger article + article { border-top: 1px solid #383838; border-left: 0; }
   .compact-list article { align-items: flex-start; flex-direction: column; }
+  .runner-inventory .compact-list article > div:last-child { width: 100%; justify-content: flex-start; }
+  .runner-inventory .compact-list article > div:last-child code { flex-basis: 100%; white-space: normal; }
   .site-footer { grid-template-columns: 1fr; }
   .site-footer > * { min-height: 48px; }
   .site-footer > * + * { border-top: 1px solid #383838; border-left: 0; }
