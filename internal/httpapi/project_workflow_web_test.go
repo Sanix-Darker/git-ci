@@ -85,4 +85,22 @@ jobs:
 			t.Fatalf("project page missing %q", expected)
 		}
 	}
+
+	request = httptest.NewRequest(http.MethodGet, "/app/projects/"+projects[0].ID, nil)
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	fixture.handler.ServeHTTP(response, request)
+	for _, expected := range []string{"PROJECT WORKSPACE", "Release pipeline", "Pipeline dependency graph", "RUN WORKFLOW", "LOCAL COMMIT WATCH", "EXECUTION SIGNAL", "RECENT RUNS", `name="returnProject"`} {
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("project workspace missing %q: status=%d body=%s", expected, response.Code, response.Body.String())
+		}
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/app/projects/missing", nil)
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	fixture.handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("missing project workspace status=%d body=%s", response.Code, response.Body.String())
+	}
 }

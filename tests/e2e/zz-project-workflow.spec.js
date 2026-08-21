@@ -105,10 +105,21 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await page.goto("/app/projects");
   const projectCard = page.locator("details.resource-card").filter({ hasText: "alpha-service" });
   await projectCard.locator("summary").click();
-  const watcher = projectCard.locator("form.commit-trigger");
+  await projectCard.getByRole("link", { name: /OPEN PROJECT/ }).click();
+  await expect(page).toHaveURL(/\/app\/projects\/[A-Za-z0-9_-]+$/);
+  const workspace = page.getByLabel("Project workspace");
+  await expect(workspace).toContainText("alpha-service");
+  await expect(workspace).toContainText("LOCAL COMMIT WATCH");
+  const workspaceWorkflow = page.locator("details.workflow-detail").filter({ hasText: "Alpha CI" });
+  await workspaceWorkflow.locator("summary").click();
+  await expect(workspaceWorkflow.getByLabel("Pipeline dependency graph")).toContainText("AFTER PREPARE");
+  await expect(workspaceWorkflow.getByRole("button", { name: /RUN WORKFLOW/ })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const watcher = workspace.locator("form.commit-trigger");
   await watcher.locator('input[name="enabled"]').check();
   await watcher.getByRole("button", { name: /SAVE COMMIT WATCH/ }).click();
   await expect(page.getByRole("status").filter({ hasText: "COMMIT WATCH ENABLED" })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/projects\/[A-Za-z0-9_-]+$/);
 
   const repository = `${process.cwd()}/build/e2e-web/projects/alpha-service`;
   execFileSync("git", ["-C", repository, "commit", "--allow-empty", "-m", "E2E watched commit"]);

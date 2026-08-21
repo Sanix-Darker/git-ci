@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sanix-darker/git-ci/internal/auth"
 	"github.com/sanix-darker/git-ci/internal/projects"
@@ -128,6 +129,60 @@ func (a *API) handleAppPage(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	a.renderAppSection(writer, request, section, "", http.StatusOK)
+}
+
+func (a *API) handleProjectPageWeb(writer http.ResponseWriter, request *http.Request) {
+	a.renderProjectWorkspace(writer, request, request.PathValue("project"), "", strings.TrimSpace(request.URL.Query().Get("notice")), http.StatusOK)
+}
+
+func (a *API) renderProjectWorkspace(writer http.ResponseWriter, request *http.Request, projectID, message, notice string, status int) {
+	principal := request.Context().Value(principalContextKey{}).(auth.Principal)
+	session, err := a.auth.CurrentSession(request)
+	if err != nil {
+		a.webUnauthorized(writer, request)
+		return
+	}
+	project, err := a.store.GetProject(request.Context(), projectID)
+	if err != nil {
+		var notFound *store.ErrNotFound
+		if errors.As(err, &notFound) {
+			http.NotFound(writer, request)
+			return
+		}
+		http.Error(writer, "failed to load project", http.StatusInternalServerError)
+		return
+	}
+	allProjects, err := a.store.ListProjects(request.Context())
+	if err != nil {
+		http.Error(writer, "failed to list projects", http.StatusInternalServerError)
+		return
+	}
+	data := webui.PageData{
+		Page: "projects", Title: project.Name, Kicker: "Project workspace",
+		Description: "Workflow definitions, dependency graphs, commit triggers, dispatch, and recent runs for one checkout.",
+		Actor:       principal.Subject, CSRFToken: session.CSRFToken, Version: a.version,
+		Error: message, Notice: notice, Projects: []store.Project{project},
+		Runners: runnerInventoryViews(a.execution.RunnerInventory()),
+	}
+	if err := a.populateExecutionPage(request.Context(), &data, ""); err != nil {
+		http.Error(writer, "failed to load project execution state", http.StatusInternalServerError)
+		return
+	}
+	if len(data.ProjectViews) != 1 {
+		http.Error(writer, "project execution state is incomplete", http.StatusInternalServerError)
+		return
+	}
+	selected := data.ProjectViews[0]
+	selected.Workspace = true
+	data.SelectedProject = &selected
+	data.ProjectViews = []webui.ProjectView{selected}
+	data.Projects = allProjects
+	data.RunFilter = webui.RunFilterView{Range: "all", Project: project.ID}
+	data.Telemetry = buildRunTelemetry(data.Runs, data.RunFilter, time.Now().UTC())
+	if isHTMX(request) && status >= 400 {
+		status = http.StatusOK
+	}
+	a.web.RenderApp(writer, status, data, isHTMX(request))
 }
 
 func (a *API) handleCreateProjectWeb(writer http.ResponseWriter, request *http.Request) {
@@ -332,6 +387,10 @@ func (a *API) webUnauthorized(writer http.ResponseWriter, request *http.Request)
 
 func isHTMX(request *http.Request) bool {
 	return strings.EqualFold(request.Header.Get("HX-Request"), "true")
+}
+
+func projectWorkspaceReturn(request *http.Request) string {
+	return strings.TrimSpace(request.FormValue("returnProject"))
 }
 
 func webSafeMethod(method string) bool {

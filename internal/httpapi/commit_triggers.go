@@ -12,6 +12,10 @@ func (a *API) handleProjectCommitTriggerWeb(writer http.ResponseWriter, request 
 	enabled := strings.EqualFold(strings.TrimSpace(request.FormValue("enabled")), "true")
 	policy, err := a.commitTriggers.Configure(request.Context(), request.PathValue("project"), request.FormValue("ref"), enabled)
 	if err != nil {
+		if projectID := projectWorkspaceReturn(request); projectID == request.PathValue("project") {
+			a.renderProjectWorkspace(writer, request, projectID, err.Error(), "", http.StatusUnprocessableEntity)
+			return
+		}
 		a.renderAppSection(writer, request, "projects", err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
@@ -19,6 +23,10 @@ func (a *API) handleProjectCommitTriggerWeb(writer http.ResponseWriter, request 
 	notice := "COMMIT WATCH DISABLED"
 	if policy.Enabled {
 		notice = "COMMIT WATCH ENABLED / BASELINE RECORDED"
+	}
+	if projectID := projectWorkspaceReturn(request); projectID == policy.ProjectID {
+		a.renderProjectWorkspace(writer, request, projectID, "", notice, http.StatusOK)
+		return
 	}
 	a.renderAppSectionState(writer, request, "projects", "", notice, http.StatusOK)
 }

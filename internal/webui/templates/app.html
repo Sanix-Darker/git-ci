@@ -299,6 +299,7 @@
 {{end}}
 
 {{define "projects_panel"}}
+{{if .SelectedProject}}{{template "project_workspace" .}}{{else}}
 <section class="resource-head">
   <div><p class="kicker">HOST REGISTRY</p><h2>VPS CHECKOUTS</h2><p>Approve a checkout once. Discovery only reads definitions; execution remains explicit.</p></div>
   <span class="count-block"><b>{{len .ProjectViews}}</b> REGISTERED</span>
@@ -334,16 +335,8 @@
         <summary><i class="dot {{.Dot}}"></i><span><strong>{{.Name}}</strong><small>{{.Slug}} / {{.CanonicalPath}}</small></span><span class="resource-stat"><b>{{.WorkflowCount}}</b> WORKFLOWS</span><span class="resource-open">OPEN</span></summary>
         <div class="resource-body">
           <div class="health-line"><i class="dot {{.Dot}}"></i><b>{{.Health}}</b><span>{{.HealthDetail}}</span></div>
-          <div class="resource-actions"><form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">SCAN WORKFLOWS</button></form></div>
-          <form class="commit-trigger" method="post" action="/app/projects/{{.ID}}/commit-trigger" hx-post="/app/projects/{{.ID}}/commit-trigger" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator">
-            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
-            <header><span><i class="dot {{.CommitTrigger.Dot}}"></i><b>LOCAL COMMIT WATCH</b></span><strong>{{.CommitTrigger.Status}}</strong></header>
-            <label><span>BRANCH</span><input name="ref" value="{{.CommitTrigger.Ref}}" autocomplete="off" required></label>
-            <label class="commit-trigger-toggle"><input type="checkbox" name="enabled" value="true" {{if .CommitTrigger.Enabled}}checked{{end}}><span>TRIGGER PUSH-CAPABLE WORKFLOWS ON NEW LOCAL COMMITS</span></label>
-            <dl><div><dt>BASELINE</dt><dd>{{if .CommitTrigger.LastCommitSHA}}<code>{{short .CommitTrigger.LastCommitSHA}}</code>{{else}}NOT SET{{end}}</dd></div><div><dt>LAST CHECK</dt><dd>{{if .CommitTrigger.LastCheckedAt}}{{.CommitTrigger.LastCheckedAt}}{{else}}NEVER{{end}}</dd></div></dl>
-            {{if .CommitTrigger.LastError}}<p class="commit-trigger-error">{{.CommitTrigger.LastError}}</p>{{end}}
-            <button type="submit">SAVE COMMIT WATCH -></button>
-          </form>
+          <div class="resource-actions"><form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">SCAN WORKFLOWS</button></form><a class="project-open" href="/app/projects/{{.ID}}" hx-get="/app/projects/{{.ID}}" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator">OPEN PROJECT -&gt;</a></div>
+          {{template "commit_trigger" .}}
           <div class="project-workflows">{{range .Workflows}}<a href="/app/workflows#workflow-{{.ID}}"><span>{{.Name}}</span><small>{{.Provider}} / {{.JobCount}} JOBS</small></a>{{else}}<p class="empty-state">NO DEFINITIONS FOUND. SCAN AFTER ADDING A SUPPORTED WORKFLOW FILE.</p>{{end}}</div>
         </div>
       </details>
@@ -352,14 +345,44 @@
   </article>
 </section>
 {{end}}
+{{end}}
+
+{{define "commit_trigger"}}
+<form class="commit-trigger" method="post" action="/app/projects/{{.ID}}/commit-trigger" hx-post="/app/projects/{{.ID}}/commit-trigger" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator">
+  <input type="hidden" name="_csrf" value="{{.CSRFToken}}">{{if .Workspace}}<input type="hidden" name="returnProject" value="{{.ID}}">{{end}}
+  <header><span><i class="dot {{.CommitTrigger.Dot}}"></i><b>LOCAL COMMIT WATCH</b></span><strong>{{.CommitTrigger.Status}}</strong></header>
+  <label><span>BRANCH</span><input name="ref" value="{{.CommitTrigger.Ref}}" autocomplete="off" required></label>
+  <label class="commit-trigger-toggle"><input type="checkbox" name="enabled" value="true" {{if .CommitTrigger.Enabled}}checked{{end}}><span>TRIGGER PUSH-CAPABLE WORKFLOWS ON NEW LOCAL COMMITS</span></label>
+  <dl><div><dt>BASELINE</dt><dd>{{if .CommitTrigger.LastCommitSHA}}<code>{{short .CommitTrigger.LastCommitSHA}}</code>{{else}}NOT SET{{end}}</dd></div><div><dt>LAST CHECK</dt><dd>{{if .CommitTrigger.LastCheckedAt}}{{.CommitTrigger.LastCheckedAt}}{{else}}NEVER{{end}}</dd></div></dl>
+  {{if .CommitTrigger.LastError}}<p class="commit-trigger-error">{{.CommitTrigger.LastError}}</p>{{end}}
+  <button type="submit">SAVE COMMIT WATCH -&gt;</button>
+</form>
+{{end}}
+
+{{define "project_workspace"}}
+{{with .SelectedProject}}
+<section class="project-workspace" aria-label="Project workspace">
+  <header class="project-workspace-head">
+    <div><a href="/app/projects" hx-get="/app/projects" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator">&lt;- PROJECT REGISTRY</a><p class="kicker">PROJECT / {{.Slug}}</p><h2>{{.Name}}</h2><code>{{.CanonicalPath}}</code></div>
+    <div class="project-workspace-mark"><span><i class="dot {{.Dot}}"></i>{{.Health}}</span><b>{{pad2 .WorkflowCount}}</b><small>WORKFLOWS</small></div>
+  </header>
+  <dl class="project-workspace-facts"><div><dt>CHECKOUT</dt><dd>{{.HealthDetail}}</dd></div><div><dt>COMMIT WATCH</dt><dd><i class="dot {{.CommitTrigger.Dot}}"></i>{{.CommitTrigger.Status}}</dd></div><div><dt>WATCH REF</dt><dd>{{.CommitTrigger.Ref}}</dd></div><div><dt>LAST COMMIT</dt><dd>{{if .CommitTrigger.LastCommitSHA}}{{short .CommitTrigger.LastCommitSHA}}{{else}}NOT SET{{end}}</dd></div></dl>
+  <div class="project-workspace-controls"><div><p class="kicker">SOURCE REFRESH</p><strong>PARSE WORKFLOW FILES AND REBUILD THE DAG CATALOG</strong></div><form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator"><input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="returnProject" value="{{.ID}}"><button type="submit">SYNC PROJECT -&gt;</button></form></div>
+  {{template "commit_trigger" .}}
+</section>
+{{end}}
+{{template "workflows_panel" .}}
+{{template "run_telemetry" .}}
+<section class="surface-card flush-card project-recent-runs"><div class="card-heading padded-heading"><div><p class="kicker">PROJECT HISTORY</p><h2>RECENT RUNS</h2></div><a href="/app/runs?project={{.SelectedProject.ID}}">VIEW ALL -&gt;</a></div>{{template "run_rows" .}}</section>
+{{end}}
 
 {{define "project_rows"}}
 <div class="project-rows">
   {{range .Projects}}
-  <article>
+  <a class="project-row-link" href="/app/projects/{{.ID}}" hx-get="/app/projects/{{.ID}}" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true" hx-indicator="#global-indicator">
     <div class="row-main"><i class="dot dot-green"></i><div><strong>{{.Name}}</strong><code>{{.Slug}}</code></div></div>
     <div class="row-meta"><span>{{.DefaultBranch}}</span><span>{{upper .SourceType}}</span></div>
-  </article>
+  </a>
   {{else}}<div class="empty-state"><i></i><p>NO PROJECTS REGISTERED</p></div>{{end}}
 </div>
 {{end}}
@@ -372,11 +395,15 @@
 <section class="action-strip">
   <div><p class="kicker">DISCOVERY</p><strong>READ PROVIDER FILES FROM REGISTERED CHECKOUTS</strong></div>
   <div class="action-strip-buttons">
-    {{range .Projects}}
+    {{with .SelectedProject}}
+    <form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="returnProject" value="{{.ID}}"><button type="submit">SYNC {{upper .Name}}</button>
+    </form>
+    {{else}}{{range .Projects}}
     <form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator">
       <input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">SYNC {{upper .Name}}</button>
     </form>
-    {{else}}<a href="/app/projects">REGISTER A PROJECT -></a>{{end}}
+    {{else}}<a href="/app/projects">REGISTER A PROJECT -></a>{{end}}{{end}}
   </div>
 </section>
 <section class="workflow-catalog">
@@ -393,6 +420,7 @@
       <div class="workflow-job-list">{{range .Jobs}}<article><header><span><b>{{.Name}}</b><small>{{if .Stage}}{{upper .Stage}}{{else}}DAG{{end}}{{if .Dependencies}} / NEEDS {{upper .Dependencies}}{{end}}</small>{{template "semantic_badges" .Badges}}</span><span>{{len .Steps}} STEPS</span></header>{{range .Steps}}<div class="workflow-step"><span>{{if .Action}}ACTION{{else}}RUN{{end}}</span><b>{{.Name}}</b><code>{{if .Command}}{{.Command}}{{else}}{{.Action}}{{end}}</code>{{template "semantic_badges" .Badges}}</div>{{end}}</article>{{end}}</div>
       <form class="manual-dispatch" method="post" action="/app/workflows/{{.ID}}/runs" hx-post="/app/workflows/{{.ID}}/runs" hx-disabled-elt="button" hx-indicator="#global-indicator">
         <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+        {{if $.SelectedProject}}<input type="hidden" name="returnProject" value="{{.ProjectID}}">{{end}}
         <label><span>REF</span><input name="ref" value="{{.DefaultRef}}" autocomplete="off" required></label>
         <label><span>COMMIT SHA <small>OPTIONAL PIN</small></span><input name="commitSha" placeholder="RESOLVE REF AT DISPATCH" autocomplete="off"></label>
         {{range .ManualInputs}}{{$input := .}}<label class="dispatch-input"><span>{{upper .Name}}{{if .Required}} *{{end}} <small>{{upper .Type}}</small></span>{{if eq .Type "choice"}}<select name="input.{{.Name}}" {{if .Required}}required{{end}}>{{range .Options}}<option value="{{.}}" {{if eq . $input.Default}}selected{{end}}>{{upper .}}</option>{{end}}</select>{{else if eq .Type "boolean"}}<select name="input.{{.Name}}" {{if .Required}}required{{end}}><option value="false" {{if eq .Default "false"}}selected{{end}}>FALSE</option><option value="true" {{if eq .Default "true"}}selected{{end}}>TRUE</option></select>{{else}}<input name="input.{{.Name}}" type="{{if eq .Type "number"}}number{{else}}text{{end}}" value="{{.Default}}" {{if .Required}}required{{end}} autocomplete="off">{{end}}{{if .Description}}<small>{{.Description}}</small>{{end}}</label>{{end}}
