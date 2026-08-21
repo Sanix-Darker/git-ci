@@ -47,7 +47,7 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(pipeline.getByLabel("Pipeline dependency graph")).toContainText("Prepare");
   await expect(pipeline.getByLabel("Pipeline dependency graph")).toContainText("AFTER PREPARE");
   await expect(pipeline.getByLabel("Pipeline dependency graph")).toContainText("Deploy");
-  await expect(pipeline.locator('input[name="ref"]')).toHaveValue("main");
+  await expect(pipeline.getByLabel("REF")).toHaveValue("main");
   await expect(pipeline.locator('input[name="commitSha"]')).toBeVisible();
   await expect(pipeline.getByRole("button", { name: /RUN WORKFLOW/ })).toBeVisible();
 
@@ -132,9 +132,14 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   const workspaceWorkflow = page.locator("details.workflow-detail").filter({ hasText: "Alpha CI" });
   await workspaceWorkflow.locator("summary").click();
   await expect(workspaceWorkflow.getByLabel("Pipeline dependency graph")).toContainText("AFTER PREPARE");
+  await expect(workspaceWorkflow.getByLabel("Workflow trigger policies")).toContainText("CRON 31 5 * * *");
   await expect(workspaceWorkflow.getByRole("button", { name: /RUN WORKFLOW/ })).toBeVisible();
+  await workspaceWorkflow.getByRole("button", { name: /ARM DECLARED CRON 31 5 \* \* \*/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "SCHEDULE ARMED" })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/projects\/[A-Za-z0-9_-]+$/);
   const automation = page.getByLabel("Project automation");
   await expect(automation).toContainText("04 SOURCES");
+  await expect(automation.locator(".schedule-list")).toContainText("31 5 * * *");
   const scheduleForm = automation.locator("form.schedule-form");
   const scheduleWorkflow = await scheduleForm.locator("option").filter({ hasText: "Alpha CI" }).getAttribute("value");
   await scheduleForm.getByLabel("WORKFLOW").selectOption(scheduleWorkflow);

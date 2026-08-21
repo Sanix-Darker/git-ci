@@ -1097,6 +1097,10 @@
 .trigger-policies p { display: flex; flex-wrap: wrap; gap: 0.35rem; margin: 0; }
 .trigger-policies b, .trigger-policies code, .trigger-policies em { padding: 0.3rem 0.4rem; border: 1px solid #444; color: #aaa; font-size: 0.52rem; font-style: normal; }
 .trigger-policies em { border-color: #8c3434; color: #e06d6d; }
+.declared-schedule-actions { display: grid; gap: .4rem; margin-top: .75rem; }
+.declared-schedule-form { display: grid; }
+.declared-schedule-form button { min-height: 38px; border: 1px solid #777; background: #0a0a0a; color: #f0f0f0; padding: .55rem .65rem; cursor: pointer; font: inherit; font-size: .54rem; font-weight: 900; text-align: left; transition: background-color 120ms steps(2, end), color 120ms steps(2, end), transform 120ms steps(2, end), border-color 120ms steps(2, end); }
+.declared-schedule-form button:hover, .declared-schedule-form button:focus-visible { border-color: #fff; background: #fff; color: #080808; transform: translateX(3px); }
 
 @media (max-width: 720px) {
   .resource-head { align-items: stretch; flex-direction: column; }
@@ -1134,6 +1138,9 @@
   .operator-flow-grid article:hover,
   .workflow-flow-mini article,
   .workflow-flow-mini article:hover,
+  .declared-schedule-form button,
+  .declared-schedule-form button:hover,
+  .declared-schedule-form button:focus-visible,
   .toast,
   .toast-leaving,
   .toast-close:hover,
