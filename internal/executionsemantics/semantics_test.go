@@ -94,9 +94,9 @@ func TestConditionEvaluationSubset(t *testing.T) {
 }
 
 func TestConditionUnsupportedSyntaxAndMissingContextFailClosed(t *testing.T) {
-	contract := CompileCondition("$CI_COMMIT_BRANCH =~ /^release/")
+	contract := CompileCondition("github.ref ~= 'refs/heads/main'")
 	if contract.Evaluable || !strings.Contains(contract.Diagnostic, "unsupported") {
-		t.Fatalf("regex syntax should be diagnosed: %#v", contract)
+		t.Fatalf("unknown syntax should be diagnosed: %#v", contract)
 	}
 	if result, err := EvaluateCondition("inputs.target == 'prod'", ConditionContext{}); err == nil || result {
 		t.Fatalf("missing context should fail closed, result=%v err=%v", result, err)
