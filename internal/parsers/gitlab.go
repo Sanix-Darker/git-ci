@@ -93,7 +93,7 @@ type GitlabJob struct {
 	// Variables and secrets
 	Variables        map[string]interface{} `yaml:"variables,omitempty"`
 	Secrets          map[string]interface{} `yaml:"secrets,omitempty"`
-	InheritVariables *bool                  `yaml:"inherit,omitempty"`
+	InheritVariables *bool                  `yaml:"-"`
 
 	// Dependencies
 	Needs               interface{} `yaml:"needs,omitempty"`
@@ -360,6 +360,11 @@ func (p *GitlabParser) parseJob(jobData map[string]interface{}) *GitlabJob {
 	// Parse variables
 	if variables, ok := jobData["variables"].(map[string]interface{}); ok {
 		job.Variables = variables
+	}
+	if inherit, ok := jobData["inherit"].(map[string]interface{}); ok {
+		if variables, ok := inherit["variables"].(bool); ok {
+			job.InheritVariables = &variables
+		}
 	}
 
 	// Parse control flow
@@ -672,6 +677,9 @@ func (p *GitlabParser) convertJob(
 	// Handle trigger
 	if glJob.Trigger != nil {
 		job.Trigger = p.parseTrigger(glJob.Trigger)
+		if job.Trigger != nil {
+			job.Trigger.InheritVariables = glJob.InheritVariables
+		}
 	}
 
 	return job
@@ -1055,9 +1063,44 @@ func (p *GitlabParser) parseTrigger(trigger interface{}) *types.TriggerConfig {
 		if strategy, ok := v["strategy"].(string); ok {
 			t.Strategy = strategy
 		}
+		if include, found := v["include"]; found {
+			t.Include, t.IncludeKind, t.IncludeCount = parseGitLabTriggerInclude(include)
+		}
+		if forward, ok := v["forward"].(map[string]interface{}); ok {
+			t.Forward = &types.TriggerForward{}
+			if value, ok := forward["yaml_variables"].(bool); ok {
+				t.Forward.YAMLVariables = &value
+			}
+			if value, ok := forward["pipeline_variables"].(bool); ok {
+				t.Forward.PipelineVariables = &value
+			}
+		}
 		return t
 	}
 	return nil
+}
+
+func parseGitLabTriggerInclude(include interface{}) (path, kind string, count int) {
+	switch value := include.(type) {
+	case string:
+		return value, "local", 1
+	case []interface{}:
+		if len(value) == 0 {
+			return "", "", 0
+		}
+		path, kind, _ = parseGitLabTriggerInclude(value[0])
+		return path, kind, len(value)
+	case map[string]interface{}:
+		for _, candidate := range []string{"local", "artifact", "project", "template", "remote"} {
+			if raw, found := value[candidate]; found {
+				text, _ := raw.(string)
+				return text, candidate, 1
+			}
+		}
+		return "", "unsupported", 1
+	default:
+		return "", "unsupported", 1
+	}
 }
 
 func (p *GitlabParser) convertVariables(vars map[string]interface{}) map[string]string {

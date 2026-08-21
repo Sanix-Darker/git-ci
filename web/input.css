@@ -1171,3 +1171,34 @@
 @media (max-width: 960px) { .release-layout, .project-release-grid, .release-edit-grid { grid-template-columns: minmax(0, 1fr); } .release-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); } .release-facts div:nth-child(4) { border-top: 1px solid #333; border-left: 0; } .release-facts div:nth-child(5) { border-top: 1px solid #333; } }
 @media (max-width: 720px) { .release-filters, .release-links, .release-facts { grid-template-columns: minmax(0, 1fr); } .release-facts div + div { border-top: 1px solid #333; border-left: 0; } .release-row { grid-template-columns: minmax(0, 1fr) auto; } .release-row > span:nth-child(2), .release-row > code, .release-row > time { grid-column: 1 / -1; } .project-releases > header, .release-detail-head { align-items: flex-start; flex-direction: column; } .release-detail-head > code { max-width: 100%; } .release-links article > a { grid-template-columns: minmax(0, 1fr) auto; } .release-links article > a code { grid-column: 1 / -1; } }
 @media (prefers-reduced-motion: reduce) { .release-row, .project-releases > header a, .release-back, .release-links article > a { transition: none !important; transform: none !important; } }
+
+.pipeline-upstream { display: grid; min-width: 0; grid-template-columns: minmax(12rem, 1fr) auto auto auto; gap: .75rem; align-items: center; border: 1px solid #555; background: #070707; padding: .8rem; }
+.pipeline-upstream > div { min-width: 0; }
+.pipeline-upstream strong { display: block; overflow: hidden; margin-top: .2rem; color: #eee; text-overflow: ellipsis; white-space: nowrap; }
+.pipeline-upstream > span { display: flex; align-items: center; gap: .4rem; color: #aaa; font-size: .57rem; font-weight: 900; }
+.pipeline-upstream > code { color: #777; }
+.pipeline-upstream > a { border: 1px solid #555; padding: .55rem; color: #eee; font-size: .57rem; font-weight: 900; text-decoration: none; transition: border-color 120ms steps(2, end), transform 120ms steps(2, end); }
+.pipeline-upstream > a:hover { border-color: #eee; transform: translateX(3px); }
+.downstream-card { width: 100%; min-width: 0; margin-top: .65rem; border: 1px solid #555; background: #090909; }
+.downstream-card summary { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .5rem; color: #aaa; cursor: pointer; font-size: .5rem; font-weight: 900; list-style: none; }
+.downstream-card summary::-webkit-details-marker { display: none; }
+.downstream-card summary span { display: flex; min-width: 0; align-items: center; gap: .35rem; }
+.downstream-card summary b { color: #777; }
+.downstream-card > a { display: grid; min-width: 0; gap: .3rem; border-top: 1px solid #333; padding: .6rem; color: #aaa; text-decoration: none; transition: background 120ms steps(2, end), padding-left 120ms steps(2, end); }
+.downstream-card > a:hover { background: #101010; padding-left: .8rem; }
+.downstream-card > a strong, .downstream-card > a small, .downstream-card > a code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.downstream-card > a strong { color: #eee; font-size: .62rem; }
+.downstream-detail { display: grid; min-width: 0; grid-template-columns: 7rem minmax(10rem, 1fr) auto auto; gap: .75rem; align-items: center; border-top: 1px solid #444; border-bottom: 1px solid #444; background: #090909; padding: .75rem; color: #aaa; text-decoration: none; transition: background 120ms steps(2, end), padding-left 120ms steps(2, end); }
+.downstream-detail:hover { background: #101010; padding-left: 1rem; }
+.downstream-detail > span { display: flex; align-items: center; gap: .4rem; font-size: .57rem; font-weight: 900; }
+.downstream-detail strong { overflow: hidden; color: #eee; text-overflow: ellipsis; white-space: nowrap; }
+.downstream-detail small { color: #777; }
+.downstream-detail b { color: #ddd; font-size: .55rem; }
+@media (max-width: 720px) {
+  .pipeline-upstream, .downstream-detail { grid-template-columns: minmax(0, 1fr); align-items: start; }
+  .pipeline-upstream > a { justify-self: stretch; text-align: center; }
+  .downstream-card > a strong, .downstream-card > a small, .downstream-card > a code { white-space: normal; overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pipeline-upstream > a, .downstream-card > a, .downstream-detail { transition: none !important; transform: none !important; }
+}

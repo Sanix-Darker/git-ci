@@ -29,6 +29,7 @@ func TestOpenFreshDatabaseMigratesAndConfiguresSQLite(t *testing.T) {
 		"schedules":          false,
 		"secrets":            false,
 		"deployment_targets": false,
+		"child_pipeline_links": false,
 	}
 	rows, err := store.db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type = 'table'`)
 	if err != nil {
@@ -85,8 +86,8 @@ func TestOpenFreshDatabaseMigratesAndConfiguresSQLite(t *testing.T) {
 	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&migrations); err != nil {
 		t.Fatalf("count migrations: %v", err)
 	}
-	if migrations != 18 {
-		t.Errorf("migration count = %d, want 18", migrations)
+	if migrations != 19 {
+		t.Errorf("migration count = %d, want 19", migrations)
 	}
 }
 

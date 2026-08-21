@@ -64,6 +64,7 @@ const (
 		timeout_minutes,
 		rollback_command,
 		verification_command,
+		child_pipeline_json,
 		started_at,
 		finished_at,
 		created_at,
@@ -197,15 +198,16 @@ type Run struct {
 // EnqueueRunParams contains all immutable execution input. Jobs and steps are
 // copied into the run transaction; later workflow upserts cannot alter them.
 type EnqueueRunParams struct {
-	ProjectID   string
-	WorkflowID  string
-	TriggerType string
-	Ref         string
-	CommitSHA   string
-	SourcePath  string
-	Environment json.RawMessage
-	Jobs        []EnqueueJob
-	Lineage     *EnqueueRunLineage
+	ProjectID     string
+	WorkflowID    string
+	TriggerType   string
+	Ref           string
+	CommitSHA     string
+	SourcePath    string
+	Environment   json.RawMessage
+	Jobs          []EnqueueJob
+	Lineage       *EnqueueRunLineage
+	ChildPipeline *EnqueueChildPipelineLink
 }
 
 // EnqueueJob is an immutable job snapshot. DependencyKeys is a JSON array of
@@ -223,6 +225,7 @@ type EnqueueJob struct {
 	TimeoutMinutes  int
 	RollbackCommand string
 	VerifyCommand   string
+	ChildPipeline   json.RawMessage
 	Steps           []EnqueueStep
 }
 
@@ -256,6 +259,7 @@ type Job struct {
 	TimeoutMinutes  int             `json:"timeoutMinutes"`
 	RollbackCommand *string         `json:"-"`
 	VerifyCommand   *string         `json:"-"`
+	ChildPipeline   json.RawMessage `json:"childPipeline,omitempty"`
 	StartedAt       *time.Time      `json:"startedAt,omitempty"`
 	FinishedAt      *time.Time      `json:"finishedAt,omitempty"`
 	CreatedAt       time.Time       `json:"createdAt"`
@@ -296,8 +300,10 @@ type JobGraph struct {
 // RunGraph is the durable graph view for one run. Dependency edges are the
 // JSON dependency keys attached to each Job.
 type RunGraph struct {
-	Run  Run        `json:"run"`
-	Jobs []JobGraph `json:"jobs"`
+	Run            Run                 `json:"run"`
+	Jobs           []JobGraph          `json:"jobs"`
+	ChildPipelines []ChildPipelineLink `json:"childPipelines,omitempty"`
+	ParentPipeline *ChildPipelineLink  `json:"parentPipeline,omitempty"`
 }
 
 // LogLine is one immutable, line-oriented worker output record.
@@ -595,8 +601,8 @@ func (s *Store) EnqueueRun(ctx context.Context, params EnqueueRunParams) (Run, e
 			INSERT INTO jobs (
 				id, run_id, job_key, name, status, runner, position,
 			environment_json, dependency_keys_json, allow_failure,
-			timeout_minutes, rollback_command, verification_command, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				timeout_minutes, rollback_command, verification_command, child_pipeline_json, created_at, updated_at
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`,
 			jobID,
 			run.ID,
@@ -611,6 +617,7 @@ func (s *Store) EnqueueRun(ctx context.Context, params EnqueueRunParams) (Run, e
 			job.TimeoutMinutes,
 			nullableText(job.RollbackCommand),
 			nullableText(job.VerifyCommand),
+			nullableJSON(job.ChildPipeline),
 			now.UnixMilli(),
 			now.UnixMilli(),
 		); err != nil {
@@ -657,6 +664,11 @@ func (s *Store) EnqueueRun(ctx context.Context, params EnqueueRunParams) (Run, e
 			return Run{}, err
 		}
 	}
+	if params.ChildPipeline != nil {
+		if err := insertChildPipelineLink(ctx, tx, run, *params.ChildPipeline, now); err != nil {
+			return Run{}, err
+		}
+	}
 
 	if err := tx.Commit(); err != nil {
 		return Run{}, fmt.Errorf("store: commit enqueue run: %w", err)
@@ -689,6 +701,7 @@ func (s *Store) ListRuns(ctx context.Context, projectID string) ([]Run, error) {
 		SELECT `+runColumns+`
 		FROM runs
 		WHERE project_id = ?
+		  AND NOT EXISTS (SELECT 1 FROM child_pipeline_links WHERE child_run_id = runs.id)
 		ORDER BY created_at DESC, id DESC
 	`, projectID)
 	if err != nil {
@@ -808,6 +821,9 @@ func (s *Store) GetRunGraph(ctx context.Context, runID string) (RunGraph, error)
 		return RunGraph{}, err
 	}
 	if err := attachJobAttempts(ctx, db, &graph); err != nil {
+		return RunGraph{}, err
+	}
+	if err := attachChildPipelineLinks(ctx, db, &graph); err != nil {
 		return RunGraph{}, err
 	}
 	return graph, nil
@@ -1267,7 +1283,14 @@ func (s *Store) RequestRunCancellation(ctx context.Context, runID string) (RunCa
 		return RunCancellation{}, fmt.Errorf("store: read run cancellation: %w", err)
 	}
 	if run.CancellationRequested || (run.Status != StatusQueued && run.Status != StatusWaiting && run.Status != StatusRunning) {
-		return cancellationFromRun(run), nil
+		result := cancellationFromRun(run)
+		_ = tx.Rollback()
+		if run.CancellationRequested {
+			if err := s.cascadeChildPipelineCancellation(ctx, runID); err != nil {
+				return RunCancellation{}, err
+			}
+		}
+		return result, nil
 	}
 
 	now := nowUTC()
@@ -1335,7 +1358,14 @@ func (s *Store) RequestRunCancellation(ctx context.Context, runID string) (RunCa
 	if err := tx.Commit(); err != nil {
 		return RunCancellation{}, fmt.Errorf("store: commit run cancellation: %w", err)
 	}
-	return s.GetRunCancellation(ctx, runID)
+	result, err := s.GetRunCancellation(ctx, runID)
+	if err != nil {
+		return RunCancellation{}, err
+	}
+	if err := s.cascadeChildPipelineCancellation(ctx, runID); err != nil {
+		return RunCancellation{}, err
+	}
+	return result, nil
 }
 
 // GetRunCancellation reads the durable cancellation signal for a run.
@@ -1508,6 +1538,13 @@ func normalizeEnqueueRunParams(params EnqueueRunParams) (EnqueueRunParams, error
 		}
 		params.Lineage = &lineage
 	}
+	if params.ChildPipeline != nil {
+		link, err := normalizeEnqueueChildPipelineLink(*params.ChildPipeline)
+		if err != nil {
+			return EnqueueRunParams{}, err
+		}
+		params.ChildPipeline = &link
+	}
 
 	jobKeys := make(map[string]struct{}, len(params.Jobs))
 	for jobIndex := range params.Jobs {
@@ -1543,14 +1580,24 @@ func normalizeEnqueueRunParams(params EnqueueRunParams) (EnqueueRunParams, error
 		if job.Environment, err = normalizeJSONObject("run job environment", job.Environment, false); err != nil {
 			return EnqueueRunParams{}, err
 		}
+		if len(bytes.TrimSpace(job.ChildPipeline)) > 0 {
+			if job.ChildPipeline, err = normalizeJSONObject("run job child pipeline", job.ChildPipeline, true); err != nil {
+				return EnqueueRunParams{}, err
+			}
+		} else {
+			job.ChildPipeline = nil
+		}
 		if job.DependencyKeys, err = normalizeDependencyKeys(job.DependencyKeys); err != nil {
 			return EnqueueRunParams{}, err
 		}
 		if job.TimeoutMinutes < 0 {
 			return EnqueueRunParams{}, invalidInput("run job timeout", "must not be negative")
 		}
-		if len(job.Steps) == 0 {
+		if len(job.Steps) == 0 && len(job.ChildPipeline) == 0 {
 			return EnqueueRunParams{}, invalidInput("run job steps", "must contain at least one step")
+		}
+		if len(job.Steps) > 0 && len(job.ChildPipeline) > 0 {
+			return EnqueueRunParams{}, invalidInput("run job child pipeline", "trigger jobs must not contain execution steps")
 		}
 
 		stepKeys := make(map[string]struct{}, len(job.Steps))
@@ -1922,6 +1969,7 @@ func scanJob(scanner executionScanner) (Job, error) {
 		timeoutMinutes  int
 		rollbackCommand sql.NullString
 		verifyCommand   sql.NullString
+		childPipeline   sql.NullString
 		startedAt       sql.NullInt64
 		finishedAt      sql.NullInt64
 		createdAt       int64
@@ -1941,6 +1989,7 @@ func scanJob(scanner executionScanner) (Job, error) {
 		&timeoutMinutes,
 		&rollbackCommand,
 		&verifyCommand,
+		&childPipeline,
 		&startedAt,
 		&finishedAt,
 		&createdAt,
@@ -1956,6 +2005,9 @@ func scanJob(scanner executionScanner) (Job, error) {
 	job.TimeoutMinutes = timeoutMinutes
 	job.RollbackCommand = nullStringPointer(rollbackCommand)
 	job.VerifyCommand = nullStringPointer(verifyCommand)
+	if childPipeline.Valid {
+		job.ChildPipeline = cloneJSON(json.RawMessage(childPipeline.String))
+	}
 	job.StartedAt = nullTimePointer(startedAt)
 	job.FinishedAt = nullTimePointer(finishedAt)
 	job.CreatedAt = timeFromMillis(createdAt)
@@ -2016,6 +2068,13 @@ func scanStep(scanner executionScanner) (Step, error) {
 	step.CreatedAt = timeFromMillis(createdAt)
 	step.UpdatedAt = timeFromMillis(updatedAt)
 	return step, nil
+}
+
+func nullableJSON(value json.RawMessage) any {
+	if len(bytes.TrimSpace(value)) == 0 {
+		return nil
+	}
+	return string(value)
 }
 
 func scanLogLine(scanner executionScanner) (LogLine, error) {

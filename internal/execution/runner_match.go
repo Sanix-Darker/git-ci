@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -42,6 +43,13 @@ func applyDefinitionRunnerInventory(definition *Definition, inventory runnerinve
 	}
 	for index := range definition.Jobs {
 		job := &definition.Jobs[index]
+		if job.ChildPipeline != nil {
+			job.RunnerMatch = runnerinventory.Match{}
+			if job.ChildPipeline.Definition != nil {
+				applyDefinitionRunnerInventory(job.ChildPipeline.Definition, inventory)
+			}
+			continue
+		}
 		job.RunnerMatch = inventory.Match(runnerinventory.Requirement{
 			Provider: string(definition.Provider), Labels: job.RunnerRequirements, Group: job.RunnerGroup,
 			RequiresDocker: job.Container != nil || len(job.Services) > 0,
@@ -52,6 +60,17 @@ func applyDefinitionRunnerInventory(definition *Definition, inventory runnerinve
 func validateDefinitionRunnerAvailability(definition Definition) error {
 	blocked := make([]UnavailableRunnerJob, 0)
 	for _, job := range definition.Jobs {
+		if job.ChildPipeline != nil {
+			if job.ChildPipeline.Definition != nil {
+				if err := validateDefinitionRunnerAvailability(*job.ChildPipeline.Definition); err != nil {
+					var unavailable *ErrRunnerUnavailable
+					if errors.As(err, &unavailable) {
+						blocked = append(blocked, unavailable.Jobs...)
+					}
+				}
+			}
+			continue
+		}
 		if !job.RunnerMatch.Evaluated || job.RunnerMatch.Available {
 			continue
 		}

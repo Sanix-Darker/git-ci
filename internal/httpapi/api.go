@@ -271,7 +271,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "compatibility-report", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "release-objects", "manual-jobs", "automatic-retry", "gitlab-regex-rules", "pull-request-webhooks", "job-replay", "step-replay", "audit"},
+		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "compatibility-report", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "release-objects", "manual-jobs", "automatic-retry", "gitlab-regex-rules", "gitlab-child-pipelines", "pull-request-webhooks", "job-replay", "step-replay", "audit"},
 	})
 }
 
