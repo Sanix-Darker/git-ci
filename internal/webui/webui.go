@@ -94,7 +94,7 @@ type SemanticBadgeView struct {
 type WorkflowTriggerPolicyView struct {
 	Event, Condition                                               string
 	Branches, BranchesIgnore, Tags, TagsIgnore, Paths, PathsIgnore []string
-	Actions, Schedules                                             []string
+	Workflows, Actions, Schedules                                  []string
 	Evaluable                                                      bool
 }
 
@@ -158,7 +158,8 @@ type TestReportView struct {
 }
 
 type RunLineageView struct {
-	Kind, SourceRunID, SourceJobID, SourceStepID, Actor, CreatedAt string
+	Kind, SourceRunID, SourceJobID, SourceStepID, SourceWorkflow, Conclusion, Dot, Actor, CreatedAt, APIURL string
+	Depth                                                                                                   int
 }
 
 type RunJobView struct {

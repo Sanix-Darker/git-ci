@@ -19,6 +19,7 @@ type Policy struct {
 	TagsIgnore     []string `json:"tagsIgnore,omitempty"`
 	Paths          []string `json:"paths,omitempty"`
 	PathsIgnore    []string `json:"pathsIgnore,omitempty"`
+	Workflows      []string `json:"workflows,omitempty"`
 	Actions        []string `json:"actions,omitempty"`
 	Schedules      []string `json:"schedules,omitempty"`
 	Inputs         []Input  `json:"inputs,omitempty"`
@@ -39,6 +40,7 @@ type Event struct {
 	Type         string
 	Ref          string
 	Action       string
+	Workflow     string
 	ChangedPaths []string
 	PathsKnown   bool
 }
@@ -105,6 +107,11 @@ func matchesEventPolicy(policy Policy, event Event) (string, string, bool) {
 		return "", "", false
 	}
 	action := strings.ToLower(strings.TrimSpace(event.Action))
+	if event.Type == "workflow_run" {
+		if len(policy.Workflows) == 0 || !contains(policy.Workflows, strings.TrimSpace(event.Workflow)) {
+			return "", "", false
+		}
+	}
 	if len(policy.Actions) > 0 {
 		if !matchesAny(policy.Actions, action) {
 			return "", "", false
@@ -199,6 +206,7 @@ func parseGitHub(root *yaml.Node, fallback []string) []Policy {
 				policy.TagsIgnore = nodeStrings(mappingValue(config, "tags-ignore"))
 				policy.Paths = nodeStrings(mappingValue(config, "paths"))
 				policy.PathsIgnore = nodeStrings(mappingValue(config, "paths-ignore"))
+				policy.Workflows = nodeStrings(mappingValue(config, "workflows"))
 				policy.Actions = nodeStrings(mappingValue(config, "types"))
 				if policy.Event == "workflow_dispatch" {
 					policy.Inputs = parseInputs(mappingValue(config, "inputs"))

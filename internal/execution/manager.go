@@ -397,6 +397,9 @@ func (m *Manager) ProcessNext(ctx context.Context) (bool, error) {
 	if _, err := m.store.ReconcileCompletedChildPipelines(ctx); err != nil {
 		return false, fmt.Errorf("execution: reconcile child pipelines: %w", err)
 	}
+	if err := m.reconcileWorkflowRunDispatches(ctx); err != nil {
+		return false, fmt.Errorf("execution: reconcile workflow_run dispatches: %w", err)
+	}
 	if err := m.resumeWaitingJobs(ctx, now); err != nil {
 		return false, fmt.Errorf("execution: resume waiting jobs: %w", err)
 	}
@@ -1636,13 +1639,15 @@ func buildConditionContext(run store.Run, job store.Job, semantics *frozenJobSem
 	values["CI_COMMIT_BRANCH"] = refName
 	values["CI_COMMIT_SHA"] = pointerValue(run.CommitSHA)
 	values["CI_PIPELINE_SOURCE"] = gitLabPipelineSource(run.TriggerType)
-	for key, value := range decodeEnvironmentJSON(run.Environment) {
+	runEnvironment := decodeEnvironmentJSON(run.Environment)
+	for key, value := range runEnvironment {
 		values["env."+key] = value
 		values[key] = value
 		if strings.HasPrefix(key, "INPUT_") {
 			values["inputs."+strings.ToLower(strings.TrimPrefix(key, "INPUT_"))] = value
 		}
 	}
+	addWorkflowRunConditionValues(values, runEnvironment)
 	for key, value := range decodeEnvironmentJSON(job.Environment) {
 		values["env."+key] = value
 		values[key] = value
@@ -1896,6 +1901,7 @@ func runtimeTemplateValues(ref, commitSHA, trigger, workflow string, environment
 			values["inputs."+strings.ToLower(strings.TrimPrefix(key, "INPUT_"))] = value
 		}
 	}
+	addWorkflowRunConditionValues(values, environment)
 	return values
 }
 
