@@ -2,10 +2,14 @@ package executionsemantics
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
+
+const maxConditionRegexBytes = 1024
 
 type ConditionContract struct {
 	Expression string `json:"expression,omitempty"`
@@ -80,6 +84,9 @@ const (
 	tokenLessEqual
 	tokenGreater
 	tokenGreaterEqual
+	tokenRegex
+	tokenMatch
+	tokenNotMatch
 )
 
 type conditionToken struct {
@@ -121,17 +128,28 @@ func (lexer *conditionLexer) scan() ([]conditionToken, error) {
 			}
 			tokens = append(tokens, conditionToken{kind: tokenOr, literal: "||"})
 		case '!':
-			if lexer.consume("!=") {
+			if lexer.consume("!~") {
+				tokens = append(tokens, conditionToken{kind: tokenNotMatch, literal: "!~"})
+			} else if lexer.consume("!=") {
 				tokens = append(tokens, conditionToken{kind: tokenNotEqual, literal: "!="})
 			} else {
 				lexer.index++
 				tokens = append(tokens, conditionToken{kind: tokenNot, literal: "!"})
 			}
 		case '=':
-			if !lexer.consume("==") {
-				return nil, lexer.error("expected ==; assignment and regex operators are unsupported")
+			if lexer.consume("=~") {
+				tokens = append(tokens, conditionToken{kind: tokenMatch, literal: "=~"})
+			} else if lexer.consume("==") {
+				tokens = append(tokens, conditionToken{kind: tokenEqual, literal: "=="})
+			} else {
+				return nil, lexer.error("expected == or =~")
 			}
-			tokens = append(tokens, conditionToken{kind: tokenEqual, literal: "=="})
+		case '/':
+			value, err := lexer.regex()
+			if err != nil {
+				return nil, err
+			}
+			tokens = append(tokens, conditionToken{kind: tokenRegex, literal: value})
 		case '<':
 			if lexer.consume("<=") {
 				tokens = append(tokens, conditionToken{kind: tokenLessEqual, literal: "<="})
@@ -236,6 +254,32 @@ func (lexer *conditionLexer) number() string {
 	return string(lexer.input[start:lexer.index])
 }
 
+func (lexer *conditionLexer) regex() (string, error) {
+	start := lexer.index
+	lexer.index++
+	escaped := false
+	for lexer.index < len(lexer.input) {
+		character := lexer.input[lexer.index]
+		lexer.index++
+		if escaped {
+			escaped = false
+			continue
+		}
+		if character == '\\' {
+			escaped = true
+			continue
+		}
+		if character != '/' {
+			continue
+		}
+		for lexer.index < len(lexer.input) && unicode.IsLetter(lexer.input[lexer.index]) {
+			lexer.index++
+		}
+		return string(lexer.input[start:lexer.index]), nil
+	}
+	return "", lexer.error("unterminated regular expression")
+}
+
 func (lexer *conditionLexer) identifier() string {
 	start := lexer.index
 	if lexer.input[lexer.index] == '$' {
@@ -266,6 +310,11 @@ type conditionNode interface {
 type literalNode struct{ value interface{} }
 
 func (node literalNode) evaluate(ConditionContext) (interface{}, error) { return node.value, nil }
+
+type conditionRegex struct {
+	source   string
+	compiled *regexp.Regexp
+}
 
 type variableNode struct{ name string }
 
@@ -344,6 +393,16 @@ func (node binaryNode) evaluate(context ConditionContext) (interface{}, error) {
 		default:
 			return comparison >= 0, nil
 		}
+	case tokenMatch, tokenNotMatch:
+		pattern, err := conditionRegexValue(right)
+		if err != nil {
+			return nil, err
+		}
+		matched := pattern.compiled.MatchString(fmt.Sprint(left))
+		if node.operator == tokenNotMatch {
+			matched = !matched
+		}
+		return matched, nil
 	}
 	return nil, fmt.Errorf("condition: unsupported binary operator")
 }
@@ -448,7 +507,7 @@ func (parser *conditionParser) parseComparison() (conditionNode, error) {
 	}
 	operator := parser.peek().kind
 	switch operator {
-	case tokenEqual, tokenNotEqual, tokenLess, tokenLessEqual, tokenGreater, tokenGreaterEqual:
+	case tokenEqual, tokenNotEqual, tokenLess, tokenLessEqual, tokenGreater, tokenGreaterEqual, tokenMatch, tokenNotMatch:
 		parser.index++
 		right, err := parser.parseUnary()
 		if err != nil {
@@ -489,6 +548,12 @@ func (parser *conditionParser) parsePrimary() (conditionNode, error) {
 		return literalNode{value: false}, nil
 	case tokenNull:
 		return literalNode{value: nil}, nil
+	case tokenRegex:
+		value, err := compileConditionRegex(token.literal)
+		if err != nil {
+			return nil, err
+		}
+		return literalNode{value: value}, nil
 	case tokenIdentifier:
 		if !parser.match(tokenLeftParen) {
 			return variableNode{name: token.literal}, nil
@@ -621,4 +686,61 @@ func numericValue(value interface{}) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func conditionRegexValue(value interface{}) (conditionRegex, error) {
+	if pattern, ok := value.(conditionRegex); ok {
+		return pattern, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return conditionRegex{}, fmt.Errorf("condition: regex operand must be a /pattern/ literal or variable")
+	}
+	return compileConditionRegex(text)
+}
+
+func compileConditionRegex(source string) (conditionRegex, error) {
+	if len(source) > maxConditionRegexBytes {
+		return conditionRegex{}, fmt.Errorf("condition: regular expression exceeds %d bytes", maxConditionRegexBytes)
+	}
+	if len(source) < 2 || source[0] != '/' {
+		return conditionRegex{}, fmt.Errorf("condition: regular expression must be enclosed by /")
+	}
+	closing := -1
+	escaped := false
+	for index := 1; index < len(source); index++ {
+		character := source[index]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if character == '\\' {
+			escaped = true
+			continue
+		}
+		if character == '/' {
+			closing = index
+			break
+		}
+	}
+	if closing < 0 {
+		return conditionRegex{}, fmt.Errorf("condition: unterminated regular expression")
+	}
+	pattern := source[1:closing]
+	flags := source[closing+1:]
+	if flags != "" && flags != "i" {
+		return conditionRegex{}, fmt.Errorf("condition: unsupported regular expression flags %q", flags)
+	}
+	if utf8.RuneCountInString(pattern) == 1 {
+		return conditionRegex{}, fmt.Errorf("condition: single-character regular expressions are unsupported")
+	}
+	pattern = strings.ReplaceAll(pattern, `\/`, `/`)
+	if flags == "i" {
+		pattern = "(?i)" + pattern
+	}
+	compiled, err := regexp.Compile(pattern)
+	if err != nil {
+		return conditionRegex{}, fmt.Errorf("condition: invalid regular expression: %w", err)
+	}
+	return conditionRegex{source: source, compiled: compiled}, nil
 }
