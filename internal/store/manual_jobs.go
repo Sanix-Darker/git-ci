@@ -17,6 +17,7 @@ const (
 	MaxManualPlayVariables     = 32
 	MaxManualPlayValueBytes    = 4096
 	MaxManualPlayVariableBytes = 16384
+	manualJobPlayBusyAttempts  = 5
 )
 
 var manualVariableName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
@@ -154,6 +155,37 @@ func (s *Store) PlayManualJob(ctx context.Context, params PlayManualJobParams) (
 	if err != nil {
 		return ManualJobPlayResult{}, err
 	}
+	return retryManualJobPlay(ctx, func() (ManualJobPlayResult, error) {
+		return s.playManualJobOnce(ctx, db, params)
+	})
+}
+
+func retryManualJobPlay(ctx context.Context, operation func() (ManualJobPlayResult, error)) (ManualJobPlayResult, error) {
+	var lastErr error
+	for attempt := 0; attempt < manualJobPlayBusyAttempts; attempt++ {
+		result, err := operation()
+		if err == nil || !isSQLiteBusy(err) {
+			return result, err
+		}
+		lastErr = err
+		if attempt == manualJobPlayBusyAttempts-1 {
+			break
+		}
+		delay := time.Duration(5*(1<<attempt)) * time.Millisecond
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return ManualJobPlayResult{}, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return ManualJobPlayResult{}, fmt.Errorf("store: manual job play exhausted busy retries: %w", lastErr)
+}
+
+func (s *Store) playManualJobOnce(ctx context.Context, db *sql.DB, params PlayManualJobParams) (ManualJobPlayResult, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return ManualJobPlayResult{}, fmt.Errorf("store: begin manual job play: %w", err)

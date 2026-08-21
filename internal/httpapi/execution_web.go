@@ -794,7 +794,7 @@ func runView(run store.Run, projectName string, workflowNames map[string]string)
 		}
 	}
 	return webui.RunView{
-		ID: run.ID, ProjectName: projectName, WorkflowName: workflowName,
+		ID: run.ID, ProjectID: run.ProjectID, ProjectName: projectName, WorkflowName: workflowName,
 		WorkflowKey: stringValue(run.WorkflowKey), Status: strings.ToUpper(string(run.Status)), Dot: statusDot(run.Status),
 		Trigger: formatTriggerType(run.TriggerType), Ref: ref, CommitSHA: stringValue(run.CommitSHA), CreatedAt: run.CreatedAt.UTC().Format("2006-01-02 15:04:05Z"),
 		CanCancel:   run.Status == store.StatusQueued || run.Status == store.StatusWaiting || run.Status == store.StatusRunning,

@@ -382,7 +382,9 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   expect(reactivatedBeta.id).toBe(betaProject.id);
   expect(reactivatedBeta.active).toBe(true);
 
-  await page.getByRole("button", { name: "LOG OUT" }).click();
+  const logout = page.getByRole("button", { name: "LOG OUT" });
+  await expect(logout).toBeInViewport();
+  await logout.click();
   await expect(page).toHaveURL(/\/login$/);
   await expect(page.getByLabel("Token")).toBeVisible();
   const protectedResponse = await page.request.get("/api/v1/projects");

@@ -121,6 +121,7 @@ func (a *API) writeStoreError(writer http.ResponseWriter, err error, message str
 	var rollback *store.ErrRollbackEligibility
 	var replay *store.ErrReplayEligibility
 	var manualPlay *store.ErrManualJobPlay
+	var releaseTransition *store.ErrReleaseTransition
 	var runnerUnavailable *execdomain.ErrRunnerUnavailable
 	switch {
 	case errors.As(err, &notFound):
@@ -133,6 +134,8 @@ func (a *API) writeStoreError(writer http.ResponseWriter, err error, message str
 		writeError(writer, http.StatusUnprocessableEntity, replay.Code, replay.Message)
 	case errors.As(err, &manualPlay):
 		writeError(writer, http.StatusUnprocessableEntity, manualPlay.Code, manualPlay.Message)
+	case errors.As(err, &releaseTransition):
+		writeError(writer, http.StatusUnprocessableEntity, releaseTransition.Code, releaseTransition.Message)
 	case errors.As(err, &runnerUnavailable):
 		writeError(writer, http.StatusConflict, "runner_unavailable", runnerUnavailable.Error())
 	default:

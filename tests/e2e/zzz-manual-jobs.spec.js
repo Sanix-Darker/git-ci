@@ -20,8 +20,9 @@ test("blocking GitLab manual job plays from the live DAG and resumes the same ru
   const workflow = workflows.items.find((item) => item.definition && item.definition.provider === "gitlab");
   expect(workflow).toBeTruthy();
   const queued = await page.request.post(`/api/v1/workflows/${workflow.id}/runs`, { headers, data: { ref: "main" } });
-  expect(queued.status()).toBe(202);
-  const run = await queued.json();
+  const queuedBody = await queued.text();
+  expect(queued.status(), queuedBody).toBe(202);
+  const run = JSON.parse(queuedBody);
   await expect.poll(async () => (await (await page.request.get(`/api/v1/runs/${run.id}`, { headers })).json()).run.status, { timeout: 30_000 }).toBe("waiting");
   expect((await page.request.post("/api/v1/session/login", { data: { token: token() } })).ok()).toBeTruthy();
   await page.goto(`/app/runs/${run.id}`);

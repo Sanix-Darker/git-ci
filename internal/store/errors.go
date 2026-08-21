@@ -50,6 +50,25 @@ func (e *ErrConflict) Is(target error) bool {
 	return ok
 }
 
+// ErrReleaseTransition describes a release lifecycle invariant that the
+// caller can fix without retrying the same mutation unchanged.
+type ErrReleaseTransition struct {
+	Code    string
+	Message string
+}
+
+func (e *ErrReleaseTransition) Error() string {
+	if e == nil || e.Message == "" {
+		return "store: invalid release transition"
+	}
+	return "store: " + e.Message
+}
+
+func (e *ErrReleaseTransition) Is(target error) bool {
+	_, ok := target.(*ErrReleaseTransition)
+	return ok
+}
+
 type invalidInputError struct {
 	field  string
 	reason string
