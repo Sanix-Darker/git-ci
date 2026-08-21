@@ -79,11 +79,12 @@ type GitlabJob struct {
 	Except  *GitlabOnlyExcept `yaml:"except,omitempty"`
 
 	// Job behavior
-	When         string      `yaml:"when,omitempty"`
-	Manual       bool        `yaml:"manual,omitempty"`
-	AllowFailure interface{} `yaml:"allow_failure,omitempty"`
-	Retry        interface{} `yaml:"retry,omitempty"`
-	Timeout      string      `yaml:"timeout,omitempty"`
+	When               string      `yaml:"when,omitempty"`
+	Manual             bool        `yaml:"manual,omitempty"`
+	ManualConfirmation string      `yaml:"manual_confirmation,omitempty"`
+	AllowFailure       interface{} `yaml:"allow_failure,omitempty"`
+	Retry              interface{} `yaml:"retry,omitempty"`
+	Timeout            string      `yaml:"timeout,omitempty"`
 
 	// Scripts
 	BeforeScript []interface{} `yaml:"before_script,omitempty"`
@@ -369,6 +370,9 @@ func (p *GitlabParser) parseJob(jobData map[string]interface{}) *GitlabJob {
 	if manual, ok := jobData["manual"].(bool); ok {
 		job.Manual = manual
 	}
+	if confirmation, ok := jobData["manual_confirmation"].(string); ok {
+		job.ManualConfirmation = confirmation
+	}
 
 	job.AllowFailure = jobData["allow_failure"]
 
@@ -535,12 +539,17 @@ func (p *GitlabParser) convertJob(
 	globalBeforeScript []string,
 	globalAfterScript []string,
 ) *types.Job {
+	when := glJob.When
+	if glJob.Manual && strings.TrimSpace(when) == "" {
+		when = "manual"
+	}
 	job := &types.Job{
-		Name:        jobName,
-		Stage:       glJob.Stage,
-		Environment: p.convertVariables(glJob.Variables),
-		Tags:        glJob.Tags,
-		When:        glJob.When,
+		Name:               jobName,
+		Stage:              glJob.Stage,
+		Environment:        p.convertVariables(glJob.Variables),
+		Tags:               glJob.Tags,
+		When:               when,
+		ManualConfirmation: glJob.ManualConfirmation,
 	}
 	if glJob.ResourceGroup != "" {
 		job.Concurrency = &types.Concurrency{Group: glJob.ResourceGroup, Limit: 1}
@@ -584,6 +593,11 @@ func (p *GitlabParser) convertJob(
 		// Complex allow_failure with exit_codes
 		job.AllowFailure = true
 		job.ContinueOnErr = true
+	case nil:
+		if strings.EqualFold(strings.TrimSpace(job.When), "manual") {
+			job.AllowFailure = true
+			job.ContinueOnErr = true
+		}
 	}
 
 	// Parse timeout

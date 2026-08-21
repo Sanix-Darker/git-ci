@@ -293,6 +293,7 @@ type workflowDefinitionJobDocument struct {
 	Condition          conditionDocument                    `json:"condition"`
 	Rules              []json.RawMessage                    `json:"rules"`
 	When               string                               `json:"when"`
+	ManualConfirmation string                               `json:"manualConfirmation"`
 	Concurrency        *concurrencyDocument                 `json:"concurrency"`
 	Interruptible      bool                                 `json:"interruptible"`
 	FailFast           bool                                 `json:"failFast"`
@@ -531,6 +532,14 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 			AllowFailure: item.Job.AllowFailure, Replay: jobReplay,
 		}
 		populateRunJobSemanticView(&job, item.Job.Environment)
+		job.Manual, err = manualPlayControl(item.Job, graph.Run, csrfToken)
+		if err != nil {
+			return webui.RunDetailView{}, err
+		}
+		if item.Job.ManualPlay != nil {
+			job.ManualPlayedBy = item.Job.ManualPlay.Actor
+			job.ManualPlayedAt = item.Job.ManualPlay.CreatedAt.UTC().Format("2006-01-02 15:04:05Z")
+		}
 		for _, step := range item.Steps {
 			stepEligibility, err := a.store.EvaluateStepReplay(ctx, step.ID)
 			if err != nil {
@@ -602,6 +611,9 @@ func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeV
 	}
 	if job.When != "" {
 		badges = append(badges, webui.SemanticBadgeView{Label: "WHEN " + strings.ToUpper(job.When)})
+	}
+	if job.ManualConfirmation != "" {
+		badges = append(badges, webui.SemanticBadgeView{Label: "CONFIRM PLAY", Hint: job.ManualConfirmation})
 	}
 	if job.Concurrency != nil {
 		label := "LOCK " + job.Concurrency.Group
@@ -709,6 +721,39 @@ func replayControl(kind store.RunLineageKind, sourceID, runID, csrfToken string,
 	return control, nil
 }
 
+func manualPlayControl(job store.Job, run store.Run, csrfToken string) (webui.ManualPlayControlView, error) {
+	if job.Status != store.StatusManual || job.ManualState == nil {
+		return webui.ManualPlayControlView{}, nil
+	}
+	state := job.ManualState
+	control := webui.ManualPlayControlView{
+		Present: true, Action: "/app/jobs/" + job.ID + "/play", CSRFToken: csrfToken,
+		SourceRunID: run.ID, Label: "PLAY JOB", Confirmation: state.Confirmation,
+		RequiresConfirmation: state.Confirmation != "", Blocking: state.Blocking,
+	}
+	if state.Blocking {
+		control.Mode = "BLOCKING GATE"
+		control.Enabled = run.Status == store.StatusWaiting
+		control.Hint = "Resume this waiting pipeline from the manual job"
+	} else {
+		control.Mode = "OPTIONAL JOB"
+		control.Enabled = run.Status == store.StatusSucceeded
+		control.Hint = "Run this optional job against the same commit"
+		if run.Status == store.StatusRunning {
+			control.Hint = "Available after the initial pipeline pass"
+		}
+	}
+	if !control.Enabled {
+		return control, nil
+	}
+	key, err := newManualPlayIdempotencyKey()
+	if err != nil {
+		return webui.ManualPlayControlView{}, err
+	}
+	control.IdempotencyKey = key
+	return control, nil
+}
+
 func runView(run store.Run, projectName string, workflowNames map[string]string) webui.RunView {
 	workflowName := "Workflow"
 	if run.WorkflowID != nil && workflowNames[*run.WorkflowID] != "" {
@@ -731,7 +776,7 @@ func runView(run store.Run, projectName string, workflowNames map[string]string)
 		ID: run.ID, ProjectName: projectName, WorkflowName: workflowName,
 		WorkflowKey: stringValue(run.WorkflowKey), Status: strings.ToUpper(string(run.Status)), Dot: statusDot(run.Status),
 		Ref: ref, CommitSHA: stringValue(run.CommitSHA), CreatedAt: run.CreatedAt.UTC().Format("2006-01-02 15:04:05Z"),
-		CanCancel:   run.Status == store.StatusQueued || run.Status == store.StatusRunning,
+		CanCancel:   run.Status == store.StatusQueued || run.Status == store.StatusWaiting || run.Status == store.StatusRunning,
 		CreatedUnix: run.CreatedAt.Unix(), DurationSeconds: durationSeconds, DurationLabel: formatRunDuration(durationSeconds),
 	}
 }
@@ -960,7 +1005,7 @@ func statusDot(status store.Status) string {
 		return "dot-green"
 	case store.StatusFailed, store.StatusCancelled:
 		return "dot-red"
-	case store.StatusQueued, store.StatusRunning:
+	case store.StatusQueued, store.StatusWaiting, store.StatusManual, store.StatusRunning:
 		return "dot-blue"
 	default:
 		return ""

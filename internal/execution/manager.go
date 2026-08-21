@@ -513,12 +513,34 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 	for _, item := range graph.Jobs {
 		key := pointerValue(item.Job.Key)
 		allowedFailure[key] = item.Job.AllowFailure
+		if item.Job.ManualState != nil {
+			allowedFailure[key] = !item.Job.ManualState.Blocking
+			item.Job.AllowFailure = !item.Job.ManualState.Blocking
+		}
 		if isTerminalExecutionStatus(item.Job.Status) {
 			statuses[key] = item.Job.Status
 			continue
 		}
 		dependencies := decodeStringList(item.Job.DependencyKeys)
 		decision := evaluateJobExecution(graph.Run, item.Job, dependencies, statuses, allowedFailure, outputContext)
+		if decision.Manual {
+			allowedFailure[key] = !decision.ManualBlocking
+			if item.Job.Status == store.StatusManual {
+				statuses[key] = store.StatusManual
+				if decision.ManualBlocking {
+					return nil
+				}
+				continue
+			}
+			if _, err := m.store.PauseManualJob(ctx, store.PauseManualJobParams{JobID: item.Job.ID, Blocking: decision.ManualBlocking, Confirmation: decision.ManualConfirmation}); err != nil {
+				return fmt.Errorf("execution: pause manual job: %w", err)
+			}
+			statuses[key] = store.StatusManual
+			if decision.ManualBlocking {
+				return nil
+			}
+			continue
+		}
 		if !decision.Run {
 			if err := m.skipJobWithReason(ctx, item, decision.Reason); err != nil {
 				return err
@@ -1403,6 +1425,7 @@ type frozenJobSemantics struct {
 	Only                 *OnlyExceptDefinition                `json:"only"`
 	Except               *OnlyExceptDefinition                `json:"except"`
 	When                 string                               `json:"when"`
+	ManualConfirmation   string                               `json:"manualConfirmation"`
 	Concurrency          *ConcurrencyDefinition               `json:"concurrency"`
 	Interruptible        bool                                 `json:"interruptible"`
 	FailFast             bool                                 `json:"failFast"`
@@ -1421,10 +1444,13 @@ type workflowConcurrencySnapshot struct {
 }
 
 type jobExecutionDecision struct {
-	Run          bool
-	Reason       string
-	Variables    map[string]string
-	AllowFailure bool
+	Run                bool
+	Reason             string
+	Variables          map[string]string
+	AllowFailure       bool
+	Manual             bool
+	ManualBlocking     bool
+	ManualConfirmation string
 }
 
 func evaluateJobExecution(run store.Run, job store.Job, dependencies []string, statuses map[string]store.Status, allowed map[string]bool, outputContext *runtimeOutputContext) jobExecutionDecision {
@@ -1468,7 +1494,15 @@ func evaluateJobExecution(run store.Run, job store.Job, dependencies []string, s
 				continue
 			}
 			when := strings.ToLower(strings.TrimSpace(rule.When))
-			if when == "never" || when == "manual" || when == "delayed" {
+			if when == "manual" {
+				decision.AllowFailure = rule.AllowFailure
+				decision.Manual = true
+				decision.ManualBlocking = !rule.AllowFailure
+				decision.ManualConfirmation = semantics.ManualConfirmation
+				decision.Variables = rule.Variables
+				return resolvePlayedManualJob(job, decision)
+			}
+			if when == "never" || when == "delayed" {
 				decision.Reason = "matched rule requires when: " + when
 				return decision
 			}
@@ -1490,11 +1524,35 @@ func evaluateJobExecution(run store.Run, job store.Job, dependencies []string, s
 		return decision
 	}
 	when := strings.ToLower(strings.TrimSpace(semantics.When))
-	if when == "never" || when == "manual" || when == "delayed" {
+	if when == "manual" {
+		decision.Manual = true
+		decision.ManualBlocking = !decision.AllowFailure
+		decision.ManualConfirmation = semantics.ManualConfirmation
+		return resolvePlayedManualJob(job, decision)
+	}
+	if when == "never" || when == "delayed" {
 		decision.Reason = "job requires when: " + when
 		return decision
 	}
 	decision.Run = true
+	return decision
+}
+
+func resolvePlayedManualJob(job store.Job, decision jobExecutionDecision) jobExecutionDecision {
+	if job.ManualPlay == nil {
+		return decision
+	}
+	decision.Manual = false
+	decision.Run = true
+	if decision.Variables == nil {
+		decision.Variables = make(map[string]string)
+	}
+	for key, value := range job.ManualPlay.Variables {
+		decision.Variables[key] = value
+	}
+	if job.ManualState != nil {
+		decision.AllowFailure = !job.ManualState.Blocking
+	}
 	return decision
 }
 
@@ -1570,7 +1628,7 @@ func dependencyState(dependencies []string, statuses map[string]store.Status, al
 			successful = false
 			continue
 		}
-		if status == store.StatusSucceeded || status == store.StatusFailed && allowed[dependency] {
+		if status == store.StatusSucceeded || status == store.StatusFailed && allowed[dependency] || status == store.StatusManual && allowed[dependency] {
 			continue
 		}
 		successful = false

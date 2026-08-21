@@ -151,6 +151,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /app/approvals/{approval}/decision", a.requireWebAuth(http.HandlerFunc(a.handleApprovalDecisionWeb)))
 	mux.Handle("POST /app/deployments/{deployment}/rollback", a.requireWebAuth(http.HandlerFunc(a.handleDeploymentRollbackWeb)))
 	mux.Handle("POST /app/jobs/{job}/replay", a.requireWebAuth(http.HandlerFunc(a.handleJobReplayWeb)))
+	mux.Handle("POST /app/jobs/{job}/play", a.requireWebAuth(http.HandlerFunc(a.handleManualJobPlayWeb)))
 	mux.Handle("POST /app/steps/{step}/replay", a.requireWebAuth(http.HandlerFunc(a.handleStepReplayWeb)))
 	mux.HandleFunc("POST /api/v1/session/login", a.handleLogin)
 	mux.Handle("GET /api/v1", a.requireAuth(http.HandlerFunc(a.handleAPIRoot)))
@@ -195,6 +196,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("POST /api/v1/deployments/{deployment}/rollback", a.requireAuth(http.HandlerFunc(a.handleDeploymentRollback)))
 	mux.Handle("GET /api/v1/runs/{run}/replay-options", a.requireAuth(http.HandlerFunc(a.handleRunReplayOptions)))
 	mux.Handle("POST /api/v1/runs/{run}/jobs/{job}/replays", a.requireAuth(http.HandlerFunc(a.handleRunJobReplay)))
+	mux.Handle("POST /api/v1/runs/{run}/jobs/{job}/plays", a.requireAuth(http.HandlerFunc(a.handleManualJobPlay)))
 	mux.Handle("POST /api/v1/runs/{run}/jobs/{job}/steps/{step}/replays", a.requireAuth(http.HandlerFunc(a.handleRunStepReplay)))
 	mux.Handle("GET /api/v1/projects/{project}/environments", a.requireAuth(http.HandlerFunc(a.handleProjectEnvironments)))
 	mux.Handle("POST /api/v1/projects/{project}/environments", a.requireAuth(http.HandlerFunc(a.handleProjectEnvironments)))
@@ -256,7 +258,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "compatibility-report", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
+		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "compatibility-report", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "manual-jobs", "job-replay", "step-replay", "audit"},
 	})
 }
 
