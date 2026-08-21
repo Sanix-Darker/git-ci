@@ -191,7 +191,7 @@ func (s *Service) Run(ctx context.Context) error {
 		}
 		return fmt.Errorf("service: serve: %w", err)
 	case err := <-workerErrors:
-		if err == nil && ctx.Err() != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil && (err == nil || errors.Is(err, ctxErr)) {
 			return nil
 		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.config.ShutdownTimeout)
