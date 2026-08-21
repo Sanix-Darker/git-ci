@@ -293,6 +293,15 @@
 .log-console > div > b { border-right: 1px solid #272727; border-left: 1px solid #272727; }
 .log-console pre { margin: 0; padding: .35rem .7rem; font: inherit; white-space: pre-wrap; word-break: break-word; }
 .log-console > p { margin: 0; padding: 1rem; color: #727272; font-size: .56rem; font-weight: 900; }
+.log-group { border-bottom: 1px solid #272727; background: #080808; }
+.log-group > summary { display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: .75rem; padding: 0 .75rem; color: #d0d0d0; cursor: pointer; font-size: .56rem; font-weight: 900; list-style: none; transition: padding-left 120ms steps(2, end), background-color 120ms steps(2, end); }
+.log-group > summary::-webkit-details-marker { display: none; }
+.log-group > summary:hover { padding-left: 1rem; background: #141414; }
+.log-group > summary span { display: flex; min-width: 0; align-items: center; gap: .5rem; overflow-wrap: anywhere; }
+.log-group > summary b, .log-group > summary small { color: #727272; font-size: .49rem; letter-spacing: .06em; }
+.log-group > summary small { flex: 0 0 auto; }
+.log-group-body { margin-left: 12px; border-left: 1px solid #383838; }
+.log-group-body:empty::after { display: block; padding: .65rem .75rem; color: #727272; content: "EMPTY SECTION"; font-size: .52rem; font-weight: 900; }
 .configuration-grid { display: grid; grid-template-columns: minmax(300px, .72fr) minmax(0, 1.28fr); gap: 1rem; }
 .config-form { display: flex; flex-direction: column; align-self: start; border: 1px solid #383838; padding: 1.25rem; }
 .config-form header { margin-bottom: 1.5rem; border-bottom: 1px solid #383838; padding-bottom: 1rem; }

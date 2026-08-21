@@ -184,6 +184,18 @@ type LogView struct {
 	Message  string
 }
 
+type LogEntryView struct {
+	Line  *LogView
+	Group *LogGroupView
+}
+
+type LogGroupView struct {
+	ID, Provider, Name, Dot string
+	LineCount               int
+	Open                    bool
+	Entries                 []LogEntryView
+}
+
 type RunGraphRowView struct {
 	Level int
 	Jobs  []RunJobView
@@ -209,6 +221,7 @@ type StepLogView struct {
 	RunID, StepID, StepName string
 	Terminal                bool
 	Logs                    []LogView
+	Entries                 []LogEntryView
 }
 
 type SecretView struct{ ID, ProjectName, Name, UpdatedAt string }

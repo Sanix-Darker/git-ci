@@ -1250,8 +1250,23 @@ func (m *Manager) captureLines(ctx context.Context, stepID string, stream store.
 				result.diagnostic = "workflow command ignored: annotation could not be persisted"
 			}
 		}
-		if _, err := m.store.AppendLogLine(ctx, store.AppendLogLineParams{StepID: stepID, Stream: stream, Message: result.line}); err != nil {
+		logged, err := m.store.AppendLogLine(ctx, store.AppendLogLineParams{StepID: stepID, Stream: stream, Message: result.line})
+		if err != nil {
 			return err
+		}
+		if result.section != nil {
+			if result.section.Start {
+				_, err = m.store.StartStepLogSection(ctx, store.StartStepLogSectionParams{
+					ID: result.section.ID, StepID: stepID, Provider: result.section.Provider,
+					Name: result.section.Name, Depth: result.section.Depth, Collapsed: result.section.Collapsed,
+					StartSequence: logged.Sequence,
+				})
+			} else {
+				_, err = m.store.FinishStepLogSection(ctx, store.FinishStepLogSectionParams{ID: result.section.ID, StepID: stepID, EndSequence: logged.Sequence})
+			}
+			if err != nil {
+				result.diagnostic = "workflow command ignored: log section could not be persisted"
+			}
 		}
 		if result.diagnostic != "" {
 			if _, err := m.store.AppendLogLine(ctx, store.AppendLogLineParams{StepID: stepID, Stream: store.LogStreamSystem, Message: result.diagnostic}); err != nil {

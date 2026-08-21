@@ -117,10 +117,16 @@ func (a *API) handleStepLogsWeb(writer http.ResponseWriter, request *http.Reques
 		http.Error(writer, "failed to load step logs", http.StatusInternalServerError)
 		return
 	}
+	sections, err := a.store.ListStepLogSections(request.Context(), stepID)
+	if err != nil {
+		http.Error(writer, "failed to load step log sections", http.StatusInternalServerError)
+		return
+	}
 	data := webui.StepLogView{RunID: runID, StepID: stepID, StepName: stepName, Terminal: terminalStatus(graph.Run.Status)}
 	for _, line := range lines {
 		data.Logs = append(data.Logs, webui.LogView{Sequence: int(line.Sequence), Stream: strings.ToUpper(string(line.Stream)), Message: line.Message})
 	}
+	data.Entries = buildStepLogEntries(data.Logs, sections)
 	a.web.RenderStepLogs(writer, http.StatusOK, data)
 }
 

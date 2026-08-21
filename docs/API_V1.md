@@ -7,7 +7,9 @@ service version is exposed by `GET /healthz`.
 
 The execution graph exposes durable `step-summaries` and `step-annotations`.
 Workers advertise `workflow-commands` support for GitHub-compatible `add-mask`,
-`stop-commands`, `notice`, `warning`, and `error` stdout commands.
+`stop-commands`, `notice`, `warning`, `error`, `group`, and `endgroup` stdout
+commands. Run-log responses expose `log-sections` for GitHub groups and GitLab
+collapsible section markers without changing the ordered `items` collection.
 
 ## Authentication
 
