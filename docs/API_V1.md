@@ -12,6 +12,8 @@ commands. Run-log responses expose `log-sections` for GitHub groups and GitLab
 collapsible section markers without changing the ordered `items` collection.
 The `project-lifecycle` capability provides reversible unregister/reactivation
 without deleting checkout files or durable run history.
+The `compatibility-report` capability exposes the same strict provider support
+registry used by the operator UI.
 
 ## Authentication
 
@@ -40,6 +42,7 @@ Never place the token in a query string, workflow file, image, or repository.
 | `POST` | `/api/v1/session/login` | Exchange admin token for browser session |
 | `GET`, `DELETE` | `/api/v1/session` | Inspect or end a session |
 | `GET` | `/api/v1/project-candidates` | Search unregistered repositories in allowed roots |
+| `GET` | `/api/v1/compatibility` | Filter the code-backed provider support contract |
 | `GET`, `POST` | `/api/v1/projects` | List active projects or register/reactivate a checkout |
 | `GET`, `DELETE` | `/api/v1/projects/{project}` | Project detail or reversible unregister |
 | `GET` | `/api/v1/projects/{project}/workflows` | List discovered workflows |
@@ -85,8 +88,10 @@ curl --fail-with-body -X POST \
   "${GCI_URL}/api/v1/projects"
 ```
 
-Use the returned project ID to sync workflows, then the workflow ID to queue a
-specific ref:
+Registration performs a read-only workflow scan and returns
+`X-GCI-Workflow-Discovery` plus `X-GCI-Workflow-Count` headers. A scan failure
+does not unregister the checkout or execute work. Use the returned project ID to
+rescan after repository changes, then the workflow ID to queue a specific ref:
 
 ```bash
 curl --fail-with-body -X POST \
@@ -101,6 +106,19 @@ curl --fail-with-body -X POST \
 ```
 
 The queued run records its resolved commit and source path before execution.
+
+## Compatibility report
+
+Filter the provider contract by `provider`, `category`, `state`, and free-text
+`q`. Legal states are `supported`, `partial`, `planned`, and `unsupported`.
+Partial entries always declare their exact boundary; a parsed field alone is not
+reported as executable support.
+
+```bash
+curl --fail-with-body \
+  -H "Authorization: Bearer ${GCI_TOKEN}" \
+  "${GCI_URL}/api/v1/compatibility?provider=github&state=partial&q=actions"
+```
 
 Project lists default to active registrations. Use `?state=inactive` for retained
 unregistered projects or `?state=all` for both states. Unregistering requires an

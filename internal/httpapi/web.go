@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sanix-darker/git-ci/internal/auth"
+	"github.com/sanix-darker/git-ci/internal/compatibility"
 	"github.com/sanix-darker/git-ci/internal/projects"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/webui"
@@ -65,6 +66,11 @@ var appPages = map[string]pageDefinition{
 		title:       "Deployments",
 		kicker:      "Delivery gates",
 		description: "Environment history, approvals, protected targets, and rollback context.",
+	},
+	"compatibility": {
+		title:       "Compatibility",
+		kicker:      "Support contract",
+		description: "Code-backed GitHub Actions and GitLab CI support boundaries, evidence, and planned gaps.",
 	},
 	"settings": {
 		title:       "Settings",
@@ -332,6 +338,15 @@ func (a *API) renderAppSectionState(writer http.ResponseWriter, request *http.Re
 		Notice:      notice,
 		RunFilter:   runFilterFromRequest(request),
 		Runners:     runnerInventoryViews(a.execution.RunnerInventory()),
+	}
+	if section == "compatibility" {
+		report, reportErr := compatibility.Query(compatibilityFilter(request))
+		if reportErr != nil {
+			data.Error = reportErr.Error()
+			report, _ = compatibility.Query(compatibility.Filter{})
+		}
+		data.Compatibility = report
+		data.CompatibilityFilter = report.Filter
 	}
 	if err := a.populateExecutionPage(request.Context(), &data, ""); err != nil {
 		http.Error(writer, "failed to load execution state", http.StatusInternalServerError)

@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sanix-darker/git-ci/internal/compatibility"
 	"github.com/sanix-darker/git-ci/internal/projects"
 	"github.com/sanix-darker/git-ci/internal/store"
 )
@@ -20,34 +21,36 @@ import (
 var embedded embed.FS
 
 type PageData struct {
-	Page               string
-	Title              string
-	Kicker             string
-	Description        string
-	Actor              string
-	CSRFToken          string
-	Version            string
-	Error              string
-	Notice             string
-	Projects           []store.Project
-	ProjectViews       []ProjectView
-	SelectedProject    *ProjectView
-	Candidates         []projects.Project
-	Workflows          []WorkflowView
-	Runs               []RunView
-	Jobs               []JobView
-	SelectedRun        *RunDetailView
-	Secrets            []SecretView
-	Schedules          []ScheduleView
-	Deployments        []DeploymentView
-	Environments       []EnvironmentView
-	EnvironmentSecrets []EnvironmentSecretView
-	Approvals          []ApprovalView
-	ActiveDeployments  bool
-	Webhooks           []WebhookView
-	Runners            []RunnerView
-	RunFilter          RunFilterView
-	Telemetry          RunTelemetryView
+	Page                string
+	Title               string
+	Kicker              string
+	Description         string
+	Actor               string
+	CSRFToken           string
+	Version             string
+	Error               string
+	Notice              string
+	Projects            []store.Project
+	ProjectViews        []ProjectView
+	SelectedProject     *ProjectView
+	Candidates          []projects.Project
+	Workflows           []WorkflowView
+	Runs                []RunView
+	Jobs                []JobView
+	SelectedRun         *RunDetailView
+	Secrets             []SecretView
+	Schedules           []ScheduleView
+	Deployments         []DeploymentView
+	Environments        []EnvironmentView
+	EnvironmentSecrets  []EnvironmentSecretView
+	Approvals           []ApprovalView
+	ActiveDeployments   bool
+	Webhooks            []WebhookView
+	Runners             []RunnerView
+	RunFilter           RunFilterView
+	Telemetry           RunTelemetryView
+	Compatibility       compatibility.Report
+	CompatibilityFilter compatibility.Filter
 }
 
 type ProjectView struct {
