@@ -17,26 +17,34 @@ import (
 	"github.com/sanix-darker/git-ci/pkg/types"
 )
 
-func (m *Manager) executeBuiltinAction(ctx context.Context, run store.Run, job store.Job, step store.Step, workspace string) (bool, error) {
+func (m *Manager) executeBuiltinAction(ctx context.Context, run store.Run, job store.Job, step store.Step, workspace string) (bool, map[string]string, error) {
 	if step.Action == nil {
-		return false, nil
+		return false, nil, nil
 	}
 	action := strings.ToLower(strings.TrimSpace(*step.Action))
 	inputs, err := decodeActionInputs(step.Environment)
 	if err != nil {
-		return true, err
+		return true, nil, err
+	}
+	switch githubCacheActionMode(action) {
+	case cacheActionRestore:
+		outputs, err := m.restoreCacheAction(ctx, run, step, workspace, inputs)
+		return true, outputs, err
+	case cacheActionSave:
+		return true, nil, m.saveCacheAction(ctx, run, step, workspace, inputs)
+	case cacheActionRestoreAndSave:
+		outputs, err := m.restoreCacheAction(ctx, run, step, workspace, inputs)
+		return true, outputs, err
 	}
 	switch {
 	case strings.HasPrefix(action, "actions/checkout@"):
-		return true, m.appendSystem(ctx, step.ID, "using pinned commit workspace "+pointerValue(run.CommitSHA))
+		return true, nil, m.appendSystem(ctx, step.ID, "using pinned commit workspace "+pointerValue(run.CommitSHA))
 	case strings.HasPrefix(action, "actions/upload-artifact@"):
-		return true, m.uploadArtifactAction(ctx, run, job, step, workspace, inputs)
+		return true, nil, m.uploadArtifactAction(ctx, run, job, step, workspace, inputs)
 	case strings.HasPrefix(action, "actions/download-artifact@"):
-		return true, m.downloadArtifactAction(ctx, run, step, workspace, inputs)
-	case strings.HasPrefix(action, "actions/cache@"):
-		return true, m.restoreCacheAction(ctx, run, step, workspace, inputs)
+		return true, nil, m.downloadArtifactAction(ctx, run, step, workspace, inputs)
 	default:
-		return false, nil
+		return false, nil, nil
 	}
 }
 
@@ -94,19 +102,49 @@ func (m *Manager) downloadArtifactAction(ctx context.Context, run store.Run, ste
 	return m.appendSystem(ctx, step.ID, fmt.Sprintf("downloaded %d artifact archive(s)", len(artifacts)))
 }
 
-func (m *Manager) restoreCacheAction(ctx context.Context, run store.Run, step store.Step, workspace string, inputs map[string]string) error {
+func (m *Manager) restoreCacheAction(ctx context.Context, run store.Run, step store.Step, workspace string, inputs map[string]string) (map[string]string, error) {
 	key := strings.TrimSpace(inputs["key"])
 	if key == "" {
-		return errors.New("execution: actions/cache requires key")
+		return nil, errors.New("execution: actions/cache requires key")
 	}
 	found, entry, err := m.restoreCache(ctx, run, workspace, key, actionPathList(inputs["restore-keys"]))
 	if err != nil {
+		return nil, err
+	}
+	outputs := cacheRestoreOutputs(key, found, entry)
+	if !found {
+		return outputs, m.appendSystem(ctx, step.ID, "cache miss: "+key)
+	}
+	return outputs, m.appendSystem(ctx, step.ID, "cache restored: "+entry.Key)
+}
+
+func cacheRestoreOutputs(key string, found bool, entry store.CacheEntry) map[string]string {
+	outputs := map[string]string{
+		"cache-hit":         "false",
+		"cache-primary-key": key,
+		"cache-matched-key": "",
+	}
+	if found {
+		outputs["cache-matched-key"] = entry.Key
+		if entry.Key == key {
+			outputs["cache-hit"] = "true"
+		}
+	}
+	return outputs
+}
+
+func (m *Manager) saveCacheAction(ctx context.Context, run store.Run, step store.Step, workspace string, inputs map[string]string) error {
+	key := strings.TrimSpace(inputs["key"])
+	if key == "" {
+		return errors.New("execution: actions/cache/save requires key")
+	}
+	if err := m.saveCache(ctx, run, workspace, key, actionPathList(inputs["path"])); err != nil {
+		if errors.Is(err, errArchiveNoFiles) {
+			return m.appendSystem(ctx, step.ID, "cache not saved: configured paths matched no files")
+		}
 		return err
 	}
-	if !found {
-		return m.appendSystem(ctx, step.ID, "cache miss: "+key)
-	}
-	return m.appendSystem(ctx, step.ID, "cache restored: "+entry.Key)
+	return m.appendSystem(ctx, step.ID, "cache saved: "+key)
 }
 
 func (m *Manager) restoreDeclaredCache(ctx context.Context, run store.Run, steps []store.Step, workspace string, config *types.CacheConfig) error {
@@ -157,7 +195,7 @@ func (m *Manager) saveJobCaches(ctx context.Context, run store.Run, steps []stor
 		}
 	}
 	for _, step := range steps {
-		if step.Action == nil || !strings.HasPrefix(strings.ToLower(*step.Action), "actions/cache@") {
+		if step.Action == nil || githubCacheActionMode(*step.Action) != cacheActionRestoreAndSave {
 			continue
 		}
 		inputs, err := decodeActionInputs(step.Environment)
@@ -178,6 +216,29 @@ func (m *Manager) saveJobCaches(ctx context.Context, run store.Run, steps []stor
 		_ = m.appendSystem(ctx, step.ID, "cache saved: "+key)
 	}
 	return nil
+}
+
+type cacheActionKind int
+
+const (
+	cacheActionNone cacheActionKind = iota
+	cacheActionRestoreAndSave
+	cacheActionRestore
+	cacheActionSave
+)
+
+func githubCacheActionMode(action string) cacheActionKind {
+	action = strings.ToLower(strings.TrimSpace(action))
+	switch {
+	case strings.HasPrefix(action, "actions/cache/restore@"):
+		return cacheActionRestore
+	case strings.HasPrefix(action, "actions/cache/save@"):
+		return cacheActionSave
+	case strings.HasPrefix(action, "actions/cache@"):
+		return cacheActionRestoreAndSave
+	default:
+		return cacheActionNone
+	}
 }
 
 func (m *Manager) saveCache(ctx context.Context, run store.Run, workspace, key string, paths []string) error {
