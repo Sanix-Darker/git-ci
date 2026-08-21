@@ -94,22 +94,28 @@ func (a *API) handleApprovalDecisionWeb(writer http.ResponseWriter, request *htt
 func (a *API) handleCreateScheduleWeb(writer http.ResponseWriter, request *http.Request) {
 	workflow, err := a.store.GetWorkflow(request.Context(), request.FormValue("workflowId"))
 	if err != nil {
-		a.renderAppSection(writer, request, "schedules", err.Error(), http.StatusUnprocessableEntity)
+		a.renderAutomationWebState(writer, request, projectWorkspaceReturn(request), "schedules", err.Error(), "", http.StatusUnprocessableEntity)
+		return
+	}
+	if !a.requireAutomationProject(writer, request, workflow.ProjectID) {
 		return
 	}
 	item, err := a.scheduler.Create(request.Context(), workflow.ProjectID, workflow.ID, request.FormValue("cron"), request.FormValue("ref"), request.FormValue("timezone"), true)
 	if err != nil {
-		a.renderAppSection(writer, request, "schedules", err.Error(), http.StatusUnprocessableEntity)
+		a.renderAutomationWebState(writer, request, workflow.ProjectID, "schedules", err.Error(), "", http.StatusUnprocessableEntity)
 		return
 	}
 	a.recordExecutionAudit(request, "schedule.created", "schedule", item.ID)
-	a.renderAppSectionState(writer, request, "schedules", "", "SCHEDULE ARMED", http.StatusOK)
+	a.renderAutomationWebState(writer, request, workflow.ProjectID, "schedules", "", "SCHEDULE ARMED", http.StatusOK)
 }
 
 func (a *API) handleToggleScheduleWeb(writer http.ResponseWriter, request *http.Request) {
 	item, err := a.store.GetWorkflowSchedule(request.Context(), request.PathValue("schedule"))
 	if err != nil {
-		a.renderAppSection(writer, request, "schedules", err.Error(), http.StatusUnprocessableEntity)
+		a.renderAutomationWebState(writer, request, projectWorkspaceReturn(request), "schedules", err.Error(), "", http.StatusUnprocessableEntity)
+		return
+	}
+	if !a.requireAutomationProject(writer, request, item.ProjectID) {
 		return
 	}
 	ref := ""
@@ -118,42 +124,104 @@ func (a *API) handleToggleScheduleWeb(writer http.ResponseWriter, request *http.
 	}
 	updated, err := a.scheduler.Update(request.Context(), item.ID, item.Cron, ref, item.Timezone, !item.Enabled)
 	if err != nil {
-		a.renderAppSection(writer, request, "schedules", err.Error(), http.StatusUnprocessableEntity)
+		a.renderAutomationWebState(writer, request, item.ProjectID, "schedules", err.Error(), "", http.StatusUnprocessableEntity)
 		return
 	}
 	a.recordExecutionAudit(request, "schedule.toggled", "schedule", updated.ID)
-	a.renderAppSectionState(writer, request, "schedules", "", "SCHEDULE UPDATED", http.StatusOK)
+	a.renderAutomationWebState(writer, request, item.ProjectID, "schedules", "", "SCHEDULE UPDATED", http.StatusOK)
 }
 
 func (a *API) handleDeleteScheduleWeb(writer http.ResponseWriter, request *http.Request) {
-	if err := a.scheduler.Delete(request.Context(), request.PathValue("schedule")); err != nil {
-		a.renderAppSection(writer, request, "schedules", err.Error(), http.StatusUnprocessableEntity)
+	item, err := a.store.GetWorkflowSchedule(request.Context(), request.PathValue("schedule"))
+	if err != nil {
+		a.renderAutomationWebState(writer, request, projectWorkspaceReturn(request), "schedules", err.Error(), "", http.StatusUnprocessableEntity)
 		return
 	}
-	a.recordExecutionAudit(request, "schedule.deleted", "schedule", request.PathValue("schedule"))
-	a.renderAppSectionState(writer, request, "schedules", "", "SCHEDULE DELETED", http.StatusOK)
+	if !a.requireAutomationProject(writer, request, item.ProjectID) {
+		return
+	}
+	if err := a.scheduler.Delete(request.Context(), item.ID); err != nil {
+		a.renderAutomationWebState(writer, request, item.ProjectID, "schedules", err.Error(), "", http.StatusUnprocessableEntity)
+		return
+	}
+	a.recordExecutionAudit(request, "schedule.deleted", "schedule", item.ID)
+	a.renderAutomationWebState(writer, request, item.ProjectID, "schedules", "", "SCHEDULE DELETED", http.StatusOK)
 }
 
 func (a *API) handleCreateWebhookWeb(writer http.ResponseWriter, request *http.Request) {
 	workflow, err := a.store.GetWorkflow(request.Context(), request.FormValue("workflowId"))
 	if err != nil {
-		a.renderAppSection(writer, request, "settings", err.Error(), http.StatusUnprocessableEntity)
+		a.renderAutomationWebState(writer, request, projectWorkspaceReturn(request), "settings", err.Error(), "", http.StatusUnprocessableEntity)
+		return
+	}
+	if !a.requireAutomationProject(writer, request, workflow.ProjectID) {
 		return
 	}
 	created, err := a.webhooks.Create(request.Context(), workflow.ProjectID, request.FormValue("name"), request.FormValue("provider"), workflow.ID, request.FormValue("ref"))
 	if err != nil {
-		a.renderAppSection(writer, request, "settings", err.Error(), http.StatusUnprocessableEntity)
+		a.renderAutomationWebState(writer, request, workflow.ProjectID, "settings", err.Error(), "", http.StatusUnprocessableEntity)
 		return
 	}
 	a.recordExecutionAudit(request, "webhook.created", "webhook", created.Endpoint.ID)
-	a.renderAppSectionState(writer, request, "settings", "", "WEBHOOK TOKEN (SHOWN ONCE): "+created.Token, http.StatusOK)
+	a.renderAutomationWebState(writer, request, workflow.ProjectID, "settings", "", "WEBHOOK TOKEN (SHOWN ONCE): "+created.Token, http.StatusOK)
+}
+
+func (a *API) requireAutomationProject(writer http.ResponseWriter, request *http.Request, actualProjectID string) bool {
+	requestedProjectID := projectWorkspaceReturn(request)
+	if requestedProjectID == "" || requestedProjectID == actualProjectID {
+		return true
+	}
+	a.renderAutomationWebState(writer, request, requestedProjectID, "projects", "The selected workflow does not belong to this project.", "", http.StatusUnprocessableEntity)
+	return false
+}
+
+func (a *API) renderAutomationWebState(writer http.ResponseWriter, request *http.Request, projectID, section, message, notice string, status int) {
+	if projectID != "" && projectWorkspaceReturn(request) == projectID {
+		a.renderProjectWorkspace(writer, request, projectID, message, notice, status)
+		return
+	}
+	a.renderAppSectionState(writer, request, section, message, notice, status)
+}
+
+func workflowNamesByID(workflows []webui.WorkflowView) map[string]string {
+	result := make(map[string]string, len(workflows))
+	for _, workflow := range workflows {
+		result[workflow.ID] = workflow.Name
+	}
+	return result
+}
+
+func (a *API) populateProjectAutomationPage(ctx context.Context, data *webui.PageData, project store.Project, workflowNames map[string]string) error {
+	schedules, err := a.store.ListWorkflowSchedules(ctx, project.ID)
+	if err != nil {
+		return err
+	}
+	for _, item := range schedules {
+		ref, next := "", "DISABLED"
+		if item.Ref != nil {
+			ref = *item.Ref
+		}
+		if item.NextRunAt != nil {
+			next = item.NextRunAt.UTC().Format("2006-01-02 15:04:05Z")
+		}
+		workflowName := workflowNames[item.WorkflowID]
+		if workflowName == "" {
+			workflowName = item.WorkflowID
+		}
+		data.Schedules = append(data.Schedules, webui.ScheduleView{ID: item.ID, ProjectName: project.Name, WorkflowName: workflowName, Cron: item.Cron, Ref: ref, Timezone: item.Timezone, NextRunAt: next, Enabled: item.Enabled})
+	}
+	endpoints, err := a.store.ListWebhookEndpoints(ctx, project.ID)
+	if err != nil {
+		return err
+	}
+	for _, item := range endpoints {
+		data.Webhooks = append(data.Webhooks, webui.WebhookView{ID: item.ID, ProjectName: project.Name, Name: item.Name, Provider: strings.ToUpper(item.Provider), URL: "/hooks/" + item.ID, Enabled: item.Enabled})
+	}
+	return nil
 }
 
 func (a *API) populateConfigurationPage(ctx context.Context, data *webui.PageData) error {
-	workflowNames := make(map[string]string, len(data.Workflows))
-	for _, workflow := range data.Workflows {
-		workflowNames[workflow.ID] = workflow.Name
-	}
+	workflowNames := workflowNamesByID(data.Workflows)
 	for _, project := range data.Projects {
 		secrets, err := a.store.ListSecrets(ctx, project.ID)
 		if err != nil {
@@ -185,19 +253,8 @@ func (a *API) populateConfigurationPage(ctx context.Context, data *webui.PageDat
 				})
 			}
 		}
-		schedules, err := a.store.ListWorkflowSchedules(ctx, project.ID)
-		if err != nil {
+		if err := a.populateProjectAutomationPage(ctx, data, project, workflowNames); err != nil {
 			return err
-		}
-		for _, item := range schedules {
-			ref, next := "", "DISABLED"
-			if item.Ref != nil {
-				ref = *item.Ref
-			}
-			if item.NextRunAt != nil {
-				next = item.NextRunAt.UTC().Format("2006-01-02 15:04:05Z")
-			}
-			data.Schedules = append(data.Schedules, webui.ScheduleView{ID: item.ID, ProjectName: project.Name, WorkflowName: workflowNames[item.WorkflowID], Cron: item.Cron, Ref: ref, Timezone: item.Timezone, NextRunAt: next, Enabled: item.Enabled})
 		}
 		deployments, err := a.store.ListDeployments(ctx, project.ID)
 		if err != nil {
@@ -235,13 +292,6 @@ func (a *API) populateConfigurationPage(ctx context.Context, data *webui.PageDat
 			if !terminal {
 				data.ActiveDeployments = true
 			}
-		}
-		endpoints, err := a.store.ListWebhookEndpoints(ctx, project.ID)
-		if err != nil {
-			return err
-		}
-		for _, item := range endpoints {
-			data.Webhooks = append(data.Webhooks, webui.WebhookView{ID: item.ID, ProjectName: project.Name, Name: item.Name, Provider: strings.ToUpper(item.Provider), URL: "/hooks/" + item.ID, Enabled: item.Enabled})
 		}
 	}
 	approvals, err := a.store.ListEnvironmentApprovalRequests(ctx, store.ListEnvironmentApprovalsParams{Status: store.EnvironmentApprovalPending})

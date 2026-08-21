@@ -90,10 +90,30 @@ jobs:
 	request.AddCookie(cookie)
 	response = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(response, request)
-	for _, expected := range []string{"PROJECT WORKSPACE", "Release pipeline", "Pipeline dependency graph", "RUN WORKFLOW", "LOCAL COMMIT WATCH", "EXECUTION SIGNAL", "RECENT RUNS", `name="returnProject"`} {
+	for _, expected := range []string{"PROJECT WORKSPACE", "Release pipeline", "Pipeline dependency graph", "RUN WORKFLOW", "LOCAL COMMIT WATCH", "PROJECT AUTOMATION", "ARM SCHEDULE", "NEW WEBHOOK", "NO WORKFLOW SCHEDULES ARMED", "NO WEBHOOK ENDPOINTS", "EXECUTION SIGNAL", "RECENT RUNS", `name="returnProject"`} {
 		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), expected) {
 			t.Fatalf("project workspace missing %q: status=%d body=%s", expected, response.Code, response.Body.String())
 		}
+	}
+
+	form = url.Values{"_csrf": {csrf}, "workflowId": {workflows[0].ID}, "cron": {"17 * * * *"}, "timezone": {"UTC"}, "ref": {"main"}, "returnProject": {projects[0].ID}}
+	request = httptest.NewRequest(http.MethodPost, "/app/schedules", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	fixture.handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "SCHEDULE ARMED") || !strings.Contains(response.Body.String(), "17 * * * *") || !strings.Contains(response.Body.String(), "PROJECT AUTOMATION") {
+		t.Fatalf("project schedule response: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	form = url.Values{"_csrf": {csrf}, "workflowId": {workflows[0].ID}, "name": {"release-push"}, "provider": {"github"}, "ref": {"main"}, "returnProject": {projects[0].ID}}
+	request = httptest.NewRequest(http.MethodPost, "/app/settings/webhooks", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	fixture.handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "WEBHOOK TOKEN (SHOWN ONCE)") || !strings.Contains(response.Body.String(), "release-push") || !strings.Contains(response.Body.String(), "PROJECT AUTOMATION") {
+		t.Fatalf("project webhook response: status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/app/projects/missing", nil)

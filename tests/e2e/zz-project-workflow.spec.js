@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 
 const token = () => readFileSync("build/e2e-web/state/admin.token", "utf8").trim();
 
-test("project workflow catalog exposes the pre-run DAG and explicit dispatch @responsive", async ({ page }) => {
+test("project workflow catalog exposes the pre-run DAG and explicit dispatch @responsive", async ({ page }, testInfo) => {
   const authorization = { Authorization: `Bearer ${token()}` };
   const projectsResponse = await page.request.get("/api/v1/projects", { headers: authorization });
   const projectsPayload = await projectsResponse.json();
@@ -114,6 +114,25 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await workspaceWorkflow.locator("summary").click();
   await expect(workspaceWorkflow.getByLabel("Pipeline dependency graph")).toContainText("AFTER PREPARE");
   await expect(workspaceWorkflow.getByRole("button", { name: /RUN WORKFLOW/ })).toBeVisible();
+  const automation = page.getByLabel("Project automation");
+  await expect(automation).toContainText("04 SOURCES");
+  const scheduleForm = automation.locator("form.schedule-form");
+  const scheduleWorkflow = await scheduleForm.locator("option").filter({ hasText: "Alpha CI" }).getAttribute("value");
+  await scheduleForm.getByLabel("WORKFLOW").selectOption(scheduleWorkflow);
+  await scheduleForm.getByLabel("CRON").fill("17 * * * *");
+  await scheduleForm.getByRole("button", { name: /CREATE \+ ENABLE/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "SCHEDULE ARMED" })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/projects\/[A-Za-z0-9_-]+$/);
+  await expect(automation.locator(".schedule-list")).toContainText("17 * * * *");
+  const webhookForm = automation.locator("form.webhook-form");
+  const webhookWorkflow = await webhookForm.locator("option").filter({ hasText: "Alpha CI" }).getAttribute("value");
+  await webhookForm.getByLabel("WORKFLOW").selectOption(webhookWorkflow);
+  const webhookName = `project-${testInfo.project.name}-push`;
+  await webhookForm.getByLabel("NAME").fill(webhookName);
+  await webhookForm.getByRole("button", { name: /CREATE ENDPOINT/ }).click();
+  await expect(page.getByRole("status").filter({ hasText: "WEBHOOK TOKEN" })).toBeVisible();
+  await expect(page).toHaveURL(/\/app\/projects\/[A-Za-z0-9_-]+$/);
+  await expect(automation).toContainText(webhookName);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const watcher = workspace.locator("form.commit-trigger");
   await watcher.locator('input[name="enabled"]').check();

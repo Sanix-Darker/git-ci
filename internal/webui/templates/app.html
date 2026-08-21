@@ -78,21 +78,30 @@
 
 {{define "schedules_panel"}}
 <section class="configuration-grid">
-  <form class="config-form" method="post" action="/app/schedules" hx-post="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+  {{template "schedule_form" .}}
+  {{template "schedule_list" .}}
+</section>
+{{end}}
+
+{{define "schedule_form"}}
+  <form class="config-form schedule-form" method="post" action="/app/schedules" hx-post="/app/schedules" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
     <header><p class="kicker">FIVE-FIELD CRON</p><h2>ARM SCHEDULE</h2></header>
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    {{with .SelectedProject}}<input type="hidden" name="returnProject" value="{{.ID}}">{{end}}
     <label>WORKFLOW<select name="workflowId" required>{{range .Workflows}}<option value="{{.ID}}">{{.ProjectName}} / {{.Name}}</option>{{end}}</select></label>
     <div class="form-pair"><label>CRON<input name="cron" required value="0 * * * *" placeholder="0 * * * *"></label><label>TIMEZONE<input name="timezone" required value="UTC" placeholder="Europe/Paris"></label></div>
     <label>REF<input name="ref" placeholder="main"></label>
     <button type="submit">CREATE + ENABLE <span>-></span></button>
   </form>
+{{end}}
+
+{{define "schedule_list"}}
   <section class="surface-card flush-card">
     <div class="card-heading padded-heading"><div><p class="kicker">DURABLE CLAIMS</p><h2>ACTIVE CRON</h2></div><span>{{pad2 (len .Schedules)}}</span></div>
     <div class="compact-list schedule-list">
-      {{range .Schedules}}<article><div><i class="dot {{if .Enabled}}dot-green{{end}}"></i><span><strong>{{.WorkflowName}}</strong><small>{{.ProjectName}} / {{.Cron}} / {{.Timezone}}</small></span></div><div><time>{{.NextRunAt}}</time><form method="post" action="/app/schedules/{{.ID}}/toggle" hx-post="/app/schedules/{{.ID}}/toggle" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">{{if .Enabled}}PAUSE{{else}}ENABLE{{end}}</button></form><form method="post" action="/app/schedules/{{.ID}}/delete" hx-post="/app/schedules/{{.ID}}/delete" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button type="submit">DELETE</button></form></div></article>{{else}}<div class="empty-state"><i></i><p>NO WORKFLOW SCHEDULES ARMED</p></div>{{end}}
+      {{range .Schedules}}<article><div><i class="dot {{if .Enabled}}dot-green{{end}}"></i><span><strong>{{.WorkflowName}}</strong><small>{{.ProjectName}} / {{.Cron}} / {{.Timezone}}</small></span></div><div><time>{{.NextRunAt}}</time><form method="post" action="/app/schedules/{{.ID}}/toggle" hx-post="/app/schedules/{{.ID}}/toggle" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}">{{with $.SelectedProject}}<input type="hidden" name="returnProject" value="{{.ID}}">{{end}}<button type="submit">{{if .Enabled}}PAUSE{{else}}ENABLE{{end}}</button></form><form method="post" action="/app/schedules/{{.ID}}/delete" hx-post="/app/schedules/{{.ID}}/delete" hx-target="#app-frame" hx-swap="outerHTML"><input type="hidden" name="_csrf" value="{{$.CSRFToken}}">{{with $.SelectedProject}}<input type="hidden" name="returnProject" value="{{.ID}}">{{end}}<button type="submit">DELETE</button></form></div></article>{{else}}<div class="empty-state"><i></i><p>NO WORKFLOW SCHEDULES ARMED</p></div>{{end}}
     </div>
   </section>
-</section>
 {{end}}
 
 {{define "approval_card"}}
@@ -231,22 +240,31 @@
   </div>
 </section>
 <section class="configuration-grid">
-  <form class="config-form" method="post" action="/app/settings/webhooks" hx-post="/app/settings/webhooks" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
+  {{template "webhook_form" .}}
+  {{template "webhook_list" .}}
+</section>
+<section class="service-ledger"><article><span>DATABASE</span><strong>SQLITE / WAL</strong></article><article><span>PUBLIC SITE</span><strong>EMBEDDED</strong></article><article><span>RUNNER</span><strong>LOCAL / SERIAL</strong></article><article><span>THEME</span><strong>DARK / FIXED</strong></article></section>
+{{end}}
+
+{{define "webhook_form"}}
+  <form class="config-form webhook-form" method="post" action="/app/settings/webhooks" hx-post="/app/settings/webhooks" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button">
     <header><p class="kicker">EVENT TRIGGERS</p><h2>NEW WEBHOOK</h2></header>
     <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+    {{with .SelectedProject}}<input type="hidden" name="returnProject" value="{{.ID}}">{{end}}
     <label>WORKFLOW<select name="workflowId" required>{{range .Workflows}}<option value="{{.ID}}">{{.ProjectName}} / {{.Name}}</option>{{end}}</select></label>
     <div class="form-pair"><label>NAME<input name="name" required placeholder="github-push"></label><label>PROVIDER<select name="provider"><option value="github">GITHUB</option><option value="gitlab">GITLAB</option><option value="generic">GENERIC</option></select></label></div>
     <label>FALLBACK REF<input name="ref" placeholder="main"></label>
     <button type="submit">CREATE ENDPOINT <span>-></span></button>
   </form>
+{{end}}
+
+{{define "webhook_list"}}
   <section class="surface-card flush-card">
     <div class="card-heading padded-heading"><div><p class="kicker">TOKEN HASHES</p><h2>WEBHOOKS</h2></div><span>{{pad2 (len .Webhooks)}}</span></div>
     <div class="compact-list">
       {{range .Webhooks}}<article><div><i class="dot {{if .Enabled}}dot-green{{end}}"></i><span><strong>{{.Name}}</strong><small>{{.ProjectName}} / {{.Provider}}</small></span></div><div><code>{{.URL}}</code></div></article>{{else}}<div class="empty-state"><i></i><p>NO WEBHOOK ENDPOINTS</p></div>{{end}}
     </div>
   </section>
-</section>
-<section class="service-ledger"><article><span>DATABASE</span><strong>SQLITE / WAL</strong></article><article><span>PUBLIC SITE</span><strong>EMBEDDED</strong></article><article><span>RUNNER</span><strong>LOCAL / SERIAL</strong></article><article><span>THEME</span><strong>DARK / FIXED</strong></article></section>
 {{end}}
 
 {{define "sidebar"}}
@@ -372,8 +390,23 @@
 </section>
 {{end}}
 {{template "workflows_panel" .}}
+{{template "project_automation" .}}
 {{template "run_telemetry" .}}
 <section class="surface-card flush-card project-recent-runs"><div class="card-heading padded-heading"><div><p class="kicker">PROJECT HISTORY</p><h2>RECENT RUNS</h2></div><a href="/app/runs?project={{.SelectedProject.ID}}">VIEW ALL -&gt;</a></div>{{template "run_rows" .}}</section>
+{{end}}
+
+{{define "project_automation"}}
+<section class="project-automation" aria-label="Project automation">
+  <header class="project-automation-head"><div><p class="kicker">TRIGGER CONTROL</p><h2>PROJECT AUTOMATION</h2><p>Manual dispatch, local commits, cron claims, and signed provider deliveries all enter the same durable queue.</p></div><b>04 SOURCES</b></header>
+  <div class="automation-ledger">
+    <article><span><i class="dot dot-green"></i>MANUAL</span><strong>{{pad2 (len .Workflows)}} WORKFLOWS</strong><small>EXPLICIT REF + COMMIT</small></article>
+    <article><span><i class="dot {{.SelectedProject.CommitTrigger.Dot}}"></i>LOCAL COMMIT</span><strong>{{.SelectedProject.CommitTrigger.Status}}</strong><small>{{.SelectedProject.CommitTrigger.Ref}}</small></article>
+    <article><span><i class="dot {{if .Schedules}}dot-green{{end}}"></i>CRON</span><strong>{{pad2 (len .Schedules)}} SCHEDULES</strong><small>SQLITE CLAIMS</small></article>
+    <article><span><i class="dot {{if .Webhooks}}dot-green{{end}}"></i>WEBHOOK</span><strong>{{pad2 (len .Webhooks)}} ENDPOINTS</strong><small>GITHUB / GITLAB / GENERIC</small></article>
+  </div>
+  <div class="project-automation-grid">{{template "schedule_form" .}}{{template "webhook_form" .}}</div>
+  <div class="project-automation-grid project-automation-ledgers">{{template "schedule_list" .}}{{template "webhook_list" .}}</div>
+</section>
 {{end}}
 
 {{define "project_rows"}}
