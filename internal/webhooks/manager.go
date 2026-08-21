@@ -11,8 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
+	"github.com/sanix-darker/git-ci/internal/gitrepository"
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 )
@@ -116,7 +118,24 @@ func (m *Manager) Deliver(ctx context.Context, endpointID, token, deliveryID, ev
 		_, _ = m.store.TransitionWebhookDelivery(ctx, recorded.Delivery.ID, store.WebhookDeliveryFailed, &message)
 		return recorded, nil, fmt.Errorf("webhooks: %s: %w", message, err)
 	}
-	event := webhookEvent(endpoint.Provider, eventType, payload)
+	normalized := normalizeWebhookPayload(endpoint.Provider, eventType, config.Ref, payload)
+	event := normalized.Event
+	if !event.PathsKnown && triggerpolicy.NeedsChangedPaths(definition.TriggerPolicies, definition.Triggers, event) && normalized.DiffBase != "" && normalized.DiffHead != "" {
+		project, projectErr := m.store.GetProject(ctx, workflow.ProjectID)
+		if projectErr != nil || project.CanonicalPath == nil || strings.TrimSpace(*project.CanonicalPath) == "" {
+			message := "changed paths require an active local project checkout"
+			_, _ = m.store.TransitionWebhookDelivery(ctx, recorded.Delivery.ID, store.WebhookDeliveryFailed, &message)
+			return recorded, nil, errors.New("webhooks: " + message)
+		}
+		paths, pathsErr := gitrepository.ChangedPaths(ctx, *project.CanonicalPath, normalized.DiffBase, normalized.DiffHead, normalized.DiffMode)
+		if pathsErr != nil {
+			message := pathsErr.Error()
+			_, _ = m.store.TransitionWebhookDelivery(ctx, recorded.Delivery.ID, store.WebhookDeliveryFailed, &message)
+			return recorded, nil, fmt.Errorf("webhooks: changed paths: %w", pathsErr)
+		}
+		event.ChangedPaths = paths
+		event.PathsKnown = true
+	}
 	matches := len(definition.TriggerPolicies) == 0 && len(definition.Triggers) == 0
 	if !matches {
 		matches = triggerpolicy.Match(definition.TriggerPolicies, definition.Triggers, event)
@@ -129,8 +148,7 @@ func (m *Manager) Deliver(ctx context.Context, endpointID, token, deliveryID, ev
 		recorded.Delivery = accepted
 		return recorded, nil, nil
 	}
-	ref, commit := webhookRef(endpoint.Provider, config.Ref, payload)
-	run, err := m.enqueuer.EnqueueTriggered(ctx, config.WorkflowID, ref, commit, "webhook")
+	run, err := m.enqueuer.EnqueueTriggered(ctx, config.WorkflowID, normalized.RunRef, normalized.CommitSHA, "webhook")
 	if err != nil {
 		message := err.Error()
 		_, _ = m.store.TransitionWebhookDelivery(ctx, recorded.Delivery.ID, store.WebhookDeliveryFailed, &message)
@@ -144,47 +162,98 @@ func (m *Manager) Deliver(ctx context.Context, endpointID, token, deliveryID, ev
 	return recorded, &run, nil
 }
 
-func webhookRef(provider, fallback string, payload []byte) (string, string) {
+type normalizedWebhookPayload struct {
+	Event     triggerpolicy.Event
+	RunRef    string
+	CommitSHA string
+	DiffBase  string
+	DiffHead  string
+	DiffMode  gitrepository.DiffMode
+}
+
+func normalizeWebhookPayload(provider, eventType, fallback string, payload []byte) normalizedWebhookPayload {
+	normalized := normalizedWebhookPayload{Event: triggerpolicy.Event{Type: normalizeWebhookEvent(provider, eventType)}, RunRef: strings.TrimSpace(fallback)}
 	var value map[string]any
 	if json.Unmarshal(payload, &value) != nil {
-		return fallback, ""
+		return normalized
 	}
-	ref, _ := value["ref"].(string)
-	if ref == "" {
-		ref = fallback
+	normalized.Event.Ref = stringValue(value, "ref")
+	normalized.Event.Action = strings.ToLower(strings.TrimSpace(stringValue(value, "action")))
+	if normalized.Event.Ref != "" {
+		normalized.RunRef = normalized.Event.Ref
 	}
-	commit, _ := value["after"].(string)
-	if provider == "gitlab" {
-		if sha, ok := value["checkout_sha"].(string); ok {
-			commit = sha
+	normalized.CommitSHA = stringValue(value, "after")
+	normalized.DiffBase = stringValue(value, "before")
+	normalized.DiffHead = normalized.CommitSHA
+	normalized.DiffMode = gitrepository.DiffDirect
+	collectChangedPaths(&normalized.Event, value)
+	if commits, present := value["commits"].([]any); present {
+		count := numericValue(value, "size")
+		if provider == "gitlab" {
+			count = numericValue(value, "total_commits_count")
+		}
+		if count > len(commits) {
+			normalized.Event.PathsKnown = false
+			normalized.Event.ChangedPaths = nil
 		}
 	}
-	return ref, commit
+
+	if provider == "github" && normalized.Event.Type == "pull_request" {
+		pullRequest := objectValue(value, "pull_request")
+		base := objectValue(pullRequest, "base")
+		head := objectValue(pullRequest, "head")
+		normalized.Event.Ref = branchRef(stringValue(base, "ref"))
+		normalized.RunRef = branchRef(stringValue(head, "ref"))
+		if normalized.RunRef == "" {
+			normalized.RunRef = strings.TrimSpace(fallback)
+		}
+		normalized.CommitSHA = stringValue(head, "sha")
+		normalized.DiffBase = stringValue(base, "sha")
+		normalized.DiffHead = normalized.CommitSHA
+		normalized.DiffMode = gitrepository.DiffMergeBase
+		normalized.Event.PathsKnown = false
+		normalized.Event.ChangedPaths = nil
+	}
+
+	if provider == "gitlab" {
+		if kind, ok := value["object_kind"].(string); ok && strings.TrimSpace(kind) != "" {
+			normalized.Event.Type = normalizeWebhookEvent(provider, kind)
+		}
+		if attributes := objectValue(value, "object_attributes"); attributes != nil {
+			if action, ok := attributes["action"].(string); ok {
+				normalized.Event.Action = normalizeMergeRequestAction(action)
+			}
+			if normalized.Event.Type == "pull_request" {
+				normalized.Event.Ref = branchRef(stringValue(attributes, "target_branch"))
+				normalized.RunRef = branchRef(stringValue(attributes, "source_branch"))
+				if normalized.RunRef == "" {
+					normalized.RunRef = strings.TrimSpace(fallback)
+				}
+				normalized.CommitSHA = stringValue(objectValue(attributes, "last_commit"), "id")
+				normalized.Event.PathsKnown = false
+				normalized.Event.ChangedPaths = nil
+			}
+		}
+		if normalized.Event.Type == "push" {
+			if sha := stringValue(value, "checkout_sha"); sha != "" {
+				normalized.CommitSHA = sha
+				normalized.DiffHead = sha
+			}
+		}
+	}
+	return normalized
+}
+
+func webhookRef(provider, fallback string, payload []byte) (string, string) {
+	normalized := normalizeWebhookPayload(provider, "", fallback, payload)
+	return normalized.RunRef, normalized.CommitSHA
 }
 
 func webhookEvent(provider, eventType string, payload []byte) triggerpolicy.Event {
-	event := triggerpolicy.Event{Type: normalizeWebhookEvent(provider, eventType)}
-	var value map[string]any
-	if json.Unmarshal(payload, &value) != nil {
-		return event
-	}
-	event.Ref, _ = value["ref"].(string)
-	event.Action, _ = value["action"].(string)
-	if provider == "gitlab" {
-		if kind, ok := value["object_kind"].(string); ok && strings.TrimSpace(kind) != "" {
-			event.Type = normalizeWebhookEvent(provider, kind)
-		}
-		if attributes, ok := value["object_attributes"].(map[string]any); ok {
-			if action, ok := attributes["action"].(string); ok {
-				event.Action = action
-			}
-			if event.Ref == "" {
-				if branch, ok := attributes["source_branch"].(string); ok && branch != "" {
-					event.Ref = "refs/heads/" + branch
-				}
-			}
-		}
-	}
+	return normalizeWebhookPayload(provider, eventType, "", payload).Event
+}
+
+func collectChangedPaths(event *triggerpolicy.Event, value map[string]any) {
 	commits, present := value["commits"].([]any)
 	event.PathsKnown = present
 	seen := make(map[string]struct{})
@@ -207,7 +276,62 @@ func webhookEvent(provider, eventType string, payload []byte) triggerpolicy.Even
 			}
 		}
 	}
-	return event
+}
+
+func objectValue(value map[string]any, key string) map[string]any {
+	if value == nil {
+		return nil
+	}
+	object, _ := value[key].(map[string]any)
+	return object
+}
+
+func stringValue(value map[string]any, key string) string {
+	if value == nil {
+		return ""
+	}
+	text, _ := value[key].(string)
+	return strings.TrimSpace(text)
+}
+
+func numericValue(value map[string]any, key string) int {
+	if value == nil {
+		return 0
+	}
+	switch number := value[key].(type) {
+	case float64:
+		return int(number)
+	case json.Number:
+		parsed, _ := strconv.Atoi(number.String())
+		return parsed
+	}
+	return 0
+}
+
+func branchRef(branch string) string {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return ""
+	}
+	if strings.HasPrefix(branch, "refs/heads/") {
+		return branch
+	}
+	return "refs/heads/" + branch
+}
+
+func normalizeMergeRequestAction(action string) string {
+	switch action = strings.ToLower(strings.TrimSpace(action)); action {
+	case "open":
+		return "opened"
+	case "update":
+		return "synchronize"
+	case "reopen":
+		return "reopened"
+	case "close", "merge":
+		return "closed"
+	default:
+		return action
+	}
 }
 
 func normalizeWebhookEvent(provider, eventType string) string {
