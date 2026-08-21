@@ -165,6 +165,11 @@ type RunStepView struct {
 	Terminal                                       bool
 	Replay                                         ReplayControlView
 	Badges                                         []SemanticBadgeView
+	Annotations                                    []RunStepAnnotationView
+}
+
+type RunStepAnnotationView struct {
+	Level, Dot, Title, Message, Location string
 }
 
 type ReplayControlView struct {

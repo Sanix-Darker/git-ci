@@ -271,6 +271,13 @@
 .step-detail > header span { display: flex; align-items: center; gap: .55rem; }
 .step-detail > header b { color: #727272; font-size: .54rem; }
 .step-command { display: block; overflow-x: auto; border-top: 1px solid #272727; padding: .75rem 1rem; color: #b8b8b8; font-family: inherit; font-size: .59rem; white-space: nowrap; }
+.step-annotations { display: grid; gap: .45rem; border-top: 1px solid #383838; padding: .7rem 1rem; }
+.step-annotation { min-width: 0; border: 1px solid #383838; background: #0c0c0c; padding: .7rem .8rem; }
+.step-annotation > header { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; color: #727272; font-size: .52rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.step-annotation > header span { display: inline-flex; align-items: center; gap: .45rem; }
+.step-annotation > header b { color: #d0d0d0; }
+.step-annotation > header code { margin-left: auto; max-width: 100%; overflow-wrap: anywhere; color: #727272; font: inherit; letter-spacing: 0; text-transform: none; }
+.step-annotation > p { margin: .55rem 0 0; overflow-wrap: anywhere; color: #d0d0d0; font-size: .63rem; line-height: 1.6; white-space: pre-wrap; }
 .step-summary { border-top: 1px solid #383838; background: #0c0c0c; }
 .step-summary > summary { display: flex; min-height: 38px; align-items: center; justify-content: space-between; padding: 0 1rem; color: #fff; cursor: pointer; font-size: .56rem; font-weight: 900; letter-spacing: .08em; list-style: none; transition: background-color 120ms steps(2, end), padding-left 120ms steps(2, end); }
 .step-summary > summary::-webkit-details-marker { display: none; }

@@ -262,24 +262,25 @@ type Job struct {
 
 // Step is a durable step snapshot and its mutable lifecycle fields.
 type Step struct {
-	ID               string          `json:"id"`
-	JobID            string          `json:"jobId"`
-	Key              *string         `json:"key,omitempty"`
-	Index            int             `json:"index"`
-	Name             string          `json:"name"`
-	Command          *string         `json:"command,omitempty"`
-	Status           Status          `json:"status"`
-	Environment      json.RawMessage `json:"environment"`
-	Action           *string         `json:"action,omitempty"`
-	WorkingDirectory *string         `json:"workingDirectory,omitempty"`
-	TimeoutMinutes   int             `json:"timeoutMinutes"`
-	Shell            *string         `json:"shell,omitempty"`
-	AllowFailure     bool            `json:"allowFailure"`
-	Summary          string          `json:"summary,omitempty"`
-	StartedAt        *time.Time      `json:"startedAt,omitempty"`
-	FinishedAt       *time.Time      `json:"finishedAt,omitempty"`
-	CreatedAt        time.Time       `json:"createdAt"`
-	UpdatedAt        time.Time       `json:"updatedAt"`
+	ID               string           `json:"id"`
+	JobID            string           `json:"jobId"`
+	Key              *string          `json:"key,omitempty"`
+	Index            int              `json:"index"`
+	Name             string           `json:"name"`
+	Command          *string          `json:"command,omitempty"`
+	Status           Status           `json:"status"`
+	Environment      json.RawMessage  `json:"environment"`
+	Action           *string          `json:"action,omitempty"`
+	WorkingDirectory *string          `json:"workingDirectory,omitempty"`
+	TimeoutMinutes   int              `json:"timeoutMinutes"`
+	Shell            *string          `json:"shell,omitempty"`
+	AllowFailure     bool             `json:"allowFailure"`
+	Summary          string           `json:"summary,omitempty"`
+	Annotations      []StepAnnotation `json:"annotations,omitempty"`
+	StartedAt        *time.Time       `json:"startedAt,omitempty"`
+	FinishedAt       *time.Time       `json:"finishedAt,omitempty"`
+	CreatedAt        time.Time        `json:"createdAt"`
+	UpdatedAt        time.Time        `json:"updatedAt"`
 }
 
 // JobGraph is a job and its steps in the order a worker should process them.
@@ -785,6 +786,19 @@ func (s *Store) GetRunGraph(ctx context.Context, runID string) (RunGraph, error)
 	}
 	if err := stepRows.Err(); err != nil {
 		return RunGraph{}, fmt.Errorf("store: iterate run steps: %w", err)
+	}
+	if err := stepRows.Close(); err != nil {
+		return RunGraph{}, fmt.Errorf("store: close run steps: %w", err)
+	}
+	annotations, err := listRunStepAnnotations(ctx, db, runID)
+	if err != nil {
+		return RunGraph{}, err
+	}
+	for jobIndex := range graph.Jobs {
+		for stepIndex := range graph.Jobs[jobIndex].Steps {
+			step := &graph.Jobs[jobIndex].Steps[stepIndex]
+			step.Annotations = annotations[step.ID]
+		}
 	}
 	return graph, nil
 }

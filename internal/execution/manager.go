@@ -900,6 +900,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	}
 	jobFailed := false
 	stepStatuses := make(map[string]store.Status, len(item.Steps))
+	jobCtx = withWorkflowCommandState(jobCtx, newWorkflowCommandState(secretValues))
 	for index, step := range item.Steps {
 		cancelled, err := m.isCancelled(jobCtx, run.ID)
 		if err != nil {
@@ -1124,7 +1125,11 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 		case !outputContext.reserveGitHubStepSummary():
 			_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, fmt.Sprintf("step summary ignored: job limit is %d", maxGitHubStepSummaries))
 		default:
-			redacted := redactSecrets(summary, secretValues)
+			commandState := workflowCommandStateFromContext(ctx)
+			if commandState == nil {
+				commandState = newWorkflowCommandState(secretValues)
+			}
+			redacted := commandState.redact(summary)
 			if _, persistErr := m.store.SetStepSummary(context.WithoutCancel(ctx), step.ID, redacted); persistErr != nil {
 				_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, "step summary ignored: "+persistErr.Error())
 			} else {
@@ -1234,9 +1239,24 @@ func (m *Manager) failJobSetup(ctx context.Context, item store.JobGraph, setupEr
 func (m *Manager) captureLines(ctx context.Context, stepID string, stream store.LogStream, reader io.Reader, secretValues map[string]string) error {
 	scanner := bufio.NewScanner(reader)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	commandState := workflowCommandStateFromContext(ctx)
+	if commandState == nil {
+		commandState = newWorkflowCommandState(secretValues)
+	}
 	for scanner.Scan() {
-		if _, err := m.store.AppendLogLine(ctx, store.AppendLogLineParams{StepID: stepID, Stream: stream, Message: redactSecrets(scanner.Text(), secretValues)}); err != nil {
+		result := commandState.process(stepID, stream, scanner.Text())
+		if result.annotation != nil {
+			if _, err := m.store.AppendStepAnnotation(ctx, *result.annotation); err != nil {
+				result.diagnostic = "workflow command ignored: annotation could not be persisted"
+			}
+		}
+		if _, err := m.store.AppendLogLine(ctx, store.AppendLogLineParams{StepID: stepID, Stream: stream, Message: result.line}); err != nil {
 			return err
+		}
+		if result.diagnostic != "" {
+			if _, err := m.store.AppendLogLine(ctx, store.AppendLogLineParams{StepID: stepID, Stream: store.LogStreamSystem, Message: result.diagnostic}); err != nil {
+				return err
+			}
 		}
 	}
 	err := scanner.Err()
