@@ -260,17 +260,19 @@
 .run-node code { margin-top: .2rem; color: #727272; font-family: inherit; font-size: .56rem; }
 .run-node small { margin-top: .65rem; border-top: 1px solid #383838; padding-top: .55rem; color: #727272; font-size: .5rem; font-weight: 900; }
 .job-details { display: grid; gap: 1rem; padding: 1rem; }
-.job-detail { border: 1px solid #383838; }
+.job-detail { max-width: 100%; min-width: 0; overflow: hidden; border: 1px solid #383838; }
 .job-detail > header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid #383838; padding: 1rem; }
-.job-detail > header > div:first-child { display: flex; align-items: center; gap: 1rem; }
+.job-detail > header > div { min-width: 0; max-width: 100%; }
+.job-detail > header > div:first-child { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; }
 .job-detail h3 { margin: 0; font-family: var(--font-display); font-size: 1.25rem; }
 .job-detail > header > div:last-child { color: #727272; font-size: .53rem; font-weight: 900; }
+.step-list, .step-detail { min-width: 0; max-width: 100%; }
 .step-list { display: grid; }
 .step-detail + .step-detail { border-top: 1px solid #383838; }
 .step-detail > header { display: flex; min-height: 44px; align-items: center; justify-content: space-between; padding: 0 1rem; font-size: .6rem; font-weight: 900; }
 .step-detail > header span { display: flex; align-items: center; gap: .55rem; }
 .step-detail > header b { color: #727272; font-size: .54rem; }
-.step-command { display: block; overflow-x: auto; border-top: 1px solid #272727; padding: .75rem 1rem; color: #b8b8b8; font-family: inherit; font-size: .59rem; white-space: nowrap; }
+.step-command { display: block; max-width: 100%; min-width: 0; overflow-x: auto; border-top: 1px solid #272727; padding: .75rem 1rem; color: #b8b8b8; font-family: inherit; font-size: .59rem; white-space: nowrap; }
 .step-annotations { display: grid; gap: .45rem; border-top: 1px solid #383838; padding: .7rem 1rem; }
 .step-annotation { min-width: 0; border: 1px solid #383838; background: #0c0c0c; padding: .7rem .8rem; }
 .step-annotation > header { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; color: #727272; font-size: .52rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
@@ -1038,6 +1040,13 @@
 .semantic-chip:hover { border-color: #f0f0f0; color: #fff; transform: translateY(-1px); }
 .semantic-chip.runtime { border-color: #8a8a8a; border-style: dashed; color: #e8e8e8; }
 .semantic-chip.danger { border-color: #8c3434; color: #e06d6d; }
+.job-attempts { max-width: calc(100% - 1.5rem); margin: .75rem; }
+.job-attempts .semantic-chip { min-width: 0; overflow-wrap: anywhere; white-space: normal; }
+@media (max-width: 720px) {
+  .job-detail > header { align-items: flex-start; flex-direction: column; }
+  .job-attempts { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .job-attempts .semantic-chip { width: 100%; }
+}
 .run-node > .semantic-badges { align-self: end; }
 .workflow-step > .semantic-badges { grid-column: 2 / -1; margin-top: 0; }
 .step-detail > header > span:first-child { min-width: 0; }

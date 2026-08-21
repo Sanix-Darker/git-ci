@@ -165,6 +165,12 @@ type RunJobView struct {
 	Replay                                                      ReplayControlView
 	Manual                                                      ManualPlayControlView
 	Badges                                                      []SemanticBadgeView
+	Attempts                                                    []JobAttemptView
+}
+
+type JobAttemptView struct {
+	Number             int
+	Status, Tone, Hint string
 }
 
 type RunStepView struct {

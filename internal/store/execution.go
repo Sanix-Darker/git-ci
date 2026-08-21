@@ -242,6 +242,7 @@ type EnqueueStep struct {
 
 // Job is a durable job snapshot and its mutable lifecycle fields.
 type Job struct {
+	Attempts        []JobAttempt    `json:"attempts,omitempty"`
 	ID              string          `json:"id"`
 	RunID           string          `json:"runId"`
 	Key             *string         `json:"key,omitempty"`
@@ -804,6 +805,9 @@ func (s *Store) GetRunGraph(ctx context.Context, runID string) (RunGraph, error)
 		}
 	}
 	if err := attachManualJobs(ctx, db, &graph); err != nil {
+		return RunGraph{}, err
+	}
+	if err := attachJobAttempts(ctx, db, &graph); err != nil {
 		return RunGraph{}, err
 	}
 	return graph, nil
