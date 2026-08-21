@@ -325,6 +325,7 @@
   <article><strong>{{pad2 (len .Workflows)}}</strong><span>ACTIVE WORKFLOWS</span></article>
   <article><strong>{{pad2 (len .Runs)}}</strong><span>DURABLE RUNS</span></article>
 </section>
+{{template "operator_flow" .}}
 <section class="surface-grid">
   <article class="surface-card surface-card-wide">
     <div class="card-heading"><div><p class="kicker">LATEST EXECUTION</p><h2>RUN STATE</h2></div><a href="/app/runs" hx-get="/app/runs" hx-target="#app-frame" hx-swap="outerHTML" hx-push-url="true">ALL RUNS -></a></div>
@@ -343,6 +344,7 @@
   <div><p class="kicker">HOST REGISTRY</p><h2>VPS CHECKOUTS</h2><p>Approve a checkout once. Discovery only reads definitions; execution remains explicit.</p></div>
   <span class="count-block"><b>{{len .ProjectViews}}</b> REGISTERED</span>
 </section>
+{{template "operator_flow" .}}
 <section class="project-layout">
   <article class="surface-card">
     <div class="card-heading"><div><p class="kicker">APPROVED ROOTS</p><h2>DISCOVERED</h2></div><span>{{pad2 (len .Candidates)}}</span></div>
@@ -368,9 +370,15 @@
   </article>
   <article class="surface-card">
     <div class="card-heading"><div><p class="kicker">SQLITE REGISTRY</p><h2>ACTIVE</h2></div><span>{{pad2 (len .Projects)}}</span></div>
-    <div class="resource-list project-rows">
+    <div class="project-search" data-project-active-search-region>
+      <label for="active-project-search">SEARCH REGISTERED</label>
+      <input id="active-project-search" type="search" list="active-project-suggestions" autocomplete="off" placeholder="NAME, SLUG, OR PATH" data-project-active-search>
+      <datalist id="active-project-suggestions">{{range .ProjectViews}}<option value="{{.Name}}">{{.CanonicalPath}}</option><option value="{{.Slug}}">{{.CanonicalPath}}</option>{{end}}</datalist>
+      <span><b data-project-active-visible-count>{{len .ProjectViews}}</b> REGISTERED</span>
+    </div>
+    <div class="resource-list project-rows" data-project-active-list>
       {{range .ProjectViews}}
-      <details class="resource-card" id="project-{{.ID}}">
+      <details class="resource-card" id="project-{{.ID}}" data-project-active-card data-project-search-value="{{.Name}} {{.Slug}} {{.CanonicalPath}} {{.Health}} {{.HealthDetail}}">
         <summary><i class="dot {{.Dot}}"></i><span><strong>{{.Name}}</strong><small>{{.Slug}} / {{.CanonicalPath}}</small></span><span class="resource-stat"><b>{{.WorkflowCount}}</b> WORKFLOWS</span><span class="resource-open">OPEN</span></summary>
         <div class="resource-body">
           <div class="health-line"><i class="dot {{.Dot}}"></i><b>{{.Health}}</b><span>{{.HealthDetail}}</span></div>
@@ -406,6 +414,7 @@
     <div class="project-workspace-mark"><span><i class="dot {{.Dot}}"></i>{{.Health}}</span><b>{{pad2 .WorkflowCount}}</b><small>WORKFLOWS</small></div>
   </header>
   <dl class="project-workspace-facts"><div><dt>CHECKOUT</dt><dd>{{.HealthDetail}}</dd></div><div><dt>COMMIT WATCH</dt><dd><i class="dot {{.CommitTrigger.Dot}}"></i>{{.CommitTrigger.Status}}</dd></div><div><dt>WATCH REF</dt><dd>{{.CommitTrigger.Ref}}</dd></div><div><dt>LAST COMMIT</dt><dd>{{if .CommitTrigger.LastCommitSHA}}{{short .CommitTrigger.LastCommitSHA}}{{else}}NOT SET{{end}}</dd></div></dl>
+  {{template "operator_flow" $}}
   <div class="project-workspace-controls"><div><p class="kicker">SOURCE REFRESH</p><strong>PARSE WORKFLOW FILES AND REBUILD THE DAG CATALOG</strong></div><form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator"><input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="returnProject" value="{{.ID}}"><button type="submit">SYNC PROJECT -&gt;</button></form></div>
   {{template "commit_trigger" .}}
   <section class="project-danger" aria-label="Project danger zone">
@@ -455,6 +464,7 @@
   <div><p class="kicker">PIPELINE CATALOG</p><h2>WORKFLOWS BEFORE THEY RUN</h2><p>The visible graph and dispatch are built from the same normalized definition.</p></div>
   <div class="resource-head-actions"><a href="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true">SUPPORT MATRIX -&gt;</a><span class="count-block"><b>{{len .Workflows}}</b> DEFINITIONS</span></div>
 </section>
+{{template "operator_flow" .}}
 <section class="action-strip">
   <div><p class="kicker">DISCOVERY</p><strong>READ PROVIDER FILES FROM REGISTERED CHECKOUTS</strong></div>
   <div class="action-strip-buttons">
@@ -472,9 +482,10 @@
 <section class="workflow-catalog">
   {{range .Workflows}}
   <details class="workflow-detail" id="workflow-{{.ID}}">
-    <summary><span class="provider-block">{{upper .Provider}}</span><span><small>{{upper .ProjectName}} / REV {{.Revision}}</small><strong>{{.Name}}</strong><code>{{.File}}</code></span><span class="resource-stat"><b>{{.JobCount}}</b> JOBS</span><span class="resource-open">VIEW GRAPH</span></summary>
+    <summary><span class="provider-block">{{upper .Provider}}</span><span><small>{{upper .ProjectName}} / REV {{.Revision}}</small><strong>{{.Name}}</strong><code>{{.File}}</code><em class="workflow-summary-cue">DAG {{pad2 .JobCount}}/{{pad2 .EdgeCount}} / RUN / {{if .TriggerPolicies}}TRIGGERS{{else}}MANUAL{{end}}</em></span><span class="resource-stat"><b>{{.JobCount}}</b> JOBS</span><span class="resource-open">VIEW DAG + RUN</span></summary>
     <div class="workflow-detail-body">
       <div class="definition-facts"><div><span>KEY</span><code>{{.Key}}</code></div><div><span>TRIGGERS</span><p>{{range .Triggers}}<b class="definition-chip">{{upper .}}</b>{{else}}<b class="definition-chip">MANUAL</b>{{end}}</p></div><div><span>STAGES</span><p>{{range .Stages}}<b class="definition-chip">{{upper .}}</b>{{else}}<b class="definition-chip">DAG</b>{{end}}</p></div><div><span>EXECUTION POLICY</span>{{template "semantic_badges" .Badges}}</div></div>
+      {{template "workflow_flow" .}}
       {{if .TriggerPolicies}}<section class="trigger-policies" aria-label="Workflow trigger policies"><header><span>TRIGGER CONTRACT</span><small>PARSED FROM REPOSITORY</small></header><div>{{range .TriggerPolicies}}<article><h4><i class="dot {{if .Evaluable}}dot-green{{else}}dot-red{{end}}"></i>{{upper .Event}}</h4><p>{{range .Workflows}}<b>AFTER WORKFLOW {{.}}</b>{{end}}{{range .Branches}}<b>BRANCH {{.}}</b>{{end}}{{range .BranchesIgnore}}<b>EXCEPT BRANCH {{.}}</b>{{end}}{{range .Tags}}<b>TAG {{.}}</b>{{end}}{{range .TagsIgnore}}<b>EXCEPT TAG {{.}}</b>{{end}}{{range .Paths}}<b>PATH {{.}}</b>{{end}}{{range .PathsIgnore}}<b>EXCEPT PATH {{.}}</b>{{end}}{{range .Actions}}<b>ACTION {{upper .}}</b>{{end}}{{range .Schedules}}<b>CRON {{.}}</b>{{end}}{{if .Condition}}<code>{{.Condition}}</code>{{end}}{{if not .Evaluable}}<em>VISIBLE / NOT EVALUATED</em>{{end}}</p></article>{{end}}</div></section>{{end}}
       <div class="pipeline-graph workflow-graph" aria-label="Pipeline dependency graph">
         <header class="graph-key"><span><b>DEPENDENCY DAG</b><small>LEFT TO RIGHT EXECUTION LEVELS</small></span><span>{{pad2 .JobCount}} NODES / {{pad2 .EdgeCount}} EDGES</span></header>
@@ -492,6 +503,27 @@
     </div>
   </details>
   {{else}}<div class="empty-state empty-state-bordered"><i></i><p>NO WORKFLOWS SYNCED. REGISTER A PROJECT, THEN SYNC ITS PROVIDER FILES.</p></div>{{end}}
+</section>
+{{end}}
+
+{{define "operator_flow"}}
+<section class="operator-flow" aria-label="GCI use-case flow">
+  <header><div><p class="kicker">USE-CASE FLOW</p><h2>CHECKOUT TO CI/CD</h2></div><p>Pick a local repo, parse GitHub Actions or GitLab CI, inspect the DAG, run it, then opt into automation.</p></header>
+  <div class="operator-flow-grid">
+    <article><span>01</span><strong>REGISTER</strong><p>Choose a VPS Git checkout from approved roots. GCI records it in SQLite and scans workflow files.</p></article>
+    <article><span>02</span><strong>INSPECT</strong><p>Open the workflow catalog. The dependency graph is visible before the first run exists.</p></article>
+    <article><span>03</span><strong>RUN</strong><p>Dispatch manually with a ref, optional commit SHA, and provider inputs or variables.</p></article>
+    <article><span>04</span><strong>AUTOMATE</strong><p>Enable local commit watch, cron schedules, or signed webhooks only when you want continuous runs.</p></article>
+    <article><span>05</span><strong>DELIVER</strong><p>Use secrets, artifacts, deployments, rollback, and releases for the CD side of the service.</p></article>
+  </div>
+</section>
+{{end}}
+
+{{define "workflow_flow"}}
+<section class="workflow-flow-mini" aria-label="Workflow use-case flow">
+  <article><span>GRAPH</span><strong>{{pad2 .JobCount}} NODES / {{pad2 .EdgeCount}} EDGES</strong><small>PRE-RUN DAG</small></article>
+  <article><span>TRIGGERS</span><strong>{{range .Triggers}}{{upper .}} {{else}}MANUAL {{end}}</strong><small>PARSED POLICY</small></article>
+  <article><span>RUN</span><strong>REF {{.DefaultRef}}</strong><small>{{pad2 (len .ManualInputs)}} INPUTS</small></article>
 </section>
 {{end}}
 

@@ -21,6 +21,13 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   expect(loginResponse.ok()).toBeTruthy();
 
   await page.goto("/app/workflows");
+  const flow = page.getByLabel("GCI use-case flow");
+  await expect(flow).toContainText("CHECKOUT TO CI/CD");
+  await expect(flow).toContainText("REGISTER");
+  await expect(flow).toContainText("INSPECT");
+  await expect(flow).toContainText("RUN");
+  await expect(flow).toContainText("AUTOMATE");
+  await expect(flow).toContainText("DELIVER");
   const skipLink = page.getByRole("link", { name: "Skip to workspace" });
   const hiddenSkipBox = await skipLink.boundingBox();
   expect(hiddenSkipBox.y + hiddenSkipBox.height).toBeLessThanOrEqual(0);
@@ -31,8 +38,12 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   expect(focusedSkipBox.y).toBeGreaterThanOrEqual(0);
   await page.keyboard.press("Tab");
   const pipeline = page.locator("details.workflow-detail").filter({ hasText: "Alpha CI" });
+  await expect(pipeline.locator("summary")).toContainText("VIEW DAG + RUN");
+  await expect(pipeline.locator("summary")).toContainText("DAG");
   await pipeline.locator("summary").click();
   await expect(pipeline).toHaveAttribute("open", "");
+  await expect(pipeline.getByLabel("Workflow use-case flow")).toContainText("PRE-RUN DAG");
+  await expect(pipeline.getByLabel("Workflow use-case flow")).toContainText("PARSED POLICY");
   await expect(pipeline.getByLabel("Pipeline dependency graph")).toContainText("Prepare");
   await expect(pipeline.getByLabel("Pipeline dependency graph")).toContainText("AFTER PREPARE");
   await expect(pipeline.getByLabel("Pipeline dependency graph")).toContainText("Deploy");
@@ -103,7 +114,13 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await expect(page).toHaveURL(/\/app\/runs\//);
 
   await page.goto("/app/projects");
+  await expect(page.getByLabel("GCI use-case flow")).toContainText("Pick a local repo");
+  const activeSearch = page.getByLabel("SEARCH REGISTERED");
+  await activeSearch.fill("no-such-registered-project");
+  await expect(page.getByText("NO REGISTERED PROJECT MATCHES")).toBeVisible();
+  await activeSearch.fill("alpha-service");
   const projectCard = page.locator("details.resource-card").filter({ hasText: "alpha-service" });
+  await expect(projectCard).toBeVisible();
   await projectCard.locator("summary").click();
   await projectCard.getByRole("link", { name: /OPEN PROJECT/ }).click();
   await expect(page).toHaveURL(/\/app\/projects\/[A-Za-z0-9_-]+$/);

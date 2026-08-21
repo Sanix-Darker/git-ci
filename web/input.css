@@ -172,6 +172,17 @@
 .row-meta { display: flex; gap: .6rem; color: #727272; font-size: .56rem; font-weight: 900; }
 .row-meta span { border: 1px solid #383838; padding: .25rem .4rem; }
 .project-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 0; }
+.operator-flow { margin: 1rem 0 1.5rem; border: 1px solid #383838; background: #050505; }
+.operator-flow header { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.25rem; border-bottom: 1px solid #383838; padding: 1rem; }
+.operator-flow header h2 { margin: .35rem 0 0; font-family: var(--font-display); font-size: clamp(1.25rem, 2.4vw, 2.2rem); letter-spacing: -.04em; }
+.operator-flow header p:last-child { max-width: 52rem; margin: 0; color: #8a8a8a; font-size: .68rem; line-height: 1.6; }
+.operator-flow-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.operator-flow-grid article { display: grid; min-width: 0; min-height: 9.2rem; align-content: space-between; border-right: 1px solid #292929; padding: .85rem; transition: background-color 120ms steps(2, end), transform 120ms steps(2, end), padding-left 120ms steps(2, end); }
+.operator-flow-grid article:last-child { border-right: 0; }
+.operator-flow-grid article:hover { background: #0d0d0d; padding-left: 1.05rem; transform: translateX(3px); }
+.operator-flow-grid span { color: #686868; font-family: var(--font-display); font-size: 1.35rem; line-height: 1; }
+.operator-flow-grid strong { color: #f0f0f0; font-size: .76rem; letter-spacing: .06em; }
+.operator-flow-grid p { margin: .65rem 0 0; color: #888; font-size: .62rem; line-height: 1.55; }
 .candidate form { flex: 0 0 auto; }
 .candidate button { border: 1px solid #fff; padding: .55rem .7rem; background: #080808; color: #fff; cursor: pointer; font-size: .58rem; font-weight: 900; }
 .candidate button:hover { background: #fff; color: #080808; }
@@ -1024,6 +1035,13 @@
 @media (max-width: 950px) { .automation-ledger, .project-automation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .automation-ledger article:nth-child(3) { border-left: 0; border-top: 1px solid #333; } .automation-ledger article:nth-child(4) { border-top: 1px solid #333; } }
 @media (max-width: 720px) { .project-danger, .project-unregister { grid-template-columns: minmax(0, 1fr); } .project-unregister button { width: 100%; } .project-automation-head { align-items: start; } .automation-ledger, .project-automation-grid { grid-template-columns: minmax(0, 1fr); } .automation-ledger article + article { border-top: 1px solid #333; border-left: 0; } .project-automation-grid { padding: .65rem; } .project-automation-grid + .project-automation-grid { padding-top: 0; } }
 .provider-block { min-width: 4.5rem; padding: 0.55rem; border: 1px solid #555; text-align: center; font-size: 0.6rem; }
+.workflow-summary-cue { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .45rem; color: #8c8c8c; font-size: .52rem; font-style: normal; font-weight: 900; letter-spacing: .05em; }
+.workflow-flow-mini { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; margin: .75rem 0; }
+.workflow-flow-mini article { min-width: 0; border: 1px solid #333; padding: .65rem; transition: border-color 120ms steps(2, end), transform 120ms steps(2, end), background-color 120ms steps(2, end); }
+.workflow-flow-mini article:hover { border-color: #e0e0e0; background: #0b0b0b; transform: translateY(-2px); }
+.workflow-flow-mini span { color: #777; font-size: .52rem; font-weight: 900; }
+.workflow-flow-mini strong { display: block; overflow: hidden; margin-top: .35rem; color: #e8e8e8; font-size: .62rem; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-flow-mini small { display: block; margin-top: .35rem; color: #666; font-size: .5rem; font-weight: 900; }
 .definition-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; }
 .definition-facts > div { min-width: 0; padding: 0.65rem; border: 1px solid #333; }
 .definition-facts span { display: block; margin-bottom: 0.45rem; color: #888; font-size: 0.58rem; }
@@ -1085,6 +1103,10 @@
   .count-block { text-align: left; }
   .resource-card > summary, .workflow-detail > summary { grid-template-columns: auto minmax(0, 1fr); }
   .resource-stat, .resource-open { grid-column: 2; justify-self: start; text-align: left; }
+  .operator-flow header { align-items: flex-start; flex-direction: column; }
+  .operator-flow-grid, .workflow-flow-mini { grid-template-columns: minmax(0, 1fr); }
+  .operator-flow-grid article { min-height: 7rem; border-top: 1px solid #292929; border-right: 0; }
+  .operator-flow-grid article:first-child { border-top: 0; }
   .definition-facts, .manual-dispatch { grid-template-columns: 1fr; }
   .graph-key { align-items: flex-start; flex-direction: column; }
   .pipeline-stage + .pipeline-stage .run-node::before { top: -.75rem; left: 50%; width: 1px; height: .75rem; }
@@ -1108,6 +1130,10 @@
   .candidate:focus-within,
   .data-row > *,
   .workflow-card,
+  .operator-flow-grid article,
+  .operator-flow-grid article:hover,
+  .workflow-flow-mini article,
+  .workflow-flow-mini article:hover,
   .toast,
   .toast-leaving,
   .toast-close:hover,
