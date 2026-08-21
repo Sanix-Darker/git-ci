@@ -45,6 +45,11 @@ var appPages = map[string]pageDefinition{
 		kicker:      "Execution units",
 		description: "Stage dependencies, step status, timing, logs, and retry controls.",
 	},
+	"runners": {
+		title:       "Runners",
+		kicker:      "Execution fleet",
+		description: "Local execution capacity, scheduler mode, labels, runtime support, and availability.",
+	},
 	"secrets": {
 		title:       "Secrets",
 		kicker:      "Protected values",
@@ -63,7 +68,7 @@ var appPages = map[string]pageDefinition{
 	"settings": {
 		title:       "Settings",
 		kicker:      "Service policy",
-		description: "Runner limits, project roots, retention, and control-plane configuration.",
+		description: "Notification previews, event webhooks, retention, and control-plane configuration.",
 	},
 }
 

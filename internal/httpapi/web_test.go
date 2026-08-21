@@ -66,6 +66,13 @@ func TestWebUnknownSectionAndEmbeddedAssets(t *testing.T) {
 	fixture := newAPIFixture(t, DefaultMaxBodyBytes)
 	cookie, _ := fixture.login(t)
 
+	runners := webRequest(fixture, http.MethodGet, "/app/runners", nil, cookie, true)
+	for _, expected := range []string{"Runners", "LOCAL RUNNER", "data-runner-card", `href="/app/runners"`} {
+		if runners.Code != http.StatusOK || !strings.Contains(runners.Body.String(), expected) {
+			t.Fatalf("runners page missing %q: status=%d body=%s", expected, runners.Code, runners.Body.String())
+		}
+	}
+
 	missing := webRequest(fixture, http.MethodGet, "/app/unknown", nil, cookie, true)
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("unknown section status = %d", missing.Code)

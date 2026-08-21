@@ -296,12 +296,15 @@ test("operator uses HTMX login, navigation, project registration, persistence, a
   await page.locator(".schedule-list").getByRole("button", { name: "PAUSE" }).click();
   await expect(page.getByRole("status").filter({ hasText: "SCHEDULE UPDATED" })).toBeVisible();
 
-  await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByRole("link", { name: "Runners" }).click();
+  await expect(page).toHaveURL(/\/app\/runners$/);
+  await expect(page.getByRole("heading", { name: "RUNNERS" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "LOCAL RUNNER" })).toBeVisible();
   await expect(page.locator("[data-runner-card]")).toContainText("ONLINE / SERIAL / CAPACITY 1");
   const runnerResponse = await page.request.get("/api/v1/runners");
   expect(runnerResponse.status()).toBe(200);
   expect((await runnerResponse.json()).count).toBe(1);
+  await page.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("heading", { name: "EMAIL ALERTS" })).toBeVisible();
   await page.getByLabel("RECIPIENTS").fill("ops@example.com");
   await expect(page.getByText("UI PREVIEW / DELIVERY NOT ACTIVE")).toBeVisible();
@@ -347,6 +350,12 @@ test("@responsive operator surfaces preserve padding, mobile records, and reduce
   expect(layout.overflow).toBeLessThanOrEqual(0);
   expect(layout.gradient).toBe("none");
   expect(["0s", "0.001s", "1ms"]).toContain(layout.animationDuration);
+  for (const [name, heading] of [["Runners", "RUNNERS"], ["Settings", "SETTINGS"]]) {
+    await page.getByRole("link", { name }).click();
+    await expect(page.getByRole("heading", { name: heading })).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, `${name} should not overflow the mobile viewport`).toBeLessThanOrEqual(0);
+  }
   await page.locator('.main-nav a[href="/app/runs"]').click();
   const firstRun = page.locator(".run-table .data-row").first();
   await firstRun.click();
