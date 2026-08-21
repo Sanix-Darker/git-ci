@@ -10,6 +10,8 @@ Workers advertise `workflow-commands` support for GitHub-compatible `add-mask`,
 `stop-commands`, `notice`, `warning`, `error`, `group`, and `endgroup` stdout
 commands. Run-log responses expose `log-sections` for GitHub groups and GitLab
 collapsible section markers without changing the ordered `items` collection.
+The `project-lifecycle` capability provides reversible unregister/reactivation
+without deleting checkout files or durable run history.
 
 ## Authentication
 
@@ -38,8 +40,8 @@ Never place the token in a query string, workflow file, image, or repository.
 | `POST` | `/api/v1/session/login` | Exchange admin token for browser session |
 | `GET`, `DELETE` | `/api/v1/session` | Inspect or end a session |
 | `GET` | `/api/v1/project-candidates` | Search unregistered repositories in allowed roots |
-| `GET`, `POST` | `/api/v1/projects` | List or register projects |
-| `GET` | `/api/v1/projects/{project}` | Project detail |
+| `GET`, `POST` | `/api/v1/projects` | List active projects or register/reactivate a checkout |
+| `GET`, `DELETE` | `/api/v1/projects/{project}` | Project detail or reversible unregister |
 | `GET` | `/api/v1/projects/{project}/workflows` | List discovered workflows |
 | `POST` | `/api/v1/projects/{project}/workflows/sync` | Re-read workflow files |
 | `GET` | `/api/v1/workflows/{workflow}` | Workflow graph |
@@ -99,6 +101,24 @@ curl --fail-with-body -X POST \
 ```
 
 The queued run records its resolved commit and source path before execution.
+
+Project lists default to active registrations. Use `?state=inactive` for retained
+unregistered projects or `?state=all` for both states. Unregistering requires an
+exact slug confirmation and is rejected while a run is queued or running:
+
+```bash
+curl --fail-with-body -X DELETE \
+  -H "Authorization: Bearer ${GCI_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"confirmSlug":"api"}' \
+  "${GCI_URL}/api/v1/projects/${PROJECT_ID}"
+```
+
+This disables workflow dispatch, local commit watch, schedules, outstanding cron
+claims, and webhook endpoints in one transaction. It preserves completed runs,
+logs, artifacts, secrets, environments, deployments, audit events, and checkout
+files. Registering the same canonical path again restores the original project ID
+and workflow catalog; automated trigger sources remain disabled until rearmed.
 
 ## Replay
 

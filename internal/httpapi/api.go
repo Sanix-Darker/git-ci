@@ -129,6 +129,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /app/{section}", a.requireWebAuth(http.HandlerFunc(a.handleAppPage)))
 	mux.Handle("GET /app/projects/{project}", a.requireWebAuth(http.HandlerFunc(a.handleProjectPageWeb)))
 	mux.Handle("POST /app/projects", a.requireWebAuth(http.HandlerFunc(a.handleCreateProjectWeb)))
+	mux.Handle("POST /app/projects/{project}/unregister", a.requireWebAuth(http.HandlerFunc(a.handleUnregisterProjectWeb)))
 	mux.Handle("POST /app/projects/{project}/workflows/sync", a.requireWebAuth(http.HandlerFunc(a.handleSyncWorkflowsWeb)))
 	mux.Handle("POST /app/projects/{project}/commit-trigger", a.requireWebAuth(http.HandlerFunc(a.handleProjectCommitTriggerWeb)))
 	mux.Handle("POST /app/workflows/{workflow}/runs", a.requireWebAuth(http.HandlerFunc(a.handleEnqueueRunWeb)))
@@ -159,6 +160,7 @@ func (a *API) routes() http.Handler {
 	mux.Handle("GET /api/v1/projects", a.requireAuth(http.HandlerFunc(a.handleProjects)))
 	mux.Handle("POST /api/v1/projects", a.requireAuth(http.HandlerFunc(a.handleProjects)))
 	mux.Handle("GET /api/v1/projects/{project}", a.requireAuth(http.HandlerFunc(a.handleProject)))
+	mux.Handle("DELETE /api/v1/projects/{project}", a.requireAuth(http.HandlerFunc(a.handleProject)))
 	mux.Handle("GET /api/v1/projects/{project}/workflows", a.requireAuth(http.HandlerFunc(a.handleProjectWorkflows)))
 	mux.Handle("POST /api/v1/projects/{project}/workflows/sync", a.requireAuth(http.HandlerFunc(a.handleSyncProjectWorkflows)))
 	mux.Handle("GET /api/v1/projects/{project}/commit-trigger", a.requireAuth(http.HandlerFunc(a.handleProjectCommitTrigger)))
@@ -251,7 +253,7 @@ func (a *API) handleHealth(writer http.ResponseWriter, _ *http.Request) {
 func (a *API) handleAPIRoot(writer http.ResponseWriter, _ *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"api":          "v1",
-		"capabilities": []string{"auth", "local-projects", "workflow-discovery", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
+		"capabilities": []string{"auth", "local-projects", "project-lifecycle", "workflow-discovery", "durable-runs", "local-worker", "runner-inventory", "runner-matching", "step-summaries", "workflow-commands", "step-annotations", "log-sections", "protected-environments", "approvals", "environment-secrets", "deployments", "rollback", "job-replay", "step-replay", "audit"},
 	})
 }
 
@@ -325,7 +327,7 @@ func (a *API) handleProjectCandidates(writer http.ResponseWriter, request *http.
 		writeError(writer, http.StatusInternalServerError, "discovery_failed", "failed to discover projects")
 		return
 	}
-	items, err := a.store.ListProjects(request.Context())
+	items, err := a.store.ListActiveProjects(request.Context())
 	if err != nil {
 		writeError(writer, http.StatusInternalServerError, "list_failed", "failed to list projects")
 		return
@@ -340,7 +342,22 @@ func (a *API) handleProjectCandidates(writer http.ResponseWriter, request *http.
 func (a *API) handleProjects(writer http.ResponseWriter, request *http.Request) {
 	switch request.Method {
 	case http.MethodGet:
-		items, err := a.store.ListProjects(request.Context())
+		state := strings.TrimSpace(request.URL.Query().Get("state"))
+		var (
+			items []store.Project
+			err   error
+		)
+		switch state {
+		case "", "active":
+			items, err = a.store.ListActiveProjects(request.Context())
+		case "inactive":
+			items, err = a.store.ListInactiveProjects(request.Context())
+		case "all":
+			items, err = a.store.ListProjects(request.Context())
+		default:
+			writeError(writer, http.StatusBadRequest, "invalid_project_state", "state must be active, inactive, or all")
+			return
+		}
 		if err != nil {
 			writeError(writer, http.StatusInternalServerError, "store_failed", "failed to list projects")
 			return
@@ -405,7 +422,7 @@ func (a *API) createProject(writer http.ResponseWriter, request *http.Request) {
 	principal := request.Context().Value(principalContextKey{}).(auth.Principal)
 	if _, err := a.store.RecordAudit(request.Context(), store.AuditEvent{
 		ProjectID:    project.ID,
-		Action:       "project.created",
+		Action:       "project.registered",
 		Actor:        principal.Subject,
 		ResourceType: "project",
 		ResourceID:   project.ID,
@@ -428,7 +445,43 @@ func (a *API) handleProject(writer http.ResponseWriter, request *http.Request) {
 		writeError(writer, http.StatusInternalServerError, "store_failed", "failed to load project")
 		return
 	}
-	writeJSON(writer, http.StatusOK, project)
+	switch request.Method {
+	case http.MethodGet:
+		writeJSON(writer, http.StatusOK, project)
+	case http.MethodDelete:
+		var payload struct {
+			ConfirmSlug string `json:"confirmSlug"`
+		}
+		if !a.decodeJSON(writer, request, &payload) {
+			return
+		}
+		if payload.ConfirmSlug != project.Slug {
+			writeError(writer, http.StatusUnprocessableEntity, "project_confirmation_mismatch", "confirmSlug must exactly match the project slug")
+			return
+		}
+		project, err = a.store.DeactivateProject(request.Context(), project.ID, payload.ConfirmSlug)
+		if err != nil {
+			var conflict *store.ErrConflict
+			if errors.As(err, &conflict) && conflict.Field == "activeRuns" {
+				writeError(writer, http.StatusConflict, "project_active_runs", "project has queued or running jobs")
+				return
+			}
+			writeError(writer, http.StatusInternalServerError, "store_failed", "failed to unregister project")
+			return
+		}
+		principal := request.Context().Value(principalContextKey{}).(auth.Principal)
+		if _, err := a.store.RecordAudit(request.Context(), store.AuditEvent{
+			ProjectID: project.ID, Action: "project.unregistered", Actor: principal.Subject,
+			ResourceType: "project", ResourceID: project.ID, Metadata: json.RawMessage(`{"active":false}`),
+		}); err != nil {
+			writeError(writer, http.StatusInternalServerError, "audit_failed", "project unregistered but audit recording failed")
+			return
+		}
+		writeJSON(writer, http.StatusOK, project)
+	default:
+		writer.Header().Set("Allow", "GET, DELETE")
+		writeError(writer, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed")
+	}
 }
 
 func (a *API) handleAPINotFound(writer http.ResponseWriter, _ *http.Request) {

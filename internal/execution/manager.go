@@ -181,6 +181,9 @@ func (m *Manager) enqueueTriggered(ctx context.Context, workflowID, ref, commitS
 	if err != nil {
 		return store.Run{}, err
 	}
+	if !project.Active {
+		return store.Run{}, errors.New("execution: workflow project is not active")
+	}
 	if project.CanonicalPath == nil || strings.TrimSpace(*project.CanonicalPath) == "" {
 		return store.Run{}, errors.New("execution: workflow project has no local checkout")
 	}

@@ -387,6 +387,14 @@
   <dl class="project-workspace-facts"><div><dt>CHECKOUT</dt><dd>{{.HealthDetail}}</dd></div><div><dt>COMMIT WATCH</dt><dd><i class="dot {{.CommitTrigger.Dot}}"></i>{{.CommitTrigger.Status}}</dd></div><div><dt>WATCH REF</dt><dd>{{.CommitTrigger.Ref}}</dd></div><div><dt>LAST COMMIT</dt><dd>{{if .CommitTrigger.LastCommitSHA}}{{short .CommitTrigger.LastCommitSHA}}{{else}}NOT SET{{end}}</dd></div></dl>
   <div class="project-workspace-controls"><div><p class="kicker">SOURCE REFRESH</p><strong>PARSE WORKFLOW FILES AND REBUILD THE DAG CATALOG</strong></div><form method="post" action="/app/projects/{{.ID}}/workflows/sync" hx-post="/app/projects/{{.ID}}/workflows/sync" hx-target="#app-frame" hx-swap="outerHTML" hx-disabled-elt="button" hx-indicator="#global-indicator"><input type="hidden" name="_csrf" value="{{.CSRFToken}}"><input type="hidden" name="returnProject" value="{{.ID}}"><button type="submit">SYNC PROJECT -&gt;</button></form></div>
   {{template "commit_trigger" .}}
+  <section class="project-danger" aria-label="Project danger zone">
+    <div><p class="kicker"><i class="dot dot-red"></i>DANGER ZONE</p><h3>UNREGISTER PROJECT</h3><p>Remove this checkout from the control plane and disable commit, cron, and webhook triggers. Run history, secrets, deployments, and files stay on disk.</p></div>
+    <form class="project-unregister" method="post" action="/app/projects/{{.ID}}/unregister" hx-post="/app/projects/{{.ID}}/unregister" hx-disabled-elt="button" hx-indicator="#global-indicator">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <label><span>CONFIRM PROJECT SLUG</span><input name="confirmSlug" autocomplete="off" placeholder="{{.Slug}}" required></label>
+      <button type="submit">UNREGISTER PROJECT -&gt;</button>
+    </form>
+  </section>
 </section>
 {{end}}
 {{template "workflows_panel" .}}

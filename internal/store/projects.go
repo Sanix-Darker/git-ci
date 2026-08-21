@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -61,6 +62,25 @@ func (s *Store) CreateProject(ctx context.Context, params CreateProjectParams) (
 	if err != nil {
 		return Project{}, err
 	}
+	if params.CanonicalPath != nil {
+		existing, lookupErr := scanProject(db.QueryRowContext(ctx, `
+			SELECT `+projectColumns+`
+			FROM projects
+			WHERE canonical_path = ?
+			ORDER BY active DESC, updated_at DESC, id ASC
+			LIMIT 1
+		`, *params.CanonicalPath))
+		switch {
+		case lookupErr == nil && !existing.Active && params.Active:
+			return reactivateProject(ctx, db, existing.ID, params)
+		case lookupErr == nil && existing.Slug == params.Slug:
+			return Project{}, &ErrConflict{Resource: "project", Field: "slug", Value: params.Slug}
+		case lookupErr == nil:
+			return Project{}, &ErrConflict{Resource: "project", Field: "canonicalPath", Value: *params.CanonicalPath}
+		case !errors.Is(lookupErr, sql.ErrNoRows):
+			return Project{}, fmt.Errorf("store: find project by canonical path: %w", lookupErr)
+		}
+	}
 	id, err := randomOpaqueID()
 	if err != nil {
 		return Project{}, fmt.Errorf("store: generate project ID: %w", err)
@@ -112,8 +132,24 @@ func (s *Store) CreateProject(ctx context.Context, params CreateProjectParams) (
 	return project, nil
 }
 
-// ListProjects returns every project in stable ascending slug order.
+// ListProjects returns every project, including inactive history, in stable order.
 func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
+	return s.listProjects(ctx, nil)
+}
+
+// ListActiveProjects returns projects available to operational surfaces.
+func (s *Store) ListActiveProjects(ctx context.Context) ([]Project, error) {
+	active := true
+	return s.listProjects(ctx, &active)
+}
+
+// ListInactiveProjects returns unregistered projects whose history is retained.
+func (s *Store) ListInactiveProjects(ctx context.Context) ([]Project, error) {
+	active := false
+	return s.listProjects(ctx, &active)
+}
+
+func (s *Store) listProjects(ctx context.Context, active *bool) ([]Project, error) {
 	if err := requireContext(ctx); err != nil {
 		return nil, err
 	}
@@ -122,11 +158,14 @@ func (s *Store) ListProjects(ctx context.Context) ([]Project, error) {
 		return nil, err
 	}
 
-	rows, err := db.QueryContext(ctx, `
-		SELECT `+projectColumns+`
-		FROM projects
-		ORDER BY slug ASC, id ASC
-	`)
+	query := `SELECT ` + projectColumns + ` FROM projects`
+	arguments := make([]any, 0, 1)
+	if active != nil {
+		query += ` WHERE active = ?`
+		arguments = append(arguments, boolToInteger(*active))
+	}
+	query += ` ORDER BY slug ASC, id ASC`
+	rows, err := db.QueryContext(ctx, query, arguments...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list projects: %w", err)
 	}
@@ -173,6 +212,123 @@ func (s *Store) GetProject(ctx context.Context, key string) (Project, error) {
 	if err != nil {
 		return Project{}, fmt.Errorf("store: get project: %w", err)
 	}
+	return project, nil
+}
+
+// DeactivateProject unregisters a project without deleting its checkout or history.
+// Every asynchronous trigger source is disabled in the same SQLite transaction.
+func (s *Store) DeactivateProject(ctx context.Context, key, confirmSlug string) (Project, error) {
+	if err := requireContext(ctx); err != nil {
+		return Project{}, err
+	}
+	db, err := s.dbHandle()
+	if err != nil {
+		return Project{}, err
+	}
+	key, err = normalizeRequiredText("project key", key)
+	if err != nil {
+		return Project{}, err
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return Project{}, fmt.Errorf("store: begin project deactivation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	project, err := scanProject(tx.QueryRowContext(ctx, `
+		SELECT `+projectColumns+`
+		FROM projects
+		WHERE id = ? OR slug = ?
+		ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END
+		LIMIT 1
+	`, key, key, key))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Project{}, &ErrNotFound{Resource: "project", Key: key}
+	}
+	if err != nil {
+		return Project{}, fmt.Errorf("store: load project for deactivation: %w", err)
+	}
+	if confirmSlug != project.Slug {
+		return Project{}, invalidInput("project confirmation", "must exactly match project slug")
+	}
+	if !project.Active {
+		return project, nil
+	}
+
+	var activeRuns int
+	if err := tx.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM runs
+		WHERE project_id = ? AND status IN ('queued', 'running')
+	`, project.ID).Scan(&activeRuns); err != nil {
+		return Project{}, fmt.Errorf("store: count active project runs: %w", err)
+	}
+	if activeRuns > 0 {
+		return Project{}, &ErrConflict{Resource: "project", Field: "activeRuns", Value: strconv.Itoa(activeRuns)}
+	}
+
+	updatedAt := nowUTC()
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`UPDATE projects SET active = 0, updated_at = ? WHERE id = ?`, []any{updatedAt.UnixMilli(), project.ID}},
+		{`UPDATE workflows SET active = 0, updated_at = ? WHERE project_id = ?`, []any{updatedAt.UnixMilli(), project.ID}},
+		{`UPDATE project_commit_triggers SET enabled = 0, updated_at = ? WHERE project_id = ?`, []any{updatedAt.UnixMilli(), project.ID}},
+		{`DELETE FROM schedule_claims WHERE schedule_id IN (SELECT id FROM schedules WHERE project_id = ?)`, []any{project.ID}},
+		{`UPDATE schedules SET active = 0, next_run_at = NULL, updated_at = ? WHERE project_id = ?`, []any{updatedAt.UnixMilli(), project.ID}},
+		{`UPDATE webhook_endpoints SET enabled = 0, updated_at = ? WHERE project_id = ?`, []any{updatedAt.UnixMilli(), project.ID}},
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement.query, statement.args...); err != nil {
+			return Project{}, fmt.Errorf("store: deactivate project resources: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return Project{}, fmt.Errorf("store: commit project deactivation: %w", err)
+	}
+	project.Active = false
+	project.UpdatedAt = updatedAt
+	return project, nil
+}
+
+func reactivateProject(ctx context.Context, db *sql.DB, projectID string, params CreateProjectParams) (Project, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return Project{}, fmt.Errorf("store: begin project reactivation: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	project, err := scanProject(tx.QueryRowContext(ctx, `SELECT `+projectColumns+` FROM projects WHERE id = ?`, projectID))
+	if err != nil {
+		return Project{}, fmt.Errorf("store: load project for reactivation: %w", err)
+	}
+	if project.Active {
+		return Project{}, &ErrConflict{Resource: "project", Field: "canonicalPath", Value: *params.CanonicalPath}
+	}
+	updatedAt := nowUTC()
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE projects
+		SET name = ?, source_type = ?, canonical_path = ?, repository_url = ?,
+			default_branch = ?, active = 1, updated_at = ?
+		WHERE id = ?
+	`, params.Name, params.SourceType, nullableString(params.CanonicalPath), nullableString(params.RepositoryURL), params.DefaultBranch, updatedAt.UnixMilli(), project.ID); err != nil {
+		return Project{}, fmt.Errorf("store: reactivate project: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE workflows SET active = 1, updated_at = ? WHERE project_id = ?`, updatedAt.UnixMilli(), project.ID); err != nil {
+		return Project{}, fmt.Errorf("store: reactivate project workflows: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Project{}, fmt.Errorf("store: commit project reactivation: %w", err)
+	}
+
+	project.Name = params.Name
+	project.SourceType = params.SourceType
+	project.CanonicalPath = params.CanonicalPath
+	project.RepositoryURL = params.RepositoryURL
+	project.DefaultBranch = params.DefaultBranch
+	project.Active = true
+	project.UpdatedAt = updatedAt
 	return project, nil
 }
 

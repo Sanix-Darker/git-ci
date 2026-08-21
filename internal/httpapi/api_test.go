@@ -111,6 +111,55 @@ func TestCookieCSRFAndProjectLifecycle(t *testing.T) {
 	conflict := fixture.request(t, http.MethodPost, "/api/v1/projects", payload, "", cookie, csrf, nil)
 	assertAPIError(t, conflict, http.StatusConflict, "project_conflict")
 
+	missingDeleteCSRF := fixture.request(t, http.MethodDelete, "/api/v1/projects/"+project.ID, map[string]any{"confirmSlug": project.Slug}, "", cookie, "", nil)
+	assertAPIError(t, missingDeleteCSRF, http.StatusForbidden, "csrf_failed")
+	wrongConfirmation := fixture.request(t, http.MethodDelete, "/api/v1/projects/"+project.ID, map[string]any{"confirmSlug": "wrong"}, "", cookie, csrf, nil)
+	assertAPIError(t, wrongConfirmation, http.StatusUnprocessableEntity, "project_confirmation_mismatch")
+	unregistered := fixture.request(t, http.MethodDelete, "/api/v1/projects/"+project.ID, map[string]any{"confirmSlug": project.Slug}, "", cookie, csrf, nil)
+	if unregistered.Code != http.StatusOK {
+		t.Fatalf("unregister status = %d, body=%s", unregistered.Code, unregistered.Body.String())
+	}
+	var inactive store.Project
+	decodeResponse(t, unregistered, &inactive)
+	if inactive.Active || inactive.ID != project.ID {
+		t.Fatalf("unregistered project = %#v", inactive)
+	}
+	listed = fixture.request(t, http.MethodGet, "/api/v1/projects", nil, "", cookie, "", nil)
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"count":0`) {
+		t.Fatalf("active list after unregister status = %d, body=%s", listed.Code, listed.Body.String())
+	}
+	inactiveList := fixture.request(t, http.MethodGet, "/api/v1/projects?state=inactive", nil, "", cookie, "", nil)
+	if inactiveList.Code != http.StatusOK || !strings.Contains(inactiveList.Body.String(), project.ID) || !strings.Contains(inactiveList.Body.String(), `"count":1`) {
+		t.Fatalf("inactive list status = %d, body=%s", inactiveList.Code, inactiveList.Body.String())
+	}
+	allList := fixture.request(t, http.MethodGet, "/api/v1/projects?state=all", nil, "", cookie, "", nil)
+	if allList.Code != http.StatusOK || !strings.Contains(allList.Body.String(), project.ID) {
+		t.Fatalf("all list status = %d, body=%s", allList.Code, allList.Body.String())
+	}
+	invalidState := fixture.request(t, http.MethodGet, "/api/v1/projects?state=deleted", nil, "", cookie, "", nil)
+	assertAPIError(t, invalidState, http.StatusBadRequest, "invalid_project_state")
+	candidates := fixture.request(t, http.MethodGet, "/api/v1/project-candidates", nil, "", cookie, "", nil)
+	if candidates.Code != http.StatusOK || !strings.Contains(candidates.Body.String(), fixture.projectPath) {
+		t.Fatalf("inactive candidate status = %d, body=%s", candidates.Code, candidates.Body.String())
+	}
+	detail = fixture.request(t, http.MethodGet, "/api/v1/projects/"+project.ID, nil, "", cookie, "", nil)
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"active":false`) {
+		t.Fatalf("inactive detail status = %d, body=%s", detail.Code, detail.Body.String())
+	}
+	reactivatedResponse := fixture.request(t, http.MethodPost, "/api/v1/projects", payload, "", cookie, csrf, nil)
+	if reactivatedResponse.Code != http.StatusCreated {
+		t.Fatalf("reactivate status = %d, body=%s", reactivatedResponse.Code, reactivatedResponse.Body.String())
+	}
+	var reactivated store.Project
+	decodeResponse(t, reactivatedResponse, &reactivated)
+	if reactivated.ID != project.ID || !reactivated.Active {
+		t.Fatalf("reactivated project = %#v", reactivated)
+	}
+	listed = fixture.request(t, http.MethodGet, "/api/v1/projects", nil, "", cookie, "", nil)
+	if listed.Code != http.StatusOK || !strings.Contains(listed.Body.String(), `"count":1`) {
+		t.Fatalf("active list after reactivation status = %d, body=%s", listed.Code, listed.Body.String())
+	}
+
 	logout := fixture.request(t, http.MethodDelete, "/api/v1/session", nil, "", cookie, csrf, nil)
 	if logout.Code != http.StatusNoContent {
 		t.Fatalf("logout status = %d, body=%s", logout.Code, logout.Body.String())
