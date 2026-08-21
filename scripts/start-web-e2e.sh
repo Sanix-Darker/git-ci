@@ -18,6 +18,8 @@ cat >"$project_root/alpha-service/.github/workflows/ci.yml" <<'YAML'
 name: Alpha CI
 on:
   push:
+  schedule:
+    - cron: "31 5 * * *"
 jobs:
   prepare:
     runs-on: ubuntu-latest

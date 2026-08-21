@@ -18,7 +18,11 @@ func TestWebProjectRegistrationDiscoversAndRendersWorkflowGraph(t *testing.T) {
 		t.Fatalf("mkdir workflows: %v", err)
 	}
 	definition := `name: Release pipeline
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 4 * * *"
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
@@ -70,7 +74,7 @@ jobs:
 	response = httptest.NewRecorder()
 	fixture.handler.ServeHTTP(response, request)
 	body := response.Body.String()
-	for _, expected := range []string{"Release pipeline", "Pipeline dependency graph", "Compile", "Deploy", "AFTER BUILD", "MATRIX 01/02", "OS=linux", "IF matrix.os != &#39;blocked&#39;", "LOCK release-${{ github.ref }} / CANCEL OLD", "name=\"ref\"", "name=\"commitSha\""} {
+	for _, expected := range []string{"Release pipeline", "Pipeline dependency graph", "Compile", "Deploy", "AFTER BUILD", "MATRIX 01/02", "OS=linux", "IF matrix.os != &#39;blocked&#39;", "LOCK release-${{ github.ref }} / CANCEL OLD", "CRON 23 4 * * *", "ARM DECLARED CRON 23 4 * * *", "name=\"ref\"", "name=\"commitSha\""} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("workflow page missing %q", expected)
 		}
@@ -104,6 +108,16 @@ jobs:
 	fixture.handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "SCHEDULE ARMED") || !strings.Contains(response.Body.String(), "17 * * * *") || !strings.Contains(response.Body.String(), "PROJECT AUTOMATION") {
 		t.Fatalf("project schedule response: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	form = url.Values{"_csrf": {csrf}, "workflowId": {workflows[0].ID}, "cron": {"23 4 * * *"}, "timezone": {"UTC"}, "ref": {"main"}, "returnProject": {projects[0].ID}}
+	request = httptest.NewRequest(http.MethodPost, "/app/schedules", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	request.AddCookie(cookie)
+	response = httptest.NewRecorder()
+	fixture.handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "SCHEDULE ARMED") || !strings.Contains(response.Body.String(), "23 4 * * *") || !strings.Contains(response.Body.String(), "Release pipeline") {
+		t.Fatalf("declared project schedule response: status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	form = url.Values{"_csrf": {csrf}, "workflowId": {workflows[0].ID}, "name": {"release-push"}, "provider": {"github"}, "ref": {"main"}, "returnProject": {projects[0].ID}}
