@@ -56,6 +56,7 @@ type Definition struct {
 // source job identifier; Needs and Requires therefore reference keys rather
 // than presentation names.
 type JobDefinition struct {
+	Retry                *types.RetryPolicy
 	Key                  string                               `json:"key"`
 	SourceKey            string                               `json:"sourceKey,omitempty"`
 	Name                 string                               `json:"name"`
@@ -674,6 +675,7 @@ func normalizeJob(key string, job *types.Job, extension deploymentExtension) (Jo
 		return JobDefinition{}, fmt.Errorf("x-gci rollback requires a deployment environment")
 	}
 	normalized := JobDefinition{
+		Retry:                job.Retry,
 		Key:                  key,
 		Name:                 job.Name,
 		Environment:          copyStringMap(job.Environment),
@@ -886,7 +888,7 @@ func freezeJobSemantics(job *JobDefinition, provider string) error {
 		"concurrency":        job.Concurrency, "interruptible": job.Interruptible,
 		"failFast": job.FailFast, "maxParallel": job.MaxParallel,
 		"workflowCall": job.WorkflowCall, "container": job.Container, "services": job.Services,
-		"artifacts": job.Artifacts, "cache": job.Cache, "outputs": job.Outputs,
+		"artifacts": job.Artifacts, "cache": job.Cache, "outputs": job.Outputs, "retry": job.Retry,
 	}
 	encoded, err := json.Marshal(metadata)
 	if err != nil {

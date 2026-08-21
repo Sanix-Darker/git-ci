@@ -597,7 +597,7 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 		} else {
 			close(concurrencyDone)
 		}
-		status, err := m.executeJob(jobCtx, graph.Run, item, workspacePath, jobSecrets, outputContext)
+		status, err := m.executeJobWithRetry(jobCtx, graph.Run, item, workspacePath, jobSecrets, outputContext)
 		stopConcurrency()
 		<-concurrencyDone
 		if jobConcurrencyLease != nil {
@@ -883,7 +883,7 @@ func isTerminalExecutionStatus(status store.Status) bool {
 	}
 }
 
-func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph, workspacePath string, secretValues map[string]string, outputContext *runtimeOutputContext) (store.Status, error) {
+func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobGraph, workspacePath string, secretValues map[string]string, outputContext *runtimeOutputContext, attemptOutcome *jobAttemptOutcome) (store.Status, error) {
 	if _, err := m.store.TransitionJob(ctx, item.Job.ID, store.StatusRunning); err != nil {
 		return "", fmt.Errorf("execution: start job: %w", err)
 	}
@@ -998,6 +998,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 			}
 			return store.StatusCancelled, nil
 		}
+		attemptOutcome.record(err)
 		if _, transitionErr := m.store.TransitionStep(ctx, step.ID, store.StatusFailed); transitionErr != nil {
 			return "", transitionErr
 		}
@@ -1015,6 +1016,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 	if status == store.StatusSucceeded {
 		if err := m.saveJobCaches(ctx, run, item.Steps, workspacePath, semantics); err != nil {
 			status = store.StatusFailed
+			attemptOutcome.record(err)
 			if len(item.Steps) > 0 {
 				_ = m.appendSystem(ctx, item.Steps[len(item.Steps)-1].ID, "cache save failed: "+err.Error())
 			}
@@ -1024,6 +1026,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 		variables, found, dotenvErr := loadGitLabDotenvReport(workspacePath, semantics.Artifacts)
 		if dotenvErr != nil {
 			status = store.StatusFailed
+			attemptOutcome.record(dotenvErr)
 			if len(item.Steps) > 0 {
 				_ = m.appendSystem(ctx, item.Steps[len(item.Steps)-1].ID, "dotenv report failed: "+dotenvErr.Error())
 			}
@@ -1035,6 +1038,7 @@ func (m *Manager) executeJob(ctx context.Context, run store.Run, item store.JobG
 		}
 		if err := m.captureJobArtifact(ctx, run, item.Job, item.Steps, workspacePath, semantics.Artifacts, status == store.StatusSucceeded); err != nil {
 			status = store.StatusFailed
+			attemptOutcome.record(err)
 			if len(item.Steps) > 0 {
 				_ = m.appendSystem(ctx, item.Steps[len(item.Steps)-1].ID, "artifact capture failed: "+err.Error())
 			}
@@ -1410,6 +1414,7 @@ func dependenciesSatisfied(dependencies []string, statuses map[string]store.Stat
 }
 
 type frozenJobSemantics struct {
+	Retry                *types.RetryPolicy                   `json:"retry,omitempty"`
 	Provider             string                               `json:"provider"`
 	SourceKey            string                               `json:"sourceKey"`
 	Stage                string                               `json:"stage"`

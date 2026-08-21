@@ -518,7 +518,11 @@ func (p *GitlabParser) convertToPipeline(ci *GitlabCI) *types.Pipeline {
 
 	// Process jobs
 	for jobName, glJob := range ci.Jobs {
+		if glJob.Retry == nil && ci.Default != nil {
+			glJob.Retry = ci.Default.Retry
+		}
 		job := p.convertJob(jobName, glJob, globalImage, globalServices, globalBeforeScript, globalAfterScript)
+		job.Retry = parseGitLabRetryPolicy(glJob.Retry)
 		pipeline.Jobs[jobName] = job
 	}
 
@@ -1168,6 +1172,10 @@ func (p *GitlabParser) parseDefault(defaultConfig map[string]interface{}) *Gitla
 
 	if interruptible, ok := defaultConfig["interruptible"].(bool); ok {
 		d.Interruptible = interruptible
+	}
+
+	if retry := defaultConfig["retry"]; retry != nil {
+		d.Retry = retry
 	}
 
 	return d

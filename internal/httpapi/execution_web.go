@@ -17,6 +17,7 @@ import (
 	"github.com/sanix-darker/git-ci/internal/store"
 	"github.com/sanix-darker/git-ci/internal/triggerpolicy"
 	"github.com/sanix-darker/git-ci/internal/webui"
+	"github.com/sanix-darker/git-ci/pkg/types"
 )
 
 func (a *API) handleSyncWorkflowsWeb(writer http.ResponseWriter, request *http.Request) {
@@ -275,6 +276,7 @@ type workflowDefinitionDocument struct {
 }
 
 type workflowDefinitionJobDocument struct {
+	Retry              *types.RetryPolicy                   `json:"retry,omitempty"`
 	Key                string                               `json:"key"`
 	SourceKey          string                               `json:"sourceKey"`
 	Name               string                               `json:"name"`
@@ -532,6 +534,22 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 			AllowFailure: item.Job.AllowFailure, Replay: jobReplay,
 		}
 		populateRunJobSemanticView(&job, item.Job.Environment)
+		if len(item.Job.Attempts) > 1 {
+			for _, attempt := range item.Job.Attempts {
+				hint := strings.ReplaceAll(attempt.FailureKind, "_", " ")
+				if attempt.ExitCode != nil {
+					hint += fmt.Sprintf(" / EXIT %d", *attempt.ExitCode)
+				}
+				tone := "runtime"
+				if attempt.Status == store.StatusFailed && !attempt.WillRetry {
+					tone = "danger"
+				}
+				job.Attempts = append(job.Attempts, webui.JobAttemptView{Number: attempt.AttemptNumber, Status: strings.ToUpper(string(attempt.Status)), Tone: tone, Hint: strings.ToUpper(strings.TrimSpace(hint))})
+			}
+		}
+		if len(job.Attempts) > 1 {
+			job.Badges = append(job.Badges, webui.SemanticBadgeView{Label: fmt.Sprintf("%d ATTEMPTS", len(job.Attempts)), Tone: "runtime", Hint: "Durable automatic retry history"})
+		}
 		job.Manual, err = manualPlayControl(item.Job, graph.Run, csrfToken)
 		if err != nil {
 			return webui.RunDetailView{}, err
@@ -566,6 +584,9 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 
 func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
 	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if job.Retry != nil && job.Retry.MaxAttempts > 0 {
+		badges = append(badges, webui.SemanticBadgeView{Label: fmt.Sprintf("RETRY %d", job.Retry.MaxAttempts), Tone: "runtime", Hint: "Automatic retries after the first attempt"})
+	}
 	if job.RunnerMatch.Evaluated {
 		if job.RunnerMatch.Available {
 			badges = append(badges, webui.SemanticBadgeView{Label: "RUNNER " + strings.ToUpper(job.RunnerMatch.RunnerID), Tone: "runtime", Hint: job.RunnerMatch.Reason})
