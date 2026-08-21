@@ -1081,26 +1081,41 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 	if err != nil {
 		return nil, err
 	}
-	hostOutputPath, runtimeOutputPath, err := prepareGitHubOutputFile(workspacePath, step.ID, runtime != nil && runtime.HasJobContainer())
+	runtimeFiles, err := prepareGitHubRuntimeFiles(workspacePath, step.ID, runtime != nil && runtime.HasJobContainer())
 	if err != nil {
 		return nil, err
 	}
+	defer runtimeFiles.cleanup()
 	environmentLayers := []any{run.Environment, jobEnvironment}
 	if semantics != nil && semantics.Provider == string(ProviderGitLabCI) {
 		environmentLayers = []any{jobEnvironment, outputContext.dotenvEnvironment(semantics), run.Environment}
 	}
-	environmentLayers = append(environmentLayers, baseEnvironment, step.Environment, map[string]string{
+	environmentLayers = append(environmentLayers, baseEnvironment, outputContext.runtimeEnvironment(), step.Environment, map[string]string{
 		"CI":               "true",
 		"GCI_RUN_ID":       run.ID,
 		"GCI_JOB_ID":       job.ID,
 		"GCI_PROJECT_DIR":  projectDirectory,
 		"GITHUB_WORKSPACE": projectDirectory,
 		"CI_PROJECT_DIR":   projectDirectory,
-		"GITHUB_OUTPUT":    runtimeOutputPath,
+		"GITHUB_OUTPUT":    runtimeFiles.output.runtimePath,
+		"GITHUB_ENV":       runtimeFiles.environment.runtimePath,
+		"GITHUB_PATH":      runtimeFiles.path.runtimePath,
 	})
 	environment := mergedEnvironment(secretValues, environmentLayers...)
+	environment = prependGitHubPaths(environment, outputContext.runtimePaths())
 	if runtime != nil {
 		environment = runtime.resolveEnvironment(environment)
+	}
+	finishCommand := func(commandErr error) (map[string]string, error) {
+		outputs, outputErr := parseGitHubOutput(runtimeFiles.output.hostPath)
+		environmentNames, pathCount, runtimeErr := outputContext.consumeGitHubRuntimeFiles(runtimeFiles.environment.hostPath, runtimeFiles.path.hostPath)
+		if len(environmentNames) > 0 {
+			_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, "environment variables exported: "+strings.Join(environmentNames, ", "))
+		}
+		if pathCount > 0 {
+			_ = m.appendSystem(context.WithoutCancel(ctx), step.ID, fmt.Sprintf("PATH entries prepended: %d", pathCount))
+		}
+		return outputs, errors.Join(commandErr, outputErr, runtimeErr)
 	}
 	if runtime != nil && runtime.HasJobContainer() {
 		containerDirectory, err := runtime.ContainerWorkingDirectory(directory)
@@ -1108,11 +1123,7 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 			return nil, err
 		}
 		commandErr := m.executeContainerCommand(stepCtx, step.ID, runtime, containerDirectory, shell, shellArgs, environment, secretValues)
-		outputs, outputErr := parseGitHubOutput(hostOutputPath)
-		if commandErr == nil {
-			commandErr = outputErr
-		}
-		return outputs, commandErr
+		return finishCommand(commandErr)
 	}
 	command := exec.CommandContext(stepCtx, shell, shellArgs...)
 	command.Dir = directory
@@ -1150,11 +1161,7 @@ func (m *Manager) executeStepInRuntime(ctx context.Context, run store.Run, job s
 			commandErr = captureErr
 		}
 	}
-	outputs, outputErr := parseGitHubOutput(hostOutputPath)
-	if commandErr == nil {
-		commandErr = outputErr
-	}
-	return outputs, commandErr
+	return finishCommand(commandErr)
 }
 
 func (m *Manager) executeContainerCommand(ctx context.Context, stepID string, runtime *dockerJobSession, directory, shell string, shellArgs, environment []string, secretValues map[string]string) error {

@@ -30,6 +30,8 @@ type runtimeOutputContext struct {
 	steps        map[string]map[string]string
 	dependencies []string
 	stepBytes    int
+	environment  map[string]string
+	paths        []string
 	dotenvJobs   map[string]map[string]string
 	dotenvStages map[string]string
 	dotenvOrder  []string
@@ -46,6 +48,8 @@ func (context *runtimeOutputContext) beginJob(dependencies []string) {
 	context.dependencies = append([]string(nil), dependencies...)
 	context.steps = make(map[string]map[string]string)
 	context.stepBytes = 0
+	context.environment = make(map[string]string)
+	context.paths = nil
 }
 
 func (context *runtimeOutputContext) recordDotenv(job store.Job, semantics *frozenJobSemantics, variables map[string]string) {
@@ -228,12 +232,16 @@ func applyStepOutputMappings(environment json.RawMessage, values map[string]stri
 }
 
 func prepareGitHubOutputFile(workspace, stepID string, container bool) (string, string, error) {
+	return prepareGitHubCommandFile(workspace, stepID, "output", container)
+}
+
+func prepareGitHubCommandFile(workspace, stepID, kind string, container bool) (string, string, error) {
 	directory := filepath.Join(workspace, ".gci", "command-files")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return "", "", err
 	}
 	digest := sha256.Sum256([]byte(stepID))
-	name := fmt.Sprintf("%x.output", digest[:16])
+	name := fmt.Sprintf("%x.%s", digest[:16], kind)
 	hostPath := filepath.Join(directory, name)
 	file, err := os.OpenFile(hostPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
