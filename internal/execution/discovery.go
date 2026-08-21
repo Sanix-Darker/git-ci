@@ -52,6 +52,20 @@ type Definition struct {
 	TopologicalOrder []string               `json:"topologicalOrder"`
 }
 
+// ChildPipelineDefinition is frozen into its trigger job. Definition is the
+// complete normalized downstream DAG, so execution never reparses a mutable
+// checkout after the parent run has been dispatched.
+type ChildPipelineDefinition struct {
+	SourceFile               string            `json:"sourceFile"`
+	Strategy                 string            `json:"strategy"`
+	Depth                    int               `json:"depth"`
+	InheritVariables         bool              `json:"inheritVariables"`
+	ForwardYAMLVariables     bool              `json:"forwardYAMLVariables"`
+	ForwardPipelineVariables bool              `json:"forwardPipelineVariables"`
+	Variables                map[string]string `json:"variables,omitempty"`
+	Definition               *Definition       `json:"definition"`
+}
+
 // JobDefinition is a provider-neutral, persistence-ready job. Key is the
 // source job identifier; Needs and Requires therefore reference keys rather
 // than presentation names.
@@ -92,6 +106,7 @@ type JobDefinition struct {
 	FailFast             bool                                 `json:"failFast,omitempty"`
 	MaxParallel          int                                  `json:"maxParallel,omitempty"`
 	WorkflowCall         *types.WorkflowCall                  `json:"workflowCall,omitempty"`
+	ChildPipeline        *ChildPipelineDefinition             `json:"childPipeline,omitempty"`
 	Container            *types.Container                     `json:"container,omitempty"`
 	Services             map[string]*types.Service            `json:"services,omitempty"`
 	Artifacts            *types.ArtifactConfig                `json:"artifacts,omitempty"`
@@ -559,6 +574,24 @@ func normalizeDefinition(
 	pipeline *types.Pipeline,
 	extensions map[string]deploymentExtension,
 ) (Definition, error) {
+	state := &childPipelineExpansionState{stack: []string{file.absolute}}
+	return normalizeDefinitionRecursive(project, root, file, pipeline, extensions, 0, state)
+}
+
+type childPipelineExpansionState struct {
+	stack []string
+	count int
+}
+
+func normalizeDefinitionRecursive(
+	project store.Project,
+	root string,
+	file workflowFile,
+	pipeline *types.Pipeline,
+	extensions map[string]deploymentExtension,
+	depth int,
+	state *childPipelineExpansionState,
+) (Definition, error) {
 	if pipeline == nil {
 		return Definition{}, fmt.Errorf("parser returned no pipeline")
 	}
@@ -595,6 +628,7 @@ func normalizeDefinition(
 			if err != nil {
 				return Definition{}, fmt.Errorf("job %q: %w", sourceKey, err)
 			}
+			normalized.SourceKey = sourceKey
 			normalized.SourceKey = sourceKey
 			normalized.RunnerRequirements, normalized.RunnerGroup = runnerRequirements(file.provider, job)
 			if err := applyMatrixVariant(&normalized, variant, string(file.provider)); err != nil {
@@ -655,8 +689,129 @@ func normalizeDefinition(
 	for _, key := range order {
 		definition.Jobs = append(definition.Jobs, jobs[key])
 	}
+	if file.provider == ProviderGitLabCI {
+		if err := attachLocalChildPipelines(project, root, pipeline, &definition, depth, state); err != nil {
+			return Definition{}, err
+		}
+	}
 	applyDefinitionRunnerInventory(&definition, runnerinventory.Local(runnerinventory.Config{}))
 	return definition, nil
+}
+
+const (
+	maxChildPipelineDepth = 2
+	maxChildPipelines     = 50
+)
+
+func attachLocalChildPipelines(project store.Project, root string, pipeline *types.Pipeline, definition *Definition, depth int, state *childPipelineExpansionState) error {
+	for index := range definition.Jobs {
+		job := &definition.Jobs[index]
+		source := pipeline.Jobs[job.SourceKey]
+		if source == nil || source.Trigger == nil {
+			continue
+		}
+		if job.MatrixTotal > 1 {
+			return fmt.Errorf("job %q: matrix child pipeline triggers are not supported", job.SourceKey)
+		}
+		child, err := normalizeLocalChildPipeline(project, root, job.SourceKey, source, depth, state)
+		if err != nil {
+			return err
+		}
+		job.ChildPipeline = child
+		job.RunnerHint = "gci-control-plane"
+		job.RunnerRequirements = nil
+		job.RunnerGroup = ""
+	}
+	return nil
+}
+
+func normalizeLocalChildPipeline(project store.Project, root, jobKey string, job *types.Job, depth int, state *childPipelineExpansionState) (*ChildPipelineDefinition, error) {
+	trigger := job.Trigger
+	if trigger.Project != "" || trigger.Branch != "" {
+		return nil, fmt.Errorf("job %q: multi-project child pipelines are not supported", jobKey)
+	}
+	if trigger.IncludeCount != 1 {
+		return nil, fmt.Errorf("job %q: child pipeline trigger must contain exactly one local include", jobKey)
+	}
+	if trigger.IncludeKind != "local" {
+		return nil, fmt.Errorf("job %q: child pipeline include kind %q is not supported; use include:local", jobKey, trigger.IncludeKind)
+	}
+	if depth >= maxChildPipelineDepth {
+		return nil, fmt.Errorf("job %q: child pipeline nesting exceeds %d levels", jobKey, maxChildPipelineDepth)
+	}
+	strategy := strings.ToLower(strings.TrimSpace(trigger.Strategy))
+	if strategy == "" {
+		strategy = "async"
+	}
+	if strategy != "async" && strategy != "mirror" && strategy != "depend" {
+		return nil, fmt.Errorf("job %q: child pipeline strategy %q is not supported", jobKey, trigger.Strategy)
+	}
+	reference := strings.TrimSpace(trigger.Include)
+	if reference == "" || filepath.IsAbs(reference) || strings.Contains(reference, "\\") {
+		return nil, fmt.Errorf("job %q: child pipeline local include must be a non-empty repository-relative path", jobKey)
+	}
+	clean := filepath.Clean(filepath.FromSlash(reference))
+	if clean == "." || !isSafeRelativePath(clean) {
+		return nil, fmt.Errorf("job %q: child pipeline include %q leaves the registered project", jobKey, reference)
+	}
+	candidate, safe, err := safeAbsoluteFile(root, filepath.Join(root, clean))
+	if err != nil {
+		return nil, fmt.Errorf("job %q: resolve child pipeline %q: %w", jobKey, reference, err)
+	}
+	if !safe {
+		return nil, fmt.Errorf("job %q: child pipeline include %q is not a regular non-symlinked file inside the project", jobKey, reference)
+	}
+	for _, ancestor := range state.stack {
+		if ancestor == candidate {
+			return nil, fmt.Errorf("job %q: child pipeline cycle reaches %s", jobKey, filepath.ToSlash(clean))
+		}
+	}
+	state.count++
+	if state.count > maxChildPipelines {
+		return nil, fmt.Errorf("workflow references more than %d child pipelines", maxChildPipelines)
+	}
+	if err := validateGitLabIncludes(root, candidate); err != nil {
+		return nil, fmt.Errorf("job %q: validate child pipeline includes: %w", jobKey, err)
+	}
+	childPipeline, err := parsers.NewGitlabParser().Parse(candidate)
+	if err != nil {
+		return nil, fmt.Errorf("job %q: parse child pipeline %q: %w", jobKey, reference, err)
+	}
+	relative, err := filepath.Rel(root, candidate)
+	if err != nil {
+		return nil, fmt.Errorf("job %q: resolve child pipeline source: %w", jobKey, err)
+	}
+	childFile := workflowFile{provider: ProviderGitLabCI, relative: filepath.ToSlash(relative), absolute: candidate}
+	extensions, err := readDeploymentExtensions(childFile)
+	if err != nil {
+		return nil, fmt.Errorf("job %q: parse child pipeline extensions: %w", jobKey, err)
+	}
+	state.stack = append(state.stack, candidate)
+	childDefinition, err := normalizeDefinitionRecursive(project, root, childFile, childPipeline, extensions, depth+1, state)
+	state.stack = state.stack[:len(state.stack)-1]
+	if err != nil {
+		return nil, fmt.Errorf("job %q: normalize child pipeline %q: %w", jobKey, reference, err)
+	}
+	inheritVariables := true
+	if trigger.InheritVariables != nil {
+		inheritVariables = *trigger.InheritVariables
+	}
+	forwardYAMLVariables := true
+	forwardPipelineVariables := false
+	if trigger.Forward != nil {
+		if trigger.Forward.YAMLVariables != nil {
+			forwardYAMLVariables = *trigger.Forward.YAMLVariables
+		}
+		if trigger.Forward.PipelineVariables != nil {
+			forwardPipelineVariables = *trigger.Forward.PipelineVariables
+		}
+	}
+	return &ChildPipelineDefinition{
+		SourceFile: filepath.ToSlash(relative), Strategy: strategy, Depth: depth + 1,
+		InheritVariables: inheritVariables, ForwardYAMLVariables: forwardYAMLVariables,
+		ForwardPipelineVariables: forwardPipelineVariables, Variables: copyStringMap(job.Environment),
+		Definition: &childDefinition,
+	}, nil
 }
 
 func normalizeJob(key string, job *types.Job, extension deploymentExtension) (JobDefinition, error) {

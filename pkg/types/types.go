@@ -361,10 +361,21 @@ type WorkflowCall struct {
 
 // TriggerConfig for downstream pipelines (GitLab)
 type TriggerConfig struct {
-	Project  string            `yaml:"project,omitempty" json:"project,omitempty"`
-	Branch   string            `yaml:"branch,omitempty" json:"branch,omitempty"`
-	Strategy string            `yaml:"strategy,omitempty" json:"strategy,omitempty"`
-	Forward  map[string]string `yaml:"forward,omitempty" json:"forward,omitempty"`
+	Project          string          `yaml:"project,omitempty" json:"project,omitempty"`
+	Branch           string          `yaml:"branch,omitempty" json:"branch,omitempty"`
+	Include          string          `yaml:"include,omitempty" json:"include,omitempty"`
+	IncludeKind      string          `yaml:"-" json:"includeKind,omitempty"`
+	IncludeCount     int             `yaml:"-" json:"includeCount,omitempty"`
+	Strategy         string          `yaml:"strategy,omitempty" json:"strategy,omitempty"`
+	Forward          *TriggerForward `yaml:"forward,omitempty" json:"forward,omitempty"`
+	InheritVariables *bool           `yaml:"-" json:"inheritVariables,omitempty"`
+}
+
+// TriggerForward controls the GitLab variables forwarded to a downstream
+// pipeline. Pointer values preserve provider defaults when a key is omitted.
+type TriggerForward struct {
+	YAMLVariables     *bool `yaml:"yaml_variables,omitempty" json:"yamlVariables,omitempty"`
+	PipelineVariables *bool `yaml:"pipeline_variables,omitempty" json:"pipelineVariables,omitempty"`
 }
 
 // HealthCheck configuration

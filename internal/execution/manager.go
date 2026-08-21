@@ -210,49 +210,9 @@ func (m *Manager) enqueueTriggered(ctx context.Context, workflowID, ref, commitS
 	if err != nil {
 		return store.Run{}, err
 	}
-	jobs := make([]store.EnqueueJob, 0, len(definition.Jobs))
-	for _, job := range definition.Jobs {
-		dependencies := uniqueStrings(append(append([]string{}, job.Needs...), job.Requires...))
-		dependencyJSON, err := json.Marshal(dependencies)
-		if err != nil {
-			return store.Run{}, fmt.Errorf("execution: encode dependencies for %q: %w", job.Key, err)
-		}
-		jobEnvironment, err := json.Marshal(job.Environment)
-		if err != nil {
-			return store.Run{}, fmt.Errorf("execution: encode environment for %q: %w", job.Key, err)
-		}
-		steps := make([]store.EnqueueStep, 0, len(job.Steps))
-		for _, step := range job.Steps {
-			stepEnvironment, err := json.Marshal(step.Environment)
-			if err != nil {
-				return store.Run{}, fmt.Errorf("execution: encode environment for step %q: %w", step.Key, err)
-			}
-			steps = append(steps, store.EnqueueStep{
-				Key:              step.Key,
-				Name:             step.Name,
-				Command:          step.Command,
-				Action:           step.Action,
-				Environment:      stepEnvironment,
-				WorkingDirectory: step.WorkingDirectory,
-				TimeoutMinutes:   step.TimeoutMinutes,
-				Shell:            step.Shell,
-				AllowFailure:     step.AllowFailure,
-			})
-		}
-		jobs = append(jobs, store.EnqueueJob{
-			Key:             job.Key,
-			Name:            job.Name,
-			Runner:          job.RunnerHint,
-			EnvironmentName: job.EnvironmentName,
-			DeploymentTier:  job.DeploymentTier,
-			Environment:     jobEnvironment,
-			DependencyKeys:  dependencyJSON,
-			AllowFailure:    job.AllowFailure,
-			TimeoutMinutes:  job.TimeoutMinutes,
-			RollbackCommand: job.RollbackCommand,
-			VerifyCommand:   job.VerifyCommand,
-			Steps:           steps,
-		})
+	jobs, err := snapshotDefinitionJobs(definition)
+	if err != nil {
+		return store.Run{}, err
 	}
 	run, err := m.store.EnqueueRun(ctx, store.EnqueueRunParams{
 		ProjectID:   project.ID,
@@ -434,6 +394,9 @@ func (m *Manager) ProcessNext(ctx context.Context) (bool, error) {
 	if _, err := m.store.RecoverExpiredRunWorkers(ctx, now, now.Add(-runWorkerLeaseTTL)); err != nil {
 		return false, fmt.Errorf("execution: recover expired workers: %w", err)
 	}
+	if _, err := m.store.ReconcileCompletedChildPipelines(ctx); err != nil {
+		return false, fmt.Errorf("execution: reconcile child pipelines: %w", err)
+	}
 	if err := m.resumeWaitingJobs(ctx, now); err != nil {
 		return false, fmt.Errorf("execution: resume waiting jobs: %w", err)
 	}
@@ -552,6 +515,17 @@ func (m *Manager) executeRun(ctx context.Context, run store.Run, workspacePath s
 		item.Job.Environment = mergeEnvironmentJSON(item.Job.Environment, decision.Variables)
 		item.Job.AllowFailure = decision.AllowFailure
 		allowedFailure[key] = decision.AllowFailure
+		if len(item.Job.ChildPipeline) > 0 {
+			status, paused, err := m.executeChildPipelineTrigger(ctx, graph.Run, item)
+			if err != nil {
+				return err
+			}
+			if paused {
+				return nil
+			}
+			statuses[key] = status
+			continue
+		}
 		cancelled, err := m.isCancelled(ctx, run.ID)
 		if err != nil {
 			return err

@@ -144,6 +144,7 @@ type RunDetailView struct {
 	EdgeCount   int
 	Artifacts   []ArtifactView
 	TestReports []TestReportView
+	Upstream    *ChildPipelineView
 }
 
 type ArtifactView struct {
@@ -170,6 +171,12 @@ type RunJobView struct {
 	Manual                                                      ManualPlayControlView
 	Badges                                                      []SemanticBadgeView
 	Attempts                                                    []JobAttemptView
+	ChildPipeline                                               *ChildPipelineView
+}
+
+type ChildPipelineView struct {
+	ParentRunID, ParentJobID, ChildRunID, SourceFile, Strategy, Status, Dot string
+	Depth                                                                   int
 }
 
 type JobAttemptView struct {

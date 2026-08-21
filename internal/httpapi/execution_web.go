@@ -276,6 +276,7 @@ type workflowDefinitionDocument struct {
 }
 
 type workflowDefinitionJobDocument struct {
+	ChildPipeline      *childPipelineDefinitionDocument     `json:"childPipeline,omitempty"`
 	Retry              *types.RetryPolicy                   `json:"retry,omitempty"`
 	Key                string                               `json:"key"`
 	SourceKey          string                               `json:"sourceKey"`
@@ -306,6 +307,12 @@ type workflowDefinitionJobDocument struct {
 	Artifacts          *artifactDefinitionDocument          `json:"artifacts"`
 	Cache              *cacheDefinitionDocument             `json:"cache"`
 	Steps              []workflowDefinitionStepDocument     `json:"steps"`
+}
+
+type childPipelineDefinitionDocument struct {
+	SourceFile string `json:"sourceFile"`
+	Strategy   string `json:"strategy"`
+	Depth      int    `json:"depth"`
 }
 
 type workflowCallDefinitionDocument struct {
@@ -482,6 +489,14 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 		Run:      runView(graph.Run, projectNames[graph.Run.ProjectID], workflowNames),
 		Terminal: terminalStatus(graph.Run.Status),
 	}
+	if graph.ParentPipeline != nil {
+		detail.Upstream = childPipelineView(*graph.ParentPipeline, true)
+		detail.Run.WorkflowName = "CHILD / " + graph.ParentPipeline.SourceFile
+	}
+	children := make(map[string]store.ChildPipelineLink, len(graph.ChildPipelines))
+	for _, child := range graph.ChildPipelines {
+		children[child.ParentJobID] = child
+	}
 	artifacts, err := a.store.ListRunArtifacts(ctx, runID)
 	if err != nil {
 		return webui.RunDetailView{}, err
@@ -532,6 +547,9 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 			Status: strings.ToUpper(string(item.Job.Status)), Dot: statusDot(item.Job.Status),
 			Runner: stringValue(item.Job.Runner), Dependencies: strings.Join(decodeDependencies(item.Job.DependencyKeys), ", "),
 			AllowFailure: item.Job.AllowFailure, Replay: jobReplay,
+		}
+		if child, found := children[item.Job.ID]; found {
+			job.ChildPipeline = childPipelineView(child, false)
 		}
 		populateRunJobSemanticView(&job, item.Job.Environment)
 		if len(item.Job.Attempts) > 1 {
@@ -584,6 +602,9 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 
 func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeView {
 	badges := make([]webui.SemanticBadgeView, 0, len(job.Matrix)+6)
+	if job.ChildPipeline != nil {
+		badges = append(badges, webui.SemanticBadgeView{Label: "CHILD " + strings.ToUpper(job.ChildPipeline.Strategy), Tone: "runtime", Hint: job.ChildPipeline.SourceFile})
+	}
 	if job.Retry != nil && job.Retry.MaxAttempts > 0 {
 		badges = append(badges, webui.SemanticBadgeView{Label: fmt.Sprintf("RETRY %d", job.Retry.MaxAttempts), Tone: "runtime", Hint: "Automatic retries after the first attempt"})
 	}
@@ -662,6 +683,18 @@ func jobSemanticBadges(job workflowDefinitionJobDocument) []webui.SemanticBadgeV
 		badges = append(badges, webui.SemanticBadgeView{Label: "CACHE " + strings.ToUpper(job.Cache.Key), Hint: strings.Join(job.Cache.Paths, ", ")})
 	}
 	return badges
+}
+
+func childPipelineView(link store.ChildPipelineLink, upstream bool) *webui.ChildPipelineView {
+	status := link.ChildStatus
+	if upstream {
+		status = link.ParentStatus
+	}
+	return &webui.ChildPipelineView{
+		ParentRunID: link.ParentRunID, ParentJobID: link.ParentJobID, ChildRunID: link.ChildRunID,
+		SourceFile: link.SourceFile, Strategy: strings.ToUpper(string(link.Strategy)), Depth: link.Depth,
+		Status: strings.ToUpper(string(status)), Dot: statusDot(status),
+	}
 }
 
 func conditionBadges(condition conditionDocument) []webui.SemanticBadgeView {

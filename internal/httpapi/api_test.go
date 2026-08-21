@@ -27,6 +27,7 @@ type apiFixture struct {
 	root        string
 	projectPath string
 	token       string
+	execution   *execution.Manager
 }
 
 func TestPublicAndAuthenticationContract(t *testing.T) {
@@ -290,7 +291,7 @@ func newAPIFixture(t *testing.T, maxBodyBytes int64) *apiFixture {
 	if err != nil {
 		t.Fatalf("new API: %v", err)
 	}
-	return &apiFixture{handler: handler, store: database, root: root, projectPath: projectPath, token: token}
+	return &apiFixture{handler: handler, store: database, root: root, projectPath: projectPath, token: token, execution: executionManager}
 }
 
 func (f *apiFixture) commitProject(t *testing.T) {
