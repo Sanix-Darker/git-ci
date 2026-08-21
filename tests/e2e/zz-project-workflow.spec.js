@@ -124,6 +124,8 @@ test("project workflow catalog exposes the pre-run DAG and explicit dispatch @re
   await projectCard.locator("summary").click();
   await projectCard.getByRole("link", { name: /OPEN PROJECT/ }).click();
   await expect(page).toHaveURL(/\/app\/projects\/[A-Za-z0-9_-]+$/);
+  await expect(page.getByLabel("GCI use-case flow")).toHaveCount(1);
+  await expect(page.getByLabel("GCI use-case flow")).toContainText("CHECKOUT TO CI/CD");
   const workspace = page.getByLabel("Project workspace");
   await expect(workspace).toContainText("alpha-service");
   await expect(workspace).toContainText("LOCAL COMMIT WATCH");

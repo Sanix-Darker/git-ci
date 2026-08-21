@@ -464,7 +464,7 @@
   <div><p class="kicker">PIPELINE CATALOG</p><h2>WORKFLOWS BEFORE THEY RUN</h2><p>The visible graph and dispatch are built from the same normalized definition.</p></div>
   <div class="resource-head-actions"><a href="/app/compatibility" hx-get="/app/compatibility" hx-target="#app-frame" hx-swap="outerHTML transition:true" hx-push-url="true">SUPPORT MATRIX -&gt;</a><span class="count-block"><b>{{len .Workflows}}</b> DEFINITIONS</span></div>
 </section>
-{{template "operator_flow" .}}
+{{if not .SelectedProject}}{{template "operator_flow" .}}{{end}}
 <section class="action-strip">
   <div><p class="kicker">DISCOVERY</p><strong>READ PROVIDER FILES FROM REGISTERED CHECKOUTS</strong></div>
   <div class="action-strip-buttons">
