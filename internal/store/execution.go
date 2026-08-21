@@ -208,6 +208,7 @@ type EnqueueRunParams struct {
 	Jobs          []EnqueueJob
 	Lineage       *EnqueueRunLineage
 	ChildPipeline *EnqueueChildPipelineLink
+	WorkflowRun   *EnqueueWorkflowRunLink
 }
 
 // EnqueueJob is an immutable job snapshot. DependencyKeys is a JSON array of
@@ -304,6 +305,7 @@ type RunGraph struct {
 	Jobs           []JobGraph          `json:"jobs"`
 	ChildPipelines []ChildPipelineLink `json:"childPipelines,omitempty"`
 	ParentPipeline *ChildPipelineLink  `json:"parentPipeline,omitempty"`
+	WorkflowRun    *WorkflowRunLink    `json:"workflowRun,omitempty"`
 }
 
 // LogLine is one immutable, line-oriented worker output record.
@@ -669,6 +671,11 @@ func (s *Store) EnqueueRun(ctx context.Context, params EnqueueRunParams) (Run, e
 			return Run{}, err
 		}
 	}
+	if params.WorkflowRun != nil {
+		if err := insertWorkflowRunLink(ctx, tx, run, *params.WorkflowRun, now); err != nil {
+			return Run{}, err
+		}
+	}
 
 	if err := tx.Commit(); err != nil {
 		return Run{}, fmt.Errorf("store: commit enqueue run: %w", err)
@@ -824,6 +831,9 @@ func (s *Store) GetRunGraph(ctx context.Context, runID string) (RunGraph, error)
 		return RunGraph{}, err
 	}
 	if err := attachChildPipelineLinks(ctx, db, &graph); err != nil {
+		return RunGraph{}, err
+	}
+	if err := attachWorkflowRunLink(ctx, db, &graph); err != nil {
 		return RunGraph{}, err
 	}
 	return graph, nil
@@ -1544,6 +1554,13 @@ func normalizeEnqueueRunParams(params EnqueueRunParams) (EnqueueRunParams, error
 			return EnqueueRunParams{}, err
 		}
 		params.ChildPipeline = &link
+	}
+	if params.WorkflowRun != nil {
+		link, err := normalizeEnqueueWorkflowRunLink(*params.WorkflowRun)
+		if err != nil {
+			return EnqueueRunParams{}, err
+		}
+		params.WorkflowRun = &link
 	}
 
 	jobKeys := make(map[string]struct{}, len(params.Jobs))

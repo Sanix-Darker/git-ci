@@ -398,7 +398,7 @@ func populateWorkflowDefinitionView(view *webui.WorkflowView, raw []byte) {
 		policyView := webui.WorkflowTriggerPolicyView{
 			Event: policy.Event, Branches: policy.Branches, BranchesIgnore: policy.BranchesIgnore,
 			Tags: policy.Tags, TagsIgnore: policy.TagsIgnore, Paths: policy.Paths,
-			PathsIgnore: policy.PathsIgnore, Actions: policy.Actions, Schedules: policy.Schedules,
+			PathsIgnore: policy.PathsIgnore, Workflows: policy.Workflows, Actions: policy.Actions, Schedules: policy.Schedules,
 			Condition: policy.Condition, Evaluable: policy.Evaluable,
 		}
 		view.TriggerPolicies = append(view.TriggerPolicies, policyView)
@@ -523,8 +523,20 @@ func (a *API) runDetail(ctx context.Context, runID string, projectNames, workflo
 			Duration: fmt.Sprintf("%.2fs", report.DurationSeconds),
 		})
 	}
-	lineage, lineageErr := a.store.GetRunLineage(ctx, runID)
-	if lineageErr == nil {
+	if graph.WorkflowRun != nil {
+		link := graph.WorkflowRun
+		dot := "dot-blue"
+		if link.SourceConclusion == store.WorkflowRunSuccess {
+			dot = "dot-green"
+		} else if link.SourceConclusion == store.WorkflowRunFailure {
+			dot = "dot-red"
+		}
+		detail.Lineage = &webui.RunLineageView{
+			Kind: "WORKFLOW RUN", SourceRunID: link.SourceRunID, SourceWorkflow: link.SourceWorkflowName,
+			Conclusion: strings.ToUpper(string(link.SourceConclusion)), Dot: dot, Actor: "SYSTEM",
+			Depth: link.Depth, CreatedAt: link.CreatedAt.UTC().Format("2006-01-02 15:04:05Z"), APIURL: "/api/v1/runs/" + runID,
+		}
+	} else if lineage, lineageErr := a.store.GetRunLineage(ctx, runID); lineageErr == nil {
 		detail.Lineage = &webui.RunLineageView{
 			Kind:        strings.ToUpper(strings.ReplaceAll(string(lineage.Kind), "_", " ")),
 			SourceRunID: lineage.SourceRunID, SourceJobID: stringValue(lineage.SourceJobID),

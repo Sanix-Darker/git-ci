@@ -1,6 +1,11 @@
 package triggerpolicy
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"testing"
+)
 
 func TestMatchAppliesPullRequestDefaultsAndTargetBranch(t *testing.T) {
 	policies := []Policy{{Event: "pull_request", Branches: []string{"main"}, Evaluable: true}}
@@ -36,5 +41,51 @@ func TestNeedsChangedPathsAppliesNonPathAdmissionFirst(t *testing.T) {
 	}
 	if NeedsChangedPaths(policies, nil, Event{Type: "pull_request", Action: "opened", Ref: "refs/heads/develop"}) {
 		t.Fatal("ignored target branch requested paths")
+	}
+}
+
+func TestGitHubWorkflowRunParsesAndMatchesWorkflowActivityAndBranch(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "delivery.yml")
+	contents := `name: Delivery
+on:
+  workflow_run:
+    workflows: [CI, Security]
+    types: [completed]
+    branches: [main, release/**]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+`
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("write workflow: %v", err)
+	}
+	policies, err := ParseFile("github", path, nil)
+	if err != nil {
+		t.Fatalf("ParseFile() error = %v", err)
+	}
+	if len(policies) != 1 || !reflect.DeepEqual(policies[0].Workflows, []string{"CI", "Security"}) || !reflect.DeepEqual(policies[0].Actions, []string{"completed"}) {
+		t.Fatalf("workflow_run policies = %#v", policies)
+	}
+	for _, event := range []Event{
+		{Type: "workflow_run", Workflow: "CI", Action: "completed", Ref: "refs/heads/main"},
+		{Type: "workflow_run", Workflow: "Security", Action: "completed", Ref: "refs/heads/release/1.2"},
+	} {
+		if !Match(policies, nil, event) {
+			t.Errorf("Match(%#v) = false, want true", event)
+		}
+	}
+	for _, event := range []Event{
+		{Type: "workflow_run", Workflow: "Build", Action: "completed", Ref: "refs/heads/main"},
+		{Type: "workflow_run", Workflow: "CI", Action: "requested", Ref: "refs/heads/main"},
+		{Type: "workflow_run", Workflow: "CI", Action: "completed", Ref: "refs/heads/develop"},
+	} {
+		if Match(policies, nil, event) {
+			t.Errorf("Match(%#v) = true, want false", event)
+		}
+	}
+	if Match([]Policy{{Event: "workflow_run", Evaluable: true}}, nil, Event{Type: "workflow_run", Workflow: "CI", Action: "completed", Ref: "refs/heads/main"}) {
+		t.Fatal("workflow_run without an explicit workflows list matched")
 	}
 }
